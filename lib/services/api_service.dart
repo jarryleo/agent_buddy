@@ -14,6 +14,14 @@ class StreamEvent {
   final String? error;
   final bool done;
 
+  // Tool-call fields. Populated when type == 'toolStart' or 'toolDone'.
+  final String? toolId;
+  final String? toolName;
+  final String? toolArguments;
+  final String? toolResult;
+  final bool? toolSuccess;
+  final String? toolError;
+
   const StreamEvent({
     required this.type,
     this.text = '',
@@ -21,10 +29,43 @@ class StreamEvent {
     this.contentDelta,
     this.error,
     this.done = false,
+    this.toolId,
+    this.toolName,
+    this.toolArguments,
+    this.toolResult,
+    this.toolSuccess,
+    this.toolError,
   });
 
-  factory StreamEvent.error(String msg) => StreamEvent(type: 'error', error: msg);
+  factory StreamEvent.error(String msg) =>
+      StreamEvent(type: 'error', error: msg);
   factory StreamEvent.done() => const StreamEvent(type: 'done', done: true);
+  factory StreamEvent.toolStart({
+    required String id,
+    required String name,
+    required String arguments,
+  }) =>
+      StreamEvent(
+        type: 'toolStart',
+        toolId: id,
+        toolName: name,
+        toolArguments: arguments,
+      );
+  factory StreamEvent.toolDone({
+    required String id,
+    required String name,
+    required String result,
+    required bool success,
+    String? error,
+  }) =>
+      StreamEvent(
+        type: 'toolDone',
+        toolId: id,
+        toolName: name,
+        toolResult: result,
+        toolSuccess: success,
+        toolError: error,
+      );
 }
 
 class ChatRequestMessage {
@@ -251,19 +292,24 @@ class ApiService {
       for (final acc in toolCalls.values) {
         final name = acc.name ?? '';
         final args = acc.arguments ?? '';
+        final id = acc.id ?? '';
+        // Announce the tool call before executing so the UI can show
+        // a "running" state immediately.
+        yield StreamEvent.toolStart(id: id, name: name, arguments: args);
         Map<String, dynamic> argsJson;
         try {
           argsJson = (jsonDecode(args) as Map<String, dynamic>);
         } catch (_) {
           argsJson = {'raw': args};
         }
-        final id = acc.id ?? '';
         assistantToolCalls.add({
           'id': id,
           'type': 'function',
           'function': {'name': name, 'arguments': args},
         });
         String toolResult;
+        bool success = true;
+        String? toolError;
         try {
           toolResult = await onToolCall({
             'id': id,
@@ -271,8 +317,19 @@ class ApiService {
             'arguments': argsJson,
           });
         } catch (e) {
+          // The AI still needs to see the error so it can recover; we
+          // also flag the failure so the UI can render it as failed.
           toolResult = 'Error: $e';
+          success = false;
+          toolError = e.toString();
         }
+        yield StreamEvent.toolDone(
+          id: id,
+          name: name,
+          result: toolResult,
+          success: success,
+          error: toolError,
+        );
         toolMessages.add({
           'role': 'tool',
           'tool_call_id': id,
@@ -433,25 +490,40 @@ class ApiService {
     if (currentStopReason == 'tool_use' && toolUseBlocks.isNotEmpty && onToolCall != null) {
       final toolResults = <Map<String, dynamic>>[];
       for (final tb in toolUseBlocks) {
+        final name = tb['name'] as String? ?? '';
+        final id = tb['id'] as String? ?? '';
+        final argsRaw = tb['input'] as String? ?? '';
+        yield StreamEvent.toolStart(id: id, name: name, arguments: argsRaw);
         Map<String, dynamic> args;
         try {
-          args = (jsonDecode(tb['input'] as String? ?? '{}') as Map<String, dynamic>);
+          args = (jsonDecode(argsRaw) as Map<String, dynamic>);
         } catch (_) {
-          args = {'raw': tb['input']};
+          args = {'raw': argsRaw};
         }
         String toolResult;
+        bool success = true;
+        String? toolError;
         try {
           toolResult = await onToolCall({
-            'id': tb['id'],
-            'name': tb['name'],
+            'id': id,
+            'name': name,
             'arguments': args,
           });
         } catch (e) {
           toolResult = 'Error: $e';
+          success = false;
+          toolError = e.toString();
         }
+        yield StreamEvent.toolDone(
+          id: id,
+          name: name,
+          result: toolResult,
+          success: success,
+          error: toolError,
+        );
         toolResults.add({
           'type': 'tool_result',
-          'tool_use_id': tb['id'],
+          'tool_use_id': id,
           'content': toolResult,
         });
       }

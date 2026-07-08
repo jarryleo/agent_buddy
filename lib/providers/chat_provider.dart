@@ -83,14 +83,17 @@ class ChatProvider extends ChangeNotifier {
 
   Future<String> _onToolCall(Map<String, dynamic> toolCall) async {
     final name = toolCall['name'] as String? ?? '';
-    final args = (toolCall['arguments'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final args = (toolCall['arguments'] as Map?)?.cast<String, dynamic>() ??
+        const {};
     switch (name) {
       case 'fetch_web':
         final url = args['url'] as String? ?? '';
-        if (url.isEmpty) return '错误: url 不能为空';
+        if (url.isEmpty) {
+          throw ToolException('url is required');
+        }
         return await _tools.fetchWeb(url);
       default:
-        return '错误: 未知工具 $name';
+        throw ToolException('unknown tool: $name');
     }
   }
 
@@ -171,7 +174,59 @@ class ChatProvider extends ChangeNotifier {
       onToolCall: _onToolCall,
     )
         .listen((event) {
-      if (event.type == 'reasoning' && event.thinkingDelta != null) {
+      if (event.type == 'toolStart') {
+        final idx = _messages.indexWhere((m) => m.id == assistantId);
+        if (idx >= 0) {
+          final toolId = event.toolId ?? '';
+          _messages = [
+            for (final mm in _messages)
+              if (mm.id == assistantId)
+                mm.copyWith(
+                  toolCalls: [
+                    ...mm.toolCalls,
+                    ToolCall(
+                      id: toolId,
+                      name: event.toolName ?? '',
+                      arguments: event.toolArguments ?? '',
+                      status: ToolCallStatus.running,
+                    ),
+                  ],
+                )
+              else
+                mm,
+          ];
+          controller.add(null);
+        }
+      } else if (event.type == 'toolDone') {
+        final idx = _messages.indexWhere((m) => m.id == assistantId);
+        if (idx >= 0) {
+          final toolId = event.toolId ?? '';
+          final now = DateTime.now();
+          _messages = [
+            for (final mm in _messages)
+              if (mm.id == assistantId)
+                mm.copyWith(
+                  toolCalls: [
+                    for (final tc in mm.toolCalls)
+                      if (tc.id == toolId)
+                        tc.copyWith(
+                          status: (event.toolSuccess ?? false)
+                              ? ToolCallStatus.success
+                              : ToolCallStatus.failed,
+                          result: event.toolResult,
+                          error: event.toolError,
+                          finishedAt: now,
+                        )
+                      else
+                        tc,
+                  ],
+                )
+              else
+                mm,
+          ];
+          controller.add(null);
+        }
+      } else if (event.type == 'reasoning' && event.thinkingDelta != null) {
         final idx = _messages.indexWhere((m) => m.id == assistantId);
         if (idx >= 0) {
           _messages = [

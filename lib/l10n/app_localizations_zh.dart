@@ -304,6 +304,46 @@ class AppLocalizationsZh extends AppLocalizations {
   String get imageLoadFailed => '图片加载失败';
 
   @override
+  String get toolCallArguments => '参数';
+
+  @override
+  String get toolCallResult => '结果';
+
+  @override
+  String get toolCallStatusPending => '等待中';
+
+  @override
+  String get toolCallStatusRunning => '运行中';
+
+  @override
+  String get toolCallStatusSuccess => '成功';
+
+  @override
+  String get toolCallStatusFailed => '失败';
+
+  @override
+  String toolCallDurationMs(int ms) {
+    return '$ms 毫秒';
+  }
+
+  @override
+  String toolCallDurationSec(String sec) {
+    return '$sec 秒';
+  }
+
+  @override
+  String get toolCallNoArguments => '(无参数)';
+
+  @override
+  String get toolCallNoResult => '(无结果)';
+
+  @override
+  String get toolCallExpand => '展开详情';
+
+  @override
+  String get toolCallCollapse => '收起详情';
+
+  @override
   String get chatNoProvider => '请先在设置中添加并启用一个模型提供商。';
 
   @override

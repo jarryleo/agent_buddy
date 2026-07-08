@@ -650,6 +650,78 @@ abstract class AppLocalizations {
   /// **'Failed to load image'**
   String get imageLoadFailed;
 
+  /// No description provided for @toolCallArguments.
+  ///
+  /// In en, this message translates to:
+  /// **'Arguments'**
+  String get toolCallArguments;
+
+  /// No description provided for @toolCallResult.
+  ///
+  /// In en, this message translates to:
+  /// **'Result'**
+  String get toolCallResult;
+
+  /// No description provided for @toolCallStatusPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get toolCallStatusPending;
+
+  /// No description provided for @toolCallStatusRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Running'**
+  String get toolCallStatusRunning;
+
+  /// No description provided for @toolCallStatusSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Success'**
+  String get toolCallStatusSuccess;
+
+  /// No description provided for @toolCallStatusFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get toolCallStatusFailed;
+
+  /// No description provided for @toolCallDurationMs.
+  ///
+  /// In en, this message translates to:
+  /// **'{ms} ms'**
+  String toolCallDurationMs(int ms);
+
+  /// No description provided for @toolCallDurationSec.
+  ///
+  /// In en, this message translates to:
+  /// **'{sec}s'**
+  String toolCallDurationSec(String sec);
+
+  /// No description provided for @toolCallNoArguments.
+  ///
+  /// In en, this message translates to:
+  /// **'(no arguments)'**
+  String get toolCallNoArguments;
+
+  /// No description provided for @toolCallNoResult.
+  ///
+  /// In en, this message translates to:
+  /// **'(no result)'**
+  String get toolCallNoResult;
+
+  /// No description provided for @toolCallExpand.
+  ///
+  /// In en, this message translates to:
+  /// **'Show details'**
+  String get toolCallExpand;
+
+  /// No description provided for @toolCallCollapse.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide details'**
+  String get toolCallCollapse;
+
   /// No description provided for @chatNoProvider.
   ///
   /// In en, this message translates to:

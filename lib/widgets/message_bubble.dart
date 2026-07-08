@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -45,7 +46,8 @@ class _MessageBubbleState extends State<MessageBubble> {
   void _onThinkingScroll() {
     if (!_thinkingScroll.hasClients) return;
     final pos = _thinkingScroll.position;
-    final atBottom = pos.pixels >= pos.maxScrollExtent - _autoScrollBottomTolerance;
+    final atBottom =
+        pos.pixels >= pos.maxScrollExtent - _autoScrollBottomTolerance;
     if (atBottom != _thinkingAtBottom) {
       _thinkingAtBottom = atBottom;
     }
@@ -69,7 +71,8 @@ class _MessageBubbleState extends State<MessageBubble> {
     if (m.role == MessageRole.user) {
       return _buildUser(context, m);
     }
-    final maxLines = _thinkingExpanded ? _thinkingExpandedLines : _thinkingCollapsedLines;
+    final maxLines =
+        _thinkingExpanded ? _thinkingExpandedLines : _thinkingCollapsedLines;
     final thinkingChanged = m.thinking != _lastThinking;
     final expandedChanged = maxLines != _lastExpandedLines;
     if (thinkingChanged || expandedChanged) {
@@ -89,7 +92,8 @@ class _MessageBubbleState extends State<MessageBubble> {
         children: [
           Flexible(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: AppTheme.bubbleUser,
                 borderRadius: const BorderRadius.only(
@@ -101,7 +105,8 @@ class _MessageBubbleState extends State<MessageBubble> {
               ),
               child: Text(
                 m.content,
-                style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.4),
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 15, height: 1.4),
               ),
             ),
           ),
@@ -112,16 +117,19 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   Widget _buildAssistant(BuildContext context, ChatMessage m) {
     final hasThinking = m.thinking.isNotEmpty;
+    final hasTools = m.toolCalls.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 48, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (hasThinking) _buildThinking(context, m),
+          if (hasTools) _buildToolCalls(context, m.toolCalls),
           if (m.content.isNotEmpty || m.streaming)
             Container(
-              margin: EdgeInsets.only(top: hasThinking ? 6 : 0),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              margin: EdgeInsets.only(top: (hasThinking || hasTools) ? 6 : 0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: AppTheme.bubbleAssistant,
                 borderRadius: const BorderRadius.only(
@@ -159,7 +167,8 @@ class _MessageBubbleState extends State<MessageBubble> {
                     borderRadius: BorderRadius.circular(4),
                     child: const Padding(
                       padding: EdgeInsets.all(2),
-                      child: Icon(Icons.copy_rounded, size: 12, color: AppTheme.textSecondary),
+                      child: Icon(Icons.copy_rounded,
+                          size: 12, color: AppTheme.textSecondary),
                     ),
                   ),
                 ],
@@ -174,7 +183,8 @@ class _MessageBubbleState extends State<MessageBubble> {
   Widget _buildThinking(BuildContext context, ChatMessage m) {
     final l10n = AppLocalizations.of(context);
     final lineCount = '\n'.allMatches(m.thinking).length + 1;
-    final maxLines = _thinkingExpanded ? _thinkingExpandedLines : _thinkingCollapsedLines;
+    final maxLines =
+        _thinkingExpanded ? _thinkingExpandedLines : _thinkingCollapsedLines;
     final overflow = lineCount > maxLines;
     return Container(
       decoration: BoxDecoration(
@@ -186,13 +196,16 @@ class _MessageBubbleState extends State<MessageBubble> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            onTap: overflow ? () => setState(() => _thinkingExpanded = !_thinkingExpanded) : null,
+            onTap: overflow
+                ? () => setState(() => _thinkingExpanded = !_thinkingExpanded)
+                : null,
             borderRadius: BorderRadius.circular(10),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
               child: Row(
                 children: [
-                  const Icon(Icons.psychology_outlined, size: 14, color: Color(0xFFA37300)),
+                  const Icon(Icons.psychology_outlined,
+                      size: 14, color: Color(0xFFA37300)),
                   const SizedBox(width: 6),
                   Text(
                     l10n.messageThinking,
@@ -205,7 +218,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                   const Spacer(),
                   if (overflow)
                     Icon(
-                      _thinkingExpanded ? Icons.expand_less : Icons.expand_more,
+                      _thinkingExpanded
+                          ? Icons.expand_less
+                          : Icons.expand_more,
                       size: 16,
                       color: const Color(0xFF8A5C00),
                     ),
@@ -231,6 +246,251 @@ class _MessageBubbleState extends State<MessageBubble> {
         ],
       ),
     );
+  }
+
+  Widget _buildToolCalls(BuildContext context, List<ToolCall> calls) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final tc in calls) ...[
+          _ToolCallCard(toolCall: tc),
+          const SizedBox(height: 6),
+        ],
+      ],
+    );
+  }
+}
+
+class _ToolCallCard extends StatefulWidget {
+  const _ToolCallCard({required this.toolCall});
+
+  final ToolCall toolCall;
+
+  @override
+  State<_ToolCallCard> createState() => _ToolCallCardState();
+}
+
+class _ToolCallCardState extends State<_ToolCallCard> {
+  bool _expanded = false;
+
+  Color _statusColor(ToolCallStatus s) {
+    switch (s) {
+      case ToolCallStatus.pending:
+        return const Color(0xFF8B949E);
+      case ToolCallStatus.running:
+        return AppTheme.primary;
+      case ToolCallStatus.success:
+        return const Color(0xFF1F883D);
+      case ToolCallStatus.failed:
+        return const Color(0xFFD1242F);
+    }
+  }
+
+  IconData _statusIcon(ToolCallStatus s) {
+    switch (s) {
+      case ToolCallStatus.pending:
+        return Icons.schedule_outlined;
+      case ToolCallStatus.running:
+        return Icons.hourglass_top_rounded;
+      case ToolCallStatus.success:
+        return Icons.check_circle_outline_rounded;
+      case ToolCallStatus.failed:
+        return Icons.error_outline_rounded;
+    }
+  }
+
+  String _formatDuration(Duration d) {
+    final l10n = AppLocalizations.of(context);
+    if (d.inSeconds < 1) return l10n.toolCallDurationMs(d.inMilliseconds);
+    return l10n.toolCallDurationSec(d.inSeconds.toString());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tc = widget.toolCall;
+    final l10n = AppLocalizations.of(context);
+    final color = _statusColor(tc.status);
+    final icon = _statusIcon(tc.status);
+
+    final statusText = switch (tc.status) {
+      ToolCallStatus.pending => l10n.toolCallStatusPending,
+      ToolCallStatus.running => l10n.toolCallStatusRunning,
+      ToolCallStatus.success => l10n.toolCallStatusSuccess,
+      ToolCallStatus.failed => l10n.toolCallStatusFailed,
+    };
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F8FA),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+              child: Row(
+                children: [
+                  if (tc.status == ToolCallStatus.running)
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.6,
+                        valueColor: AlwaysStoppedAnimation(color),
+                      ),
+                    )
+                  else
+                    Icon(icon, size: 14, color: color),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      tc.name,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: color,
+                        fontFamily: 'monospace',
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    statusText,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: color,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (tc.isDone && tc.duration != null) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      _formatDuration(tc.duration!),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: 4),
+                  Icon(
+                    _expanded
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                    size: 16,
+                    color: color,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_expanded) _buildDetails(context, tc, l10n),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetails(BuildContext context, ToolCall tc, AppLocalizations l10n) {
+    final hasArgs = tc.arguments.trim().isNotEmpty;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Divider(height: 1, color: AppTheme.border),
+          const SizedBox(height: 6),
+          Text(
+            l10n.toolCallArguments,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Text(
+              hasArgs ? _prettyJson(tc.arguments) : l10n.toolCallNoArguments,
+              style: const TextStyle(
+                fontSize: 11,
+                fontFamily: 'monospace',
+                color: AppTheme.textPrimary,
+                height: 1.4,
+              ),
+            ),
+          ),
+          if (tc.isDone) ...[
+            const SizedBox(height: 8),
+            Text(
+              l10n.toolCallResult,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: tc.isFailed
+                    ? const Color(0xFFD1242F)
+                    : AppTheme.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: tc.isFailed
+                    ? const Color(0xFFFFF5F5)
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: tc.isFailed
+                      ? const Color(0xFFFFC1C1)
+                      : AppTheme.border,
+                ),
+              ),
+              child: Text(
+                (tc.result ?? '').isEmpty
+                    ? l10n.toolCallNoResult
+                    : tc.result!,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontFamily: 'monospace',
+                  color: tc.isFailed
+                      ? const Color(0xFF8B0000)
+                      : AppTheme.textPrimary,
+                  height: 1.4,
+                ),
+                maxLines: 20,
+                overflow: TextOverflow.fade,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _prettyJson(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return trimmed;
+    try {
+      final decoded = jsonDecode(trimmed);
+      return const JsonEncoder.withIndent('  ').convert(decoded);
+    } catch (_) {
+      return trimmed;
+    }
   }
 }
 
@@ -266,7 +526,6 @@ class _StreamingMarkdownState extends State<_StreamingMarkdown> {
     }
     final delta = widget.data.length - _rendered.length;
     if (delta > 64) {
-      // Big update, render immediately so the user sees progress.
       _throttle?.cancel();
       _rendered = widget.data;
     } else {
@@ -326,7 +585,8 @@ class _TypingIndicatorState extends State<_TypingIndicator>
             animation: _c,
             builder: (context, _) {
               final t = (_c.value + i * 0.2) % 1.0;
-              final opacity = 0.3 + 0.7 * (1 - (t - 0.5).abs() * 2).clamp(0.0, 1.0);
+              final opacity =
+                  0.3 + 0.7 * (1 - (t - 0.5).abs() * 2).clamp(0.0, 1.0);
               return Container(
                 margin: const EdgeInsets.symmetric(horizontal: 2),
                 width: 6,

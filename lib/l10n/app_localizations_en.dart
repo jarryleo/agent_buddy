@@ -314,6 +314,46 @@ class AppLocalizationsEn extends AppLocalizations {
   String get imageLoadFailed => 'Failed to load image';
 
   @override
+  String get toolCallArguments => 'Arguments';
+
+  @override
+  String get toolCallResult => 'Result';
+
+  @override
+  String get toolCallStatusPending => 'Pending';
+
+  @override
+  String get toolCallStatusRunning => 'Running';
+
+  @override
+  String get toolCallStatusSuccess => 'Success';
+
+  @override
+  String get toolCallStatusFailed => 'Failed';
+
+  @override
+  String toolCallDurationMs(int ms) {
+    return '$ms ms';
+  }
+
+  @override
+  String toolCallDurationSec(String sec) {
+    return '${sec}s';
+  }
+
+  @override
+  String get toolCallNoArguments => '(no arguments)';
+
+  @override
+  String get toolCallNoResult => '(no result)';
+
+  @override
+  String get toolCallExpand => 'Show details';
+
+  @override
+  String get toolCallCollapse => 'Hide details';
+
+  @override
   String get chatNoProvider =>
       'Please add and enable a model provider in settings first.';
 

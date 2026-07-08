@@ -102,6 +102,19 @@
   "codeCopied": "已复制",
   "imageLoadFailed": "图片加载失败",
 
+  "toolCallArguments": "参数",
+  "toolCallResult": "结果",
+  "toolCallStatusPending": "等待中",
+  "toolCallStatusRunning": "运行中",
+  "toolCallStatusSuccess": "成功",
+  "toolCallStatusFailed": "失败",
+  "toolCallDurationMs": "{ms} 毫秒",
+  "toolCallDurationSec": "{sec} 秒",
+  "toolCallNoArguments": "(无参数)",
+  "toolCallNoResult": "(无结果)",
+  "toolCallExpand": "展开详情",
+  "toolCallCollapse": "收起详情",
+
   "chatNoProvider": "请先在设置中添加并启用一个模型提供商。",
   "chatNoModel": "当前提供商没有可用模型,请先在设置中获取模型列表并选择一个模型。",
   "chatRequestFailed": "请求失败: {error}"
