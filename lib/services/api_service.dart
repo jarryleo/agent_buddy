@@ -635,9 +635,6 @@ class ApiService {
         case MessageRole.system:
           out.add({'role': 'system', 'content': m.content});
           break;
-        case MessageRole.tool:
-          out.add({'role': 'tool', 'content': m.content});
-          break;
       }
     }
     return out;
@@ -677,9 +674,6 @@ class ApiService {
           break;
         case MessageRole.system:
           // Anthropic uses top-level system; caller should pass via systemPrompt.
-          out.add({'role': 'user', 'content': m.content});
-          break;
-        case MessageRole.tool:
           out.add({'role': 'user', 'content': m.content});
           break;
       }

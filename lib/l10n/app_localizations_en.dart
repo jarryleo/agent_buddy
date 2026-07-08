@@ -251,6 +251,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Fetch the content of a URL and return the plain text of the page.';
 
   @override
+  String get toolCurrentTimeName => 'Current Time';
+
+  @override
+  String get toolCurrentTimeDescription =>
+      'Get the current date and time as local time, ISO 8601, and Unix timestamp.';
+
+  @override
   String get skillListEmpty =>
       'No skills added yet.\nSkills provide extra instructions to the AI during chat.\nTap \"Add\" in the bottom right to start.';
 

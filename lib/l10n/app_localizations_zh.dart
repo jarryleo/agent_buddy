@@ -242,6 +242,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolFetchWebDescription => '获取指定网址的内容,返回网页的纯文本。';
 
   @override
+  String get toolCurrentTimeName => '当前时间';
+
+  @override
+  String get toolCurrentTimeDescription =>
+      '获取当前日期与时间,返回本地时间、ISO 8601 与 Unix 时间戳。';
+
+  @override
   String get skillListEmpty =>
       '还没有添加任何技能\n技能可在对话时为 AI 提供额外的能力说明\n点击右下角\"新增\"开始';
 

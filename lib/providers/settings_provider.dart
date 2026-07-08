@@ -62,16 +62,39 @@ class SettingsProvider extends ChangeNotifier {
     _activeToolIds = _storage.activeToolIds.toSet();
     _activeSkillIds = _storage.activeSkillIds.toSet();
 
+    // Seed built-in tools. Fresh installs hit the `isEmpty` branch and
+    // get every builtin; existing installs hit the second branch which
+    // back-fills any builtin that's missing (e.g. a user upgrading
+    // from a build that didn't have `current_time`).
     if (_tools.isEmpty) {
       _tools = [
-        AgentTool(
-          id: BuiltinTool.fetchWeb.id,
-          name: BuiltinTool.fetchWeb.name,
-          description: BuiltinTool.fetchWeb.description,
-          enabled: true,
-        ),
+        for (final b in BuiltinTool.values)
+          AgentTool(
+            id: b.id,
+            name: b.name,
+            description: b.description,
+            enabled: true,
+          ),
       ];
       await _storage.saveTools(_tools);
+    } else {
+      final existingIds = _tools.map((t) => t.id).toSet();
+      var changed = false;
+      for (final b in BuiltinTool.values) {
+        if (!existingIds.contains(b.id)) {
+          _tools = [
+            ..._tools,
+            AgentTool(
+              id: b.id,
+              name: b.name,
+              description: b.description,
+              enabled: true,
+            ),
+          ];
+          changed = true;
+        }
+      }
+      if (changed) await _storage.saveTools(_tools);
     }
 
     // Default active provider = first enabled
@@ -84,10 +107,26 @@ class SettingsProvider extends ChangeNotifier {
       await _storage.setActiveProviderId(_activeProviderId);
     }
 
-    // Default active tool: fetch_web
+    // Default active tools: every built-in tool, so the user gets
+    // them out of the box without having to toggle anything on.
+    // For existing installs, only backfill builtins that aren't in
+    // the list yet — that way a user who explicitly turned something
+    // off keeps it off, while a newly-shipped builtin (e.g. upgrading
+    // from a build that didn't have `current_time`) is enabled.
     if (_activeToolIds.isEmpty) {
-      _activeToolIds = {BuiltinTool.fetchWeb.id};
+      _activeToolIds = {for (final b in BuiltinTool.values) b.id};
       await _storage.setActiveToolIds(_activeToolIds.toList());
+    } else {
+      var changed = false;
+      for (final b in BuiltinTool.values) {
+        if (!_activeToolIds.contains(b.id)) {
+          _activeToolIds.add(b.id);
+          changed = true;
+        }
+      }
+      if (changed) {
+        await _storage.setActiveToolIds(_activeToolIds.toList());
+      }
     }
 
     notifyListeners();

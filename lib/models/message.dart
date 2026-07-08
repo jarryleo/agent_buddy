@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-enum MessageRole { user, assistant, system, tool }
+enum MessageRole { user, assistant, system }
 
 extension MessageRoleX on MessageRole {
   String get label {
@@ -11,8 +11,6 @@ extension MessageRoleX on MessageRole {
         return 'assistant';
       case MessageRole.system:
         return 'system';
-      case MessageRole.tool:
-        return 'tool';
     }
   }
 }

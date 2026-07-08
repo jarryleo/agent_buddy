@@ -28,8 +28,16 @@ class ToolsTab extends StatelessWidget {
         itemBuilder: (context, index) {
           final t = tools[index];
           final active = settings.activeToolIds.contains(t.id);
-          final name = t.id == 'fetch_web' ? l10n.toolFetchWebName : t.name;
-          final description = t.id == 'fetch_web' ? l10n.toolFetchWebDescription : t.description;
+          final name = switch (t.id) {
+            'fetch_web' => l10n.toolFetchWebName,
+            'current_time' => l10n.toolCurrentTimeName,
+            _ => t.name,
+          };
+          final description = switch (t.id) {
+            'fetch_web' => l10n.toolFetchWebDescription,
+            'current_time' => l10n.toolCurrentTimeDescription,
+            _ => t.description,
+          };
           return Material(
             color: AppTheme.surface,
             borderRadius: BorderRadius.circular(14),

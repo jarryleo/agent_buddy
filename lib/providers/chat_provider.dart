@@ -66,24 +66,40 @@ class ChatProvider extends ChangeNotifier {
     final tools = _settings.activeTools;
     final list = <Map<String, dynamic>>[];
     for (final t in tools) {
-      if (t.id == 'fetch_web') {
-        list.add({
-          'type': 'function',
-          'function': {
-            'name': 'fetch_web',
-            'description': t.description,
-            'parameters': {
-              'type': 'object',
-              'properties': {
-                'url': {
-                  'type': 'string',
-                  'description': '要获取的网址,必须包含协议 (http:// 或 https://)',
+      switch (t.id) {
+        case 'fetch_web':
+          list.add({
+            'type': 'function',
+            'function': {
+              'name': 'fetch_web',
+              'description': t.description,
+              'parameters': {
+                'type': 'object',
+                'properties': {
+                  'url': {
+                    'type': 'string',
+                    'description': '要获取的网址,必须包含协议 (http:// 或 https://)',
+                  },
                 },
+                'required': ['url'],
               },
-              'required': ['url'],
             },
-          },
-        });
+          });
+          break;
+        case 'current_time':
+          list.add({
+            'type': 'function',
+            'function': {
+              'name': 'current_time',
+              'description': t.description,
+              'parameters': {
+                'type': 'object',
+                'properties': const <String, dynamic>{},
+                'additionalProperties': false,
+              },
+            },
+          });
+          break;
       }
     }
     return list;
@@ -100,6 +116,8 @@ class ChatProvider extends ChangeNotifier {
           throw ToolException('url is required');
         }
         return await _tools.fetchWeb(url);
+      case 'current_time':
+        return await _tools.currentTime();
       default:
         throw ToolException('unknown tool: $name');
     }

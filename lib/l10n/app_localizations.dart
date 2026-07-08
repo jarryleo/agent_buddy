@@ -536,6 +536,18 @@ abstract class AppLocalizations {
   /// **'Fetch the content of a URL and return the plain text of the page.'**
   String get toolFetchWebDescription;
 
+  /// No description provided for @toolCurrentTimeName.
+  ///
+  /// In en, this message translates to:
+  /// **'Current Time'**
+  String get toolCurrentTimeName;
+
+  /// No description provided for @toolCurrentTimeDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Get the current date and time as local time, ISO 8601, and Unix timestamp.'**
+  String get toolCurrentTimeDescription;
+
   /// No description provided for @skillListEmpty.
   ///
   /// In en, this message translates to:

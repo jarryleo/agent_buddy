@@ -2,6 +2,7 @@ import 'dart:convert';
 
 enum BuiltinTool {
   fetchWeb,
+  currentTime,
 }
 
 extension BuiltinToolX on BuiltinTool {
@@ -9,6 +10,8 @@ extension BuiltinToolX on BuiltinTool {
     switch (this) {
       case BuiltinTool.fetchWeb:
         return 'fetch_web';
+      case BuiltinTool.currentTime:
+        return 'current_time';
     }
   }
 
@@ -16,6 +19,8 @@ extension BuiltinToolX on BuiltinTool {
     switch (this) {
       case BuiltinTool.fetchWeb:
         return 'Fetch Web';
+      case BuiltinTool.currentTime:
+        return 'Current Time';
     }
   }
 
@@ -23,6 +28,8 @@ extension BuiltinToolX on BuiltinTool {
     switch (this) {
       case BuiltinTool.fetchWeb:
         return '获取指定网址的内容,返回网页的纯文本。';
+      case BuiltinTool.currentTime:
+        return '获取当前日期与时间,返回本地时间、ISO 8601 与 Unix 时间戳。';
     }
   }
 }
