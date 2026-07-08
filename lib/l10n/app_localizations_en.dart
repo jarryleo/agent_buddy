@@ -297,6 +297,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatInputHintNoModel => 'Please add a model in settings first';
 
   @override
+  String get imageAttachTooltip => 'Attach image';
+
+  @override
+  String get imagePickGallery => 'Choose from gallery';
+
+  @override
+  String get imagePickCamera => 'Take a photo';
+
+  @override
+  String get imageRemoveTooltip => 'Remove image';
+
+  @override
+  String imageErrorFailedToAttach(String error) {
+    return 'Failed to attach image: $error';
+  }
+
+  @override
   String get messageThinking => 'Thinking';
 
   @override

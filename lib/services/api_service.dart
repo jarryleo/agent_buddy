@@ -72,7 +72,18 @@ class ChatRequestMessage {
   final MessageRole role;
   final String content;
   final String thinking;
-  const ChatRequestMessage({required this.role, required this.content, this.thinking = ''});
+
+  /// Pre-converted `data:image/...;base64,...` URLs for any images
+  /// attached to a user message. Empty for text-only messages and for
+  /// non-user roles.
+  final List<String> imageDataUrls;
+
+  const ChatRequestMessage({
+    required this.role,
+    required this.content,
+    this.thinking = '',
+    this.imageDataUrls = const [],
+  });
 }
 
 class ApiService {
@@ -602,7 +613,21 @@ class ApiService {
     for (final m in messages) {
       switch (m.role) {
         case MessageRole.user:
-          out.add({'role': 'user', 'content': m.content});
+          if (m.imageDataUrls.isNotEmpty) {
+            final parts = <Map<String, dynamic>>[];
+            if (m.content.isNotEmpty) {
+              parts.add({'type': 'text', 'text': m.content});
+            }
+            for (final url in m.imageDataUrls) {
+              parts.add({
+                'type': 'image_url',
+                'image_url': {'url': url},
+              });
+            }
+            out.add({'role': 'user', 'content': parts});
+          } else {
+            out.add({'role': 'user', 'content': m.content});
+          }
           break;
         case MessageRole.assistant:
           out.add({'role': 'assistant', 'content': m.content});
@@ -623,7 +648,29 @@ class ApiService {
     for (final m in messages) {
       switch (m.role) {
         case MessageRole.user:
-          out.add({'role': 'user', 'content': m.content});
+          if (m.imageDataUrls.isNotEmpty) {
+            final parts = <Map<String, dynamic>>[];
+            if (m.content.isNotEmpty) {
+              parts.add({'type': 'text', 'text': m.content});
+            }
+            for (final url in m.imageDataUrls) {
+              // OpenAI-style data URLs (`data:image/...;base64,...`)
+              // round-trip into Anthropic's expected source object.
+              final mediaType = _mediaTypeFromDataUrl(url);
+              final data = _dataFromDataUrl(url);
+              parts.add({
+                'type': 'image',
+                'source': {
+                  'type': 'base64',
+                  'media_type': mediaType,
+                  'data': data,
+                },
+              });
+            }
+            out.add({'role': 'user', 'content': parts});
+          } else {
+            out.add({'role': 'user', 'content': m.content});
+          }
           break;
         case MessageRole.assistant:
           out.add({'role': 'assistant', 'content': m.content});
@@ -638,6 +685,22 @@ class ApiService {
       }
     }
     return out;
+  }
+
+  String _mediaTypeFromDataUrl(String dataUrl) {
+    final commaIdx = dataUrl.indexOf(',');
+    if (dataUrl.startsWith('data:') && commaIdx > 5) {
+      final meta = dataUrl.substring(5, commaIdx);
+      final semi = meta.indexOf(';');
+      if (semi > 0) return meta.substring(0, semi);
+    }
+    return 'image/jpeg';
+  }
+
+  String _dataFromDataUrl(String dataUrl) {
+    final commaIdx = dataUrl.indexOf(',');
+    if (commaIdx < 0) return dataUrl;
+    return dataUrl.substring(commaIdx + 1);
   }
 }
 

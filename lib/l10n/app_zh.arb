@@ -94,6 +94,11 @@
 
   "chatInputHint": "说点什么…",
   "chatInputHintNoModel": "请先在设置中添加模型",
+  "imageAttachTooltip": "添加图片",
+  "imagePickGallery": "从相册选择",
+  "imagePickCamera": "拍照",
+  "imageRemoveTooltip": "移除图片",
+  "imageErrorFailedToAttach": "添加图片失败: {error}",
 
   "messageThinking": "思考过程",
   "messageErrorPrefix": "出错了: {error}",

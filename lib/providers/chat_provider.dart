@@ -6,18 +6,26 @@ import 'package:uuid/uuid.dart';
 import '../l10n/app_localizations.dart';
 import '../models/message.dart';
 import '../services/api_service.dart';
+import '../services/image_service.dart';
 import '../services/storage_service.dart';
 import '../services/tool_service.dart';
 import 'settings_provider.dart';
 
 class ChatProvider extends ChangeNotifier {
-  ChatProvider(this._storage, this._api, this._tools, this._settings) {
+  ChatProvider(
+    this._storage,
+    this._api,
+    this._tools,
+    this._images,
+    this._settings,
+  ) {
     _messages = _storage.loadMessages();
   }
 
   final StorageService _storage;
   final ApiService _api;
   final ToolService _tools;
+  final ImageService _images;
   final SettingsProvider _settings;
   final _uuid = const Uuid();
 
@@ -97,10 +105,14 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> sendMessage(BuildContext context, String text) async {
+  Future<void> sendMessage(
+    BuildContext context,
+    String text, {
+    List<String> imagePaths = const [],
+  }) async {
     final l10n = AppLocalizations.of(context);
     final trimmed = text.trim();
-    if (trimmed.isEmpty || _sending) return;
+    if ((trimmed.isEmpty && imagePaths.isEmpty) || _sending) return;
     final provider = _settings.activeProvider;
     if (provider == null) {
       _messages = [
@@ -135,6 +147,7 @@ class ChatProvider extends ChangeNotifier {
       id: _uuid.v4(),
       role: MessageRole.user,
       content: trimmed,
+      imagePaths: List.unmodifiable(imagePaths),
     );
     final assistantId = _uuid.v4();
     final assistantMsg = ChatMessage(
@@ -148,13 +161,35 @@ class ChatProvider extends ChangeNotifier {
     await _storage.saveMessages(_messages);
     notifyListeners();
 
-    final requestMessages = _messages
-        .where((m) =>
-            m.id != assistantId &&
-            (m.role == MessageRole.user || m.role == MessageRole.assistant) &&
-            m.content.isNotEmpty)
-        .map((m) => ChatRequestMessage(role: m.role, content: m.content))
-        .toList();
+    // Build request messages, converting any local image paths to
+    // base64 data URLs just-in-time so we don't keep huge blobs in
+    // memory. The user message's text (if any) is preserved; if the
+    // user sent only images, the API will receive an image-only
+    // content array which both OpenAI and Anthropic accept.
+    final requestMessages = <ChatRequestMessage>[];
+    for (final m in _messages) {
+      if (m.id == assistantId) continue;
+      if (m.role != MessageRole.user && m.role != MessageRole.assistant) {
+        continue;
+      }
+      if (m.content.isEmpty && m.imagePaths.isEmpty) continue;
+      final dataUrls = <String>[];
+      for (final path in m.imagePaths) {
+        try {
+          dataUrls.add(await _images.toBase64DataUrl(path));
+        } catch (e) {
+          // Skip this image silently rather than failing the whole
+          // turn; the user can re-send if needed.
+        }
+      }
+      requestMessages.add(
+        ChatRequestMessage(
+          role: m.role,
+          content: m.content,
+          imageDataUrls: dataUrls,
+        ),
+      );
+    }
 
     final systemPrompt = _buildSystemPrompt();
     final tools = _buildToolsSchema();

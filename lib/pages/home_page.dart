@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/chat_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/image_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat_input.dart';
 import '../widgets/message_bubble.dart';
@@ -151,8 +152,9 @@ class _HomePageState extends State<HomePage> {
                       (provider.selectedModel != null || provider.models.isNotEmpty);
                   return ChatInput(
                     enabled: provider != null && hasModel && !chat.sending,
-                    onSend: (text) {
-                      chat.sendMessage(context, text);
+                    imageService: context.read<ImageService>(),
+                    onSend: (text, imagePaths) {
+                      chat.sendMessage(context, text, imagePaths: imagePaths);
                     },
                   );
                 },

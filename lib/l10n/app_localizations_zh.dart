@@ -287,6 +287,23 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatInputHintNoModel => '请先在设置中添加模型';
 
   @override
+  String get imageAttachTooltip => '添加图片';
+
+  @override
+  String get imagePickGallery => '从相册选择';
+
+  @override
+  String get imagePickCamera => '拍照';
+
+  @override
+  String get imageRemoveTooltip => '移除图片';
+
+  @override
+  String imageErrorFailedToAttach(String error) {
+    return '添加图片失败: $error';
+  }
+
+  @override
   String get messageThinking => '思考过程';
 
   @override

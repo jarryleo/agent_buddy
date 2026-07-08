@@ -104,6 +104,11 @@ class ChatMessage {
   final bool streaming;
   final List<ToolCall> toolCalls;
 
+  /// Absolute local file paths for images attached to this message.
+  /// Empty for messages without images. The files live in the app's
+  /// documents directory and persist across app restarts.
+  final List<String> imagePaths;
+
   ChatMessage({
     required this.id,
     required this.role,
@@ -112,6 +117,7 @@ class ChatMessage {
     DateTime? createdAt,
     this.streaming = false,
     this.toolCalls = const [],
+    this.imagePaths = const [],
   }) : createdAt = createdAt ?? DateTime.now();
 
   ChatMessage copyWith({
@@ -120,6 +126,7 @@ class ChatMessage {
     String? thinking,
     bool? streaming,
     List<ToolCall>? toolCalls,
+    List<String>? imagePaths,
   }) {
     return ChatMessage(
       id: id,
@@ -129,6 +136,7 @@ class ChatMessage {
       createdAt: createdAt,
       streaming: streaming ?? this.streaming,
       toolCalls: toolCalls ?? this.toolCalls,
+      imagePaths: imagePaths ?? this.imagePaths,
     );
   }
 
@@ -139,10 +147,12 @@ class ChatMessage {
         'thinking': thinking,
         'createdAt': createdAt.toIso8601String(),
         'toolCalls': toolCalls.map((t) => t.toJson()).toList(),
+        'imagePaths': imagePaths,
       };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     final tcRaw = json['toolCalls'] as List?;
+    final imgRaw = json['imagePaths'] as List?;
     return ChatMessage(
       id: json['id'] as String,
       role: MessageRole.values.firstWhere(
@@ -158,6 +168,7 @@ class ChatMessage {
           : tcRaw
               .map((e) => ToolCall.fromJson(e as Map<String, dynamic>))
               .toList(),
+      imagePaths: imgRaw?.cast<String>() ?? const [],
     );
   }
 

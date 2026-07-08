@@ -135,6 +135,16 @@
 
   "chatInputHint": "Say something…",
   "chatInputHintNoModel": "Please add a model in settings first",
+  "imageAttachTooltip": "Attach image",
+  "imagePickGallery": "Choose from gallery",
+  "imagePickCamera": "Take a photo",
+  "imageRemoveTooltip": "Remove image",
+  "imageErrorFailedToAttach": "Failed to attach image: {error}",
+  "@imageErrorFailedToAttach": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
 
   "messageThinking": "Thinking",
   "messageErrorPrefix": "Error: {error}",

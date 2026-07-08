@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../l10n/app_localizations.dart';
 import '../models/message.dart';
 import '../theme/app_theme.dart';
+import 'image_preview.dart';
 import 'markdown_content.dart';
 
 class MessageBubble extends StatefulWidget {
@@ -94,6 +96,7 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _buildUser(BuildContext context, ChatMessage m) {
+    final hasImages = m.imagePaths.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.fromLTRB(48, 4, 12, 4),
       child: Row(
@@ -101,26 +104,75 @@ class _MessageBubbleState extends State<MessageBubble> {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Flexible(
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppTheme.bubbleUser,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  topRight: Radius.circular(16),
-                  bottomLeft: Radius.circular(16),
-                  bottomRight: Radius.circular(4),
-                ),
-              ),
-              child: Text(
-                m.content,
-                style: const TextStyle(
-                    color: Colors.white, fontSize: 15, height: 1.4),
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (hasImages) _buildUserImages(context, m.imagePaths),
+                if (hasImages && m.content.isNotEmpty) const SizedBox(height: 6),
+                if (m.content.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.bubbleUser,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(16),
+                        topRight: Radius.circular(16),
+                        bottomLeft: Radius.circular(16),
+                        bottomRight: Radius.circular(4),
+                      ),
+                    ),
+                    child: Text(
+                      m.content,
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 15, height: 1.4),
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildUserImages(BuildContext context, List<String> paths) {
+    final maxWidth = MediaQuery.of(context).size.width * 0.65;
+    final thumbSize = paths.length == 1 ? 160.0 : 88.0;
+    final crossAxisCount = paths.length == 1 ? 1 : (paths.length >= 3 ? 2 : paths.length);
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          mainAxisSpacing: 4,
+          crossAxisSpacing: 4,
+          childAspectRatio: 1,
+        ),
+        itemCount: paths.length,
+        itemBuilder: (context, index) {
+          final path = paths[index];
+          return GestureDetector(
+            onTap: () => ImagePreviewPage.showLocal(context, path),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.file(
+                File(path),
+                width: thumbSize,
+                height: thumbSize,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stack) => Container(
+                  color: AppTheme.bg,
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.broken_image_outlined,
+                      color: AppTheme.textSecondary),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

@@ -8,6 +8,7 @@ import 'pages/home_page.dart';
 import 'providers/chat_provider.dart';
 import 'providers/settings_provider.dart';
 import 'services/api_service.dart';
+import 'services/image_service.dart';
 import 'services/storage_service.dart';
 import 'services/tool_service.dart';
 import 'theme/app_theme.dart';
@@ -37,16 +38,18 @@ class AgentBuddyApp extends StatelessWidget {
         ),
         Provider<ApiService>(create: (_) => ApiService()),
         Provider<ToolService>(create: (_) => ToolService()),
-        ChangeNotifierProxyProvider3<SettingsProvider, ApiService, ToolService,
-            ChatProvider>(
+        Provider<ImageService>(create: (_) => ImageService()),
+        ChangeNotifierProxyProvider4<SettingsProvider, ApiService, ToolService,
+            ImageService, ChatProvider>(
           create: (ctx) => ChatProvider(
             storage,
             ctx.read<ApiService>(),
             ctx.read<ToolService>(),
+            ctx.read<ImageService>(),
             ctx.read<SettingsProvider>(),
           ),
-          update: (ctx, settings, api, tools, prev) =>
-              prev ?? ChatProvider(storage, api, tools, settings),
+          update: (ctx, settings, api, tools, images, prev) =>
+              prev ?? ChatProvider(storage, api, tools, images, settings),
         ),
       ],
       child: MaterialApp(

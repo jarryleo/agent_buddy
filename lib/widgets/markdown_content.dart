@@ -151,7 +151,7 @@ class MarkdownContent extends StatelessWidget {
               )
             : Image.asset(uri.toString(), fit: BoxFit.contain);
         return GestureDetector(
-          onTap: isNetwork ? () => ImagePreviewPage.show(context, uri.toString(), title: title) : null,
+          onTap: isNetwork ? () => ImagePreviewPage.showNetwork(context, uri.toString(), title: title) : null,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(6),
             child: ConstrainedBox(

@@ -620,6 +620,36 @@ abstract class AppLocalizations {
   /// **'Please add a model in settings first'**
   String get chatInputHintNoModel;
 
+  /// No description provided for @imageAttachTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Attach image'**
+  String get imageAttachTooltip;
+
+  /// No description provided for @imagePickGallery.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose from gallery'**
+  String get imagePickGallery;
+
+  /// No description provided for @imagePickCamera.
+  ///
+  /// In en, this message translates to:
+  /// **'Take a photo'**
+  String get imagePickCamera;
+
+  /// No description provided for @imageRemoveTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove image'**
+  String get imageRemoveTooltip;
+
+  /// No description provided for @imageErrorFailedToAttach.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to attach image: {error}'**
+  String imageErrorFailedToAttach(String error);
+
   /// No description provided for @messageThinking.
   ///
   /// In en, this message translates to:
