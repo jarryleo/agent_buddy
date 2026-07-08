@@ -187,6 +187,19 @@ Win32Window::MessageHandler(HWND hwnd,
       }
       return 0;
 
+    case WM_GETMINMAXINFO: {
+      // Enforce a minimum drag-resize size so the phone-shaped UI never
+      // collapses below a usable size. min_width_/min_height_ are in
+      // logical pixels; ptMinTrackSize is in physical pixels, so scale.
+      auto info = reinterpret_cast<MINMAXINFO*>(lparam);
+      HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+      UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
+      double scale_factor = dpi / 96.0;
+      info->ptMinTrackSize.x = Scale(min_width_, scale_factor);
+      info->ptMinTrackSize.y = Scale(min_height_, scale_factor);
+      return 0;
+    }
+
     case WM_DPICHANGED: {
       auto newRectSize = reinterpret_cast<RECT*>(lparam);
       LONG newWidth = newRectSize->right - newRectSize->left;
@@ -261,6 +274,11 @@ HWND Win32Window::GetHandle() {
 
 void Win32Window::SetQuitOnClose(bool quit_on_close) {
   quit_on_close_ = quit_on_close;
+}
+
+void Win32Window::SetMinimumSize(int width, int height) {
+  if (width > 0) min_width_ = width;
+  if (height > 0) min_height_ = height;
 }
 
 bool Win32Window::OnCreate() {
