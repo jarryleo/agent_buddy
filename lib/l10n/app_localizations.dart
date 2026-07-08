@@ -632,6 +632,24 @@ abstract class AppLocalizations {
   /// **'Error: {error}'**
   String messageErrorPrefix(String error);
 
+  /// No description provided for @codeCopy.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get codeCopy;
+
+  /// No description provided for @codeCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied'**
+  String get codeCopied;
+
+  /// No description provided for @imageLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load image'**
+  String get imageLoadFailed;
+
   /// No description provided for @chatNoProvider.
   ///
   /// In en, this message translates to:

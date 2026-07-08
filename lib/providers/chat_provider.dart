@@ -239,13 +239,21 @@ class ChatProvider extends ChangeNotifier {
       if (!completer.isCompleted) completer.complete();
     });
 
-    // Throttle persistence + notify: at most every 200ms
+    // Throttle notifyListeners to ~80ms during streaming and debounce
+    // persistence to 300ms, so we don't trigger excessive rebuilds while
+    // the AI is streaming tokens.
     Timer? persistTimer;
+    Timer? notifyTimer;
     controller.stream.listen((_) {
       if (_disposed) return;
-      notifyListeners();
+      if (notifyTimer == null) {
+        notifyListeners();
+        notifyTimer = Timer(const Duration(milliseconds: 80), () {
+          notifyTimer = null;
+        });
+      }
       persistTimer?.cancel();
-      persistTimer = Timer(const Duration(milliseconds: 200), () {
+      persistTimer = Timer(const Duration(milliseconds: 300), () {
         if (_disposed) return;
         _storage.saveMessages(_messages);
       });

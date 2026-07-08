@@ -144,6 +144,10 @@
     }
   },
 
+  "codeCopy": "Copy",
+  "codeCopied": "Copied",
+  "imageLoadFailed": "Failed to load image",
+
   "chatNoProvider": "Please add and enable a model provider in settings first.",
   "chatNoModel": "No model is available for the current provider. Please fetch and select a model in settings.",
   "chatRequestFailed": "Request failed: {error}",

@@ -305,6 +305,15 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get codeCopy => 'Copy';
+
+  @override
+  String get codeCopied => 'Copied';
+
+  @override
+  String get imageLoadFailed => 'Failed to load image';
+
+  @override
   String get chatNoProvider =>
       'Please add and enable a model provider in settings first.';
 

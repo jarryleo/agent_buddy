@@ -1,10 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:intl/intl.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/message.dart';
 import '../theme/app_theme.dart';
+import 'markdown_content.dart';
 
 class MessageBubble extends StatefulWidget {
   const MessageBubble({super.key, required this.message, required this.onCopy});
@@ -85,22 +87,7 @@ class _MessageBubbleState extends State<MessageBubble> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  MarkdownBody(
-                    data: m.content.isEmpty ? ' ' : m.content,
-                    styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-                      p: const TextStyle(fontSize: 15, height: 1.5, color: AppTheme.textPrimary),
-                      code: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 13,
-                        backgroundColor: Color(0xFFF0F1F4),
-                      ),
-                      codeblockDecoration: BoxDecoration(
-                        color: const Color(0xFFF6F8FA),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppTheme.border),
-                      ),
-                    ),
-                  ),
+                  _StreamingMarkdown(data: m.content, streaming: m.streaming),
                   if (m.streaming) const _TypingIndicator(),
                 ],
               ),
@@ -194,6 +181,68 @@ class _MessageBubbleState extends State<MessageBubble> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Renders markdown, with throttled re-render while [streaming] is true to
+/// avoid re-parsing the entire block on every token during AI streaming.
+class _StreamingMarkdown extends StatefulWidget {
+  const _StreamingMarkdown({required this.data, required this.streaming});
+
+  final String data;
+  final bool streaming;
+
+  @override
+  State<_StreamingMarkdown> createState() => _StreamingMarkdownState();
+}
+
+class _StreamingMarkdownState extends State<_StreamingMarkdown> {
+  String _rendered = '';
+  Timer? _throttle;
+
+  @override
+  void initState() {
+    super.initState();
+    _rendered = widget.data;
+  }
+
+  @override
+  void didUpdateWidget(covariant _StreamingMarkdown old) {
+    super.didUpdateWidget(old);
+    if (!widget.streaming) {
+      _throttle?.cancel();
+      _rendered = widget.data;
+      return;
+    }
+    final delta = widget.data.length - _rendered.length;
+    if (delta > 64) {
+      // Big update, render immediately so the user sees progress.
+      _throttle?.cancel();
+      _rendered = widget.data;
+    } else {
+      _throttle?.cancel();
+      _throttle = Timer(const Duration(milliseconds: 120), () {
+        if (!mounted) return;
+        setState(() => _rendered = widget.data);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _throttle?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = _rendered.isEmpty ? ' ' : _rendered;
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 80),
+      curve: Curves.easeOut,
+      alignment: Alignment.topLeft,
+      child: MarkdownContent(data: text),
     );
   }
 }

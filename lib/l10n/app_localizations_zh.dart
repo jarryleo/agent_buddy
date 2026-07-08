@@ -295,6 +295,15 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get codeCopy => '复制';
+
+  @override
+  String get codeCopied => '已复制';
+
+  @override
+  String get imageLoadFailed => '图片加载失败';
+
+  @override
   String get chatNoProvider => '请先在设置中添加并启用一个模型提供商。';
 
   @override
