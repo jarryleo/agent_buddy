@@ -1,0 +1,58 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+
+import 'pages/home_page.dart';
+import 'providers/chat_provider.dart';
+import 'providers/settings_provider.dart';
+import 'services/api_service.dart';
+import 'services/storage_service.dart';
+import 'services/tool_service.dart';
+import 'theme/app_theme.dart';
+import 'widgets/phone_frame.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.dark,
+  ));
+  final storage = StorageService();
+  await storage.init();
+  runApp(AgentBuddyApp(storage: storage));
+}
+
+class AgentBuddyApp extends StatelessWidget {
+  const AgentBuddyApp({super.key, required this.storage});
+  final StorageService storage;
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (_) => SettingsProvider(storage)..load(),
+        ),
+        Provider<ApiService>(create: (_) => ApiService()),
+        Provider<ToolService>(create: (_) => ToolService()),
+        ChangeNotifierProxyProvider3<SettingsProvider, ApiService, ToolService,
+            ChatProvider>(
+          create: (ctx) => ChatProvider(
+            storage,
+            ctx.read<ApiService>(),
+            ctx.read<ToolService>(),
+            ctx.read<SettingsProvider>(),
+          ),
+          update: (ctx, settings, api, tools, prev) =>
+              prev ?? ChatProvider(storage, api, tools, settings),
+        ),
+      ],
+      child: MaterialApp(
+        title: 'Agent Buddy',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light(),
+        home: const PhoneFrame(child: HomePage()),
+      ),
+    );
+  }
+}
