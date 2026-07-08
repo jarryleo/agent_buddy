@@ -22,12 +22,60 @@ class _MessageBubbleState extends State<MessageBubble> {
   bool _thinkingExpanded = false;
   static const int _thinkingCollapsedLines = 5;
   static const int _thinkingExpandedLines = 10;
+  static const double _autoScrollBottomTolerance = 24;
+
+  final ScrollController _thinkingScroll = ScrollController();
+  bool _thinkingAtBottom = true;
+  String _lastThinking = '';
+  int _lastExpandedLines = _thinkingCollapsedLines;
+
+  @override
+  void initState() {
+    super.initState();
+    _thinkingScroll.addListener(_onThinkingScroll);
+  }
+
+  @override
+  void dispose() {
+    _thinkingScroll.removeListener(_onThinkingScroll);
+    _thinkingScroll.dispose();
+    super.dispose();
+  }
+
+  void _onThinkingScroll() {
+    if (!_thinkingScroll.hasClients) return;
+    final pos = _thinkingScroll.position;
+    final atBottom = pos.pixels >= pos.maxScrollExtent - _autoScrollBottomTolerance;
+    if (atBottom != _thinkingAtBottom) {
+      _thinkingAtBottom = atBottom;
+    }
+  }
+
+  void _maybeAutoScrollThinking() {
+    if (!_thinkingAtBottom) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!_thinkingScroll.hasClients) return;
+      final pos = _thinkingScroll.position;
+      if (pos.pixels >= pos.maxScrollExtent - _autoScrollBottomTolerance) {
+        _thinkingScroll.jumpTo(pos.maxScrollExtent);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final m = widget.message;
     if (m.role == MessageRole.user) {
       return _buildUser(context, m);
+    }
+    final maxLines = _thinkingExpanded ? _thinkingExpandedLines : _thinkingCollapsedLines;
+    final thinkingChanged = m.thinking != _lastThinking;
+    final expandedChanged = maxLines != _lastExpandedLines;
+    if (thinkingChanged || expandedChanged) {
+      _lastThinking = m.thinking;
+      _lastExpandedLines = maxLines;
+      _maybeAutoScrollThinking();
     }
     return _buildAssistant(context, m);
   }
@@ -168,6 +216,7 @@ class _MessageBubbleState extends State<MessageBubble> {
           ConstrainedBox(
             constraints: BoxConstraints(maxHeight: 24.0 * maxLines + 8),
             child: SingleChildScrollView(
+              controller: _thinkingScroll,
               padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
               child: Text(
                 m.thinking,
