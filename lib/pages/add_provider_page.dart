@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/api_service.dart';
@@ -65,6 +66,7 @@ class _AddProviderPageState extends State<AddProviderPage> {
   Future<void> _test() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _busy = true);
+    final l10n = AppLocalizations.of(context);
     final api = ApiService();
     final tmp = ModelProvider(
       id: 'tmp',
@@ -79,7 +81,7 @@ class _AddProviderPageState extends State<AddProviderPage> {
     if (!mounted) return;
     setState(() => _busy = false);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(ok ? '✅ 连接成功' : '❌ 连接失败'),
+      content: Text(ok ? l10n.providerTestSuccess : l10n.providerTestFailed),
       behavior: SnackBarBehavior.floating,
     ));
   }
@@ -87,6 +89,7 @@ class _AddProviderPageState extends State<AddProviderPage> {
   Future<void> _fetchModels() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _busy = true);
+    final l10n = AppLocalizations.of(context);
     final api = ApiService();
     final tmp = ModelProvider(
       id: 'tmp',
@@ -106,13 +109,13 @@ class _AddProviderPageState extends State<AddProviderPage> {
         }
       });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('✅ 获取到 ${models.length} 个模型'),
+        content: Text(l10n.providerFetchSuccess(models.length)),
         behavior: SnackBarBehavior.floating,
       ));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('❌ 获取失败: $e'),
+        content: Text(l10n.providerFetchFailed(e.toString())),
         behavior: SnackBarBehavior.floating,
       ));
     } finally {
@@ -162,70 +165,71 @@ class _AddProviderPageState extends State<AddProviderPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.existing == null ? '新增提供商' : '编辑提供商'),
+        title: Text(widget.existing == null ? l10n.providerAddTitle : l10n.providerEditTitle),
       ),
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
           children: [
-            const _Label('协议'),
+            _Label(text: l10n.providerProtocol),
             SegmentedButton<ProviderProtocol>(
-              segments: const [
+              segments: [
                 ButtonSegment(
                   value: ProviderProtocol.openai,
-                  label: Text('OpenAI'),
-                  icon: Icon(Icons.api, size: 16),
+                  label: Text(l10n.providerProtocolOpenAI),
+                  icon: const Icon(Icons.api, size: 16),
                 ),
                 ButtonSegment(
                   value: ProviderProtocol.anthropic,
-                  label: Text('Anthropic'),
-                  icon: Icon(Icons.psychology_alt, size: 16),
+                  label: Text(l10n.providerProtocolAnthropic),
+                  icon: const Icon(Icons.psychology_alt, size: 16),
                 ),
               ],
               selected: {_protocol},
               onSelectionChanged: (s) => _onProtocolChange(s.first),
             ),
             const SizedBox(height: 16),
-            const _Label('名称'),
+            _Label(text: l10n.providerName),
             TextFormField(
               controller: _name,
-              decoration: const InputDecoration(hintText: '例如: OpenAI 官方'),
-              validator: (v) => (v == null || v.trim().isEmpty) ? '请输入名称' : null,
+              decoration: InputDecoration(hintText: l10n.providerNameHint),
+              validator: (v) => (v == null || v.trim().isEmpty) ? l10n.providerNameRequired : null,
             ),
             const SizedBox(height: 14),
-            const _Label('Base URL'),
+            _Label(text: l10n.providerBaseUrl),
             TextFormField(
               controller: _baseUrl,
-              decoration: const InputDecoration(hintText: 'https://api.openai.com'),
-              validator: (v) => (v == null || v.trim().isEmpty) ? '请输入 Base URL' : null,
+              decoration: InputDecoration(hintText: l10n.providerBaseUrlHint),
+              validator: (v) => (v == null || v.trim().isEmpty) ? l10n.providerBaseUrlRequired : null,
             ),
             const SizedBox(height: 14),
-            const _Label('API Key'),
+            _Label(text: l10n.providerApiKey),
             TextFormField(
               controller: _apiKey,
               obscureText: _obscure,
               decoration: InputDecoration(
-                hintText: 'sk-...',
+                hintText: l10n.providerApiKey,
                 suffixIcon: IconButton(
                   icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, size: 18),
                   onPressed: () => setState(() => _obscure = !_obscure),
                 ),
               ),
-              validator: (v) => (v == null || v.trim().isEmpty) ? '请输入 API Key' : null,
+              validator: (v) => (v == null || v.trim().isEmpty) ? l10n.providerApiKeyRequired : null,
             ),
             const SizedBox(height: 14),
-            const _Label('Chat Path'),
+            _Label(text: l10n.providerChatPath),
             TextFormField(
               controller: _chatPath,
               decoration: InputDecoration(
                 hintText: _protocol.defaultPath,
-                helperText: '已根据协议自动补全,通常无需修改',
+                helperText: l10n.providerChatPathHelper,
                 helperStyle: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
               ),
-              validator: (v) => (v == null || v.trim().isEmpty) ? '请输入 Chat Path' : null,
+              validator: (v) => (v == null || v.trim().isEmpty) ? l10n.providerChatPathRequired : null,
             ),
             const SizedBox(height: 16),
             Row(
@@ -234,7 +238,7 @@ class _AddProviderPageState extends State<AddProviderPage> {
                   child: OutlinedButton.icon(
                     onPressed: _busy ? null : _test,
                     icon: const Icon(Icons.wifi_tethering, size: 16),
-                    label: const Text('测试连接'),
+                    label: Text(l10n.providerTestConnection),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -242,14 +246,14 @@ class _AddProviderPageState extends State<AddProviderPage> {
                   child: OutlinedButton.icon(
                     onPressed: _busy ? null : _fetchModels,
                     icon: const Icon(Icons.refresh, size: 16),
-                    label: const Text('获取模型'),
+                    label: Text(l10n.providerFetchModels),
                   ),
                 ),
               ],
             ),
             if (_models.isNotEmpty) ...[
               const SizedBox(height: 18),
-              const _Label('选择默认模型'),
+              _Label(text: l10n.providerSelectModel),
               RadioGroup<String>(
                 groupValue: _selectedModel,
                 onChanged: (v) => setState(() => _selectedModel = v),
@@ -282,7 +286,7 @@ class _AddProviderPageState extends State<AddProviderPage> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
-                    : const Text('保存'),
+                    : Text(l10n.commonSave),
               ),
             ),
           ],
@@ -293,7 +297,7 @@ class _AddProviderPageState extends State<AddProviderPage> {
 }
 
 class _Label extends StatelessWidget {
-  const _Label(this.text);
+  const _Label({required this.text});
   final String text;
 
   @override

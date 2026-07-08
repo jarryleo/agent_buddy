@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_localizations.dart';
 import '../providers/chat_provider.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_theme.dart';
@@ -14,22 +15,23 @@ class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return DefaultTabController(
       length: 4,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('设置'),
+          title: Text(l10n.settingsTitle),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
             onPressed: () => Navigator.of(context).pop(),
           ),
-          bottom: const TabBar(
+          bottom: TabBar(
             isScrollable: false,
             tabs: [
-              Tab(text: 'Provider'),
-              Tab(text: 'Role'),
-              Tab(text: 'Tools'),
-              Tab(text: 'Skill'),
+              Tab(text: l10n.settingsTabProvider),
+              Tab(text: l10n.settingsTabRole),
+              Tab(text: l10n.settingsTabTools),
+              Tab(text: l10n.settingsTabSkill),
             ],
           ),
         ),

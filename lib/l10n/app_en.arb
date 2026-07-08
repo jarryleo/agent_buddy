@@ -1,0 +1,155 @@
+{
+  "@@locale": "en",
+  "appTitle": "Agent Buddy",
+  "commonAdd": "Add",
+  "commonSave": "Save",
+  "commonCancel": "Cancel",
+  "commonDelete": "Delete",
+  "commonEdit": "Edit",
+  "commonInUse": "In use",
+  "commonError": "Error",
+
+  "homeSettingsTooltip": "Settings",
+  "homeClearChatTooltip": "Clear chat",
+  "homeClearChatTitle": "Clear chat",
+  "homeClearChatMessage": "Clear all messages? This action cannot be undone.",
+  "homeClearChatConfirm": "Clear",
+  "homeEmptyTitle": "Agent Buddy",
+  "homeEmptySubtitle": "Tap the settings button in the top left to add a model provider and a role to start chatting.",
+  "homeNoModel": "No model configured",
+  "homeNoModelSelected": "No model selected",
+  "homeProviderModel": "{provider} · {model}",
+  "@homeProviderModel": {
+    "placeholders": {
+      "provider": { "type": "String" },
+      "model": { "type": "String" }
+    }
+  },
+  "homeCopied": "Copied",
+
+  "settingsTitle": "Settings",
+  "settingsTabProvider": "Provider",
+  "settingsTabRole": "Role",
+  "settingsTabTools": "Tools",
+  "settingsTabSkill": "Skill",
+
+  "providerListEmpty": "No model providers added yet.\nTap \"Add\" in the bottom right to start.",
+  "providerAddTitle": "Add Provider",
+  "providerEditTitle": "Edit Provider",
+  "providerProtocol": "Protocol",
+  "providerProtocolOpenAI": "OpenAI",
+  "providerProtocolAnthropic": "Anthropic",
+  "providerName": "Name",
+  "providerNameHint": "e.g. OpenAI Official",
+  "providerNameRequired": "Please enter a name",
+  "providerBaseUrl": "Base URL",
+  "providerBaseUrlHint": "https://api.openai.com",
+  "providerBaseUrlRequired": "Please enter a Base URL",
+  "providerApiKey": "API Key",
+  "providerApiKeyRequired": "Please enter an API Key",
+  "providerChatPath": "Chat Path",
+  "providerChatPathHelper": "Auto-filled based on protocol, usually no need to modify",
+  "providerChatPathRequired": "Please enter a Chat Path",
+  "providerTestConnection": "Test connection",
+  "providerFetchModels": "Fetch models",
+  "providerSelectModel": "Select default model",
+  "providerTesting": "Testing connection…",
+  "providerTestSuccess": "Connected successfully",
+  "providerTestFailed": "Connection failed, please check URL/API Key",
+  "providerFetching": "Fetching model list…",
+  "providerFetchSuccess": "Fetched {count} models",
+  "@providerFetchSuccess": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "providerFetchFailed": "Fetch failed: {error}",
+  "@providerFetchFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "providerModelCount": "{count} models",
+  "@providerModelCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "providerCurrentModel": "Current model: {model}",
+  "@providerCurrentModel": {
+    "placeholders": {
+      "model": { "type": "String" }
+    }
+  },
+  "providerSetAsDefault": "Set as default",
+  "providerTest": "Test",
+  "providerDeleteTitle": "Delete Provider",
+  "providerDeleteConfirm": "Delete \"{name}\"?",
+  "@providerDeleteConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+
+  "roleListEmpty": "No roles added yet.\nTap \"Add\" in the bottom right to create your first role.",
+  "roleAddTitle": "Add Role",
+  "roleEditTitle": "Edit Role",
+  "roleName": "Name",
+  "roleNameHint": "e.g. Translation assistant",
+  "roleNameRequired": "Please enter a role name",
+  "roleDescription": "Description",
+  "roleDescriptionHint": "A short description of what this role does",
+  "roleSystemPrompt": "System Prompt",
+  "roleSystemPromptHint": "Describe the role's identity, behavior, style and rules",
+  "roleUseRole": "Use this role",
+  "roleUnuseRole": "Stop using",
+  "roleDeleteTitle": "Delete Role",
+  "roleDeleteConfirm": "Delete \"{name}\"?",
+  "@roleDeleteConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+
+  "toolsListEmpty": "No built-in tools",
+  "toolFetchWebName": "Fetch Web",
+  "toolFetchWebDescription": "Fetch the content of a URL and return the plain text of the page.",
+
+  "skillListEmpty": "No skills added yet.\nSkills provide extra instructions to the AI during chat.\nTap \"Add\" in the bottom right to start.",
+  "skillAddTitle": "Add Skill",
+  "skillEditTitle": "Edit Skill",
+  "skillName": "Name",
+  "skillNameHint": "e.g. Code review",
+  "skillNameRequired": "Please enter a skill name",
+  "skillDescription": "Description",
+  "skillDescriptionHint": "A short description of what this skill does",
+  "skillContent": "Content (Markdown)",
+  "skillContentHint": "Skill content in Markdown format",
+  "skillDeleteTitle": "Delete Skill",
+  "skillDeleteConfirm": "Delete \"{name}\"?",
+  "@skillDeleteConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+
+  "chatInputHint": "Say something…",
+  "chatInputHintNoModel": "Please add a model in settings first",
+
+  "messageThinking": "Thinking",
+  "messageErrorPrefix": "Error: {error}",
+  "@messageErrorPrefix": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+
+  "chatNoProvider": "Please add and enable a model provider in settings first.",
+  "chatNoModel": "No model is available for the current provider. Please fetch and select a model in settings.",
+  "chatRequestFailed": "Request failed: {error}",
+  "@chatRequestFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  }
+}

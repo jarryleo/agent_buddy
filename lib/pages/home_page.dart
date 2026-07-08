@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_localizations.dart';
 import '../providers/chat_provider.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_theme.dart';
@@ -39,12 +40,13 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.settings_outlined),
-          tooltip: '设置',
+          tooltip: l10n.homeSettingsTooltip,
           onPressed: () {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const SettingsPage()),
@@ -55,10 +57,13 @@ class _HomePageState extends State<HomePage> {
           builder: (context, settings, _) {
             final provider = settings.activeProvider;
             final role = settings.activeRole;
-            final title = role?.name ?? 'Agent Buddy';
+            final title = role?.name ?? l10n.appTitle;
             final subtitle = provider == null
-                ? '未配置模型'
-                : '${provider.name} · ${provider.selectedModel ?? '未选模型'}';
+                ? l10n.homeNoModel
+                : l10n.homeProviderModel(
+                    provider.name,
+                    provider.selectedModel ?? l10n.homeNoModelSelected,
+                  );
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -76,7 +81,7 @@ class _HomePageState extends State<HomePage> {
           Consumer<ChatProvider>(
             builder: (context, chat, _) {
               return IconButton(
-                tooltip: '清空对话',
+                tooltip: l10n.homeClearChatTooltip,
                 icon: const Icon(Icons.delete_sweep_outlined),
                 onPressed: chat.messages.isEmpty
                     ? null
@@ -84,16 +89,16 @@ class _HomePageState extends State<HomePage> {
                         final confirm = await showDialog<bool>(
                           context: context,
                           builder: (ctx) => AlertDialog(
-                            title: const Text('清空对话'),
-                            content: const Text('确认清空所有消息?此操作不可撤销。'),
+                            title: Text(l10n.homeClearChatTitle),
+                            content: Text(l10n.homeClearChatMessage),
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.pop(ctx, false),
-                                child: const Text('取消'),
+                                child: Text(l10n.commonCancel),
                               ),
                               TextButton(
                                 onPressed: () => Navigator.pop(ctx, true),
-                                child: const Text('清空'),
+                                child: Text(l10n.homeClearChatConfirm),
                               ),
                             ],
                           ),
@@ -114,7 +119,7 @@ class _HomePageState extends State<HomePage> {
             children: [
               Expanded(
                 child: chat.messages.isEmpty
-                    ? const _EmptyState()
+                    ? _EmptyState(l10n: l10n)
                     : ListView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -127,9 +132,9 @@ class _HomePageState extends State<HomePage> {
                               await Clipboard.setData(ClipboardData(text: text));
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('已复制'),
-                                    duration: Duration(milliseconds: 1200),
+                                  SnackBar(
+                                    content: Text(l10n.homeCopied),
+                                    duration: const Duration(milliseconds: 1200),
                                   ),
                                 );
                               }
@@ -146,7 +151,7 @@ class _HomePageState extends State<HomePage> {
                   return ChatInput(
                     enabled: provider != null && hasModel && !chat.sending,
                     onSend: (text) {
-                      chat.sendMessage(text);
+                      chat.sendMessage(context, text);
                     },
                   );
                 },
@@ -160,7 +165,8 @@ class _HomePageState extends State<HomePage> {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  const _EmptyState({required this.l10n});
+  final AppLocalizations l10n;
 
   @override
   Widget build(BuildContext context) {
@@ -181,15 +187,15 @@ class _EmptyState extends StatelessWidget {
                   size: 36, color: AppTheme.primary),
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Agent Buddy',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+            Text(
+              l10n.homeEmptyTitle,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
-            const Text(
-              '点击右上角设置按钮,添加模型提供商与角色后开始对话。',
+            Text(
+              l10n.homeEmptySubtitle,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.5),
+              style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.5),
             ),
           ],
         ),

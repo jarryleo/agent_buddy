@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
+import 'l10n/app_localizations.dart';
 import 'pages/home_page.dart';
 import 'providers/chat_provider.dart';
 import 'providers/settings_provider.dart';
@@ -48,9 +50,19 @@ class AgentBuddyApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'Agent Buddy',
+        onGenerateTitle: (ctx) => AppLocalizations.of(ctx).appTitle,
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
+        supportedLocales: const [
+          Locale('en'),
+          Locale('zh'),
+        ],
         home: const PhoneFrame(child: HomePage()),
       ),
     );

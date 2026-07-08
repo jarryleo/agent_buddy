@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/skill.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_theme.dart';
@@ -27,19 +28,20 @@ class SkillsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final skills = settings.skills;
     return Scaffold(
       backgroundColor: AppTheme.bg,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openEdit(context),
         icon: const Icon(Icons.add),
-        label: const Text('新增'),
+        label: Text(l10n.commonAdd),
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
       ),
       body: skills.isEmpty
-          ? const EmptyHint(
-              text: '还没有添加任何技能\n技能可在对话时为 AI 提供额外的能力说明\n点击右下角"新增"开始',
+          ? EmptyHint(
+              text: l10n.skillListEmpty,
               icon: Icons.workspace_premium_outlined,
             )
           : ListView.separated(
@@ -109,16 +111,16 @@ class SkillsTab extends StatelessWidget {
                               final confirm = await showDialog<bool>(
                                 context: context,
                                 builder: (ctx) => AlertDialog(
-                                  title: const Text('删除技能'),
-                                  content: Text('确认删除 "${s.name}"?'),
+                                  title: Text(l10n.skillDeleteTitle),
+                                  content: Text(l10n.skillDeleteConfirm(s.name)),
                                   actions: [
                                     TextButton(
                                       onPressed: () => Navigator.pop(ctx, false),
-                                      child: const Text('取消'),
+                                      child: Text(l10n.commonCancel),
                                     ),
                                     TextButton(
                                       onPressed: () => Navigator.pop(ctx, true),
-                                      child: const Text('删除'),
+                                      child: Text(l10n.commonDelete),
                                     ),
                                   ],
                                 ),
@@ -172,9 +174,10 @@ class _SkillEditPageState extends State<_SkillEditPage> {
   }
 
   void _save() {
+    final l10n = AppLocalizations.of(context);
     if (_name.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入技能名称')),
+        SnackBar(content: Text(l10n.skillNameRequired)),
       );
       return;
     }
@@ -190,33 +193,34 @@ class _SkillEditPageState extends State<_SkillEditPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.initial == null ? '新增技能' : '编辑技能'),
+        title: Text(widget.initial == null ? l10n.skillAddTitle : l10n.skillEditTitle),
         actions: [
-          TextButton(onPressed: _save, child: const Text('保存')),
+          TextButton(onPressed: _save, child: Text(l10n.commonSave)),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const _FieldLabel('名称'),
-          TextField(controller: _name, decoration: const InputDecoration(hintText: '例如: 代码审查')),
+          _FieldLabel(text: l10n.skillName),
+          TextField(controller: _name, decoration: InputDecoration(hintText: l10n.skillNameHint)),
           const SizedBox(height: 14),
-          const _FieldLabel('简介'),
+          _FieldLabel(text: l10n.skillDescription),
           TextField(
             controller: _description,
             maxLines: 2,
-            decoration: const InputDecoration(hintText: '一句话描述这个技能的用途'),
+            decoration: InputDecoration(hintText: l10n.skillDescriptionHint),
           ),
           const SizedBox(height: 14),
-          const _FieldLabel('内容 (Markdown)'),
+          _FieldLabel(text: l10n.skillContent),
           TextField(
             controller: _content,
             maxLines: 14,
             minLines: 6,
-            decoration: const InputDecoration(
-              hintText: '技能的具体内容,使用 Markdown 格式',
+            decoration: InputDecoration(
+              hintText: l10n.skillContentHint,
               alignLabelWithHint: true,
             ),
           ),
@@ -227,7 +231,7 @@ class _SkillEditPageState extends State<_SkillEditPage> {
 }
 
 class _FieldLabel extends StatelessWidget {
-  const _FieldLabel(this.text);
+  const _FieldLabel({required this.text});
   final String text;
 
   @override

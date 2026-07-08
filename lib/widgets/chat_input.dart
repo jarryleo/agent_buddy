@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 
 class ChatInput extends StatefulWidget {
@@ -38,6 +39,7 @@ class _ChatInputState extends State<ChatInput> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       decoration: const BoxDecoration(
         color: AppTheme.surface,
@@ -70,7 +72,7 @@ class _ChatInputState extends State<ChatInput> {
                   keyboardType: TextInputType.multiline,
                   style: const TextStyle(fontSize: 15, height: 1.4),
                   decoration: InputDecoration(
-                    hintText: widget.enabled ? '说点什么…' : '请先在设置中添加模型',
+                    hintText: widget.enabled ? l10n.chatInputHint : l10n.chatInputHintNoModel,
                     hintStyle: const TextStyle(color: AppTheme.textSecondary),
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 12,

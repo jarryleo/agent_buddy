@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/role.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_theme.dart';
@@ -28,19 +29,20 @@ class RolesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final roles = settings.roles;
     return Scaffold(
       backgroundColor: AppTheme.bg,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openEdit(context),
         icon: const Icon(Icons.add),
-        label: const Text('新增'),
+        label: Text(l10n.commonAdd),
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
       ),
       body: roles.isEmpty
-          ? const EmptyHint(
-              text: '还没有添加任何角色\n点击右下角"新增"创建你的第一个角色',
+          ? EmptyHint(
+              text: l10n.roleListEmpty,
               icon: Icons.person_outline,
             )
           : ListView.separated(
@@ -102,9 +104,9 @@ class RolesTab extends StatelessWidget {
                                           color: AppTheme.primary,
                                           borderRadius: BorderRadius.circular(4),
                                         ),
-                                        child: const Text(
-                                          '使用中',
-                                          style: TextStyle(
+                                        child: Text(
+                                          l10n.commonInUse,
+                                          style: const TextStyle(
                                             color: Colors.white,
                                             fontSize: 10,
                                             fontWeight: FontWeight.w600,
@@ -135,7 +137,7 @@ class RolesTab extends StatelessWidget {
                                         minimumSize: const Size(0, 28),
                                         visualDensity: VisualDensity.compact,
                                       ),
-                                      child: Text(active ? '取消使用' : '使用此角色'),
+                                      child: Text(active ? l10n.roleUnuseRole : l10n.roleUseRole),
                                     ),
                                     const Spacer(),
                                     IconButton(
@@ -143,16 +145,16 @@ class RolesTab extends StatelessWidget {
                                         final confirm = await showDialog<bool>(
                                           context: context,
                                           builder: (ctx) => AlertDialog(
-                                            title: const Text('删除角色'),
-                                            content: Text('确认删除 "${r.name}"?'),
+                                            title: Text(l10n.roleDeleteTitle),
+                                            content: Text(l10n.roleDeleteConfirm(r.name)),
                                             actions: [
                                               TextButton(
                                                 onPressed: () => Navigator.pop(ctx, false),
-                                                child: const Text('取消'),
+                                                child: Text(l10n.commonCancel),
                                               ),
                                               TextButton(
                                                 onPressed: () => Navigator.pop(ctx, true),
-                                                child: const Text('删除'),
+                                                child: Text(l10n.commonDelete),
                                               ),
                                             ],
                                           ),
@@ -211,9 +213,10 @@ class _RoleEditPageState extends State<_RoleEditPage> {
   }
 
   void _save() {
+    final l10n = AppLocalizations.of(context);
     if (_name.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入角色名称')),
+        SnackBar(content: Text(l10n.roleNameRequired)),
       );
       return;
     }
@@ -229,33 +232,34 @@ class _RoleEditPageState extends State<_RoleEditPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.initial == null ? '新增角色' : '编辑角色'),
+        title: Text(widget.initial == null ? l10n.roleAddTitle : l10n.roleEditTitle),
         actions: [
-          TextButton(onPressed: _save, child: const Text('保存')),
+          TextButton(onPressed: _save, child: Text(l10n.commonSave)),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const _FieldLabel('名称'),
-          TextField(controller: _name, decoration: const InputDecoration(hintText: '例如: 翻译助手')),
+          _FieldLabel(text: l10n.roleName),
+          TextField(controller: _name, decoration: InputDecoration(hintText: l10n.roleNameHint)),
           const SizedBox(height: 14),
-          const _FieldLabel('简介'),
+          _FieldLabel(text: l10n.roleDescription),
           TextField(
             controller: _description,
             maxLines: 2,
-            decoration: const InputDecoration(hintText: '一句话描述这个角色的作用'),
+            decoration: InputDecoration(hintText: l10n.roleDescriptionHint),
           ),
           const SizedBox(height: 14),
-          const _FieldLabel('系统提示词 (System Prompt)'),
+          _FieldLabel(text: l10n.roleSystemPrompt),
           TextField(
             controller: _systemPrompt,
             maxLines: 10,
             minLines: 5,
-            decoration: const InputDecoration(
-              hintText: '描述角色的身份、行为、风格、规则等',
+            decoration: InputDecoration(
+              hintText: l10n.roleSystemPromptHint,
               alignLabelWithHint: true,
             ),
           ),
@@ -266,7 +270,7 @@ class _RoleEditPageState extends State<_RoleEditPage> {
 }
 
 class _FieldLabel extends StatelessWidget {
-  const _FieldLabel(this.text);
+  const _FieldLabel({required this.text});
   final String text;
 
   @override

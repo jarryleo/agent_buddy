@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:intl/intl.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/message.dart';
 import '../theme/app_theme.dart';
 
@@ -136,6 +137,7 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _buildThinking(BuildContext context, ChatMessage m) {
+    final l10n = AppLocalizations.of(context);
     final lineCount = '\n'.allMatches(m.thinking).length + 1;
     final maxLines = _thinkingExpanded ? _thinkingExpandedLines : _thinkingCollapsedLines;
     final overflow = lineCount > maxLines;
@@ -157,9 +159,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                 children: [
                   const Icon(Icons.psychology_outlined, size: 14, color: Color(0xFFA37300)),
                   const SizedBox(width: 6),
-                  const Text(
-                    '思考过程',
-                    style: TextStyle(
+                  Text(
+                    l10n.messageThinking,
+                    style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF8A5C00),

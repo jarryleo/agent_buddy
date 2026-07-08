@@ -1,8 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:uuid/uuid.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/message.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
@@ -93,7 +94,8 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> sendMessage(String text) async {
+  Future<void> sendMessage(BuildContext context, String text) async {
+    final l10n = AppLocalizations.of(context);
     final trimmed = text.trim();
     if (trimmed.isEmpty || _sending) return;
     final provider = _settings.activeProvider;
@@ -103,7 +105,7 @@ class ChatProvider extends ChangeNotifier {
         ChatMessage(
           id: _uuid.v4(),
           role: MessageRole.assistant,
-          content: '请先在设置中添加并启用一个模型提供商。',
+          content: l10n.chatNoProvider,
         ),
       ];
       await _storage.saveMessages(_messages);
@@ -118,7 +120,7 @@ class ChatProvider extends ChangeNotifier {
         ChatMessage(
           id: _uuid.v4(),
           role: MessageRole.assistant,
-          content: '当前提供商没有可用模型,请先在设置中获取模型列表并选择一个模型。',
+          content: l10n.chatNoModel,
         ),
       ];
       await _storage.saveMessages(_messages);
@@ -202,13 +204,14 @@ class ChatProvider extends ChangeNotifier {
       } else if (event.type == 'error') {
         final idx = _messages.indexWhere((m) => m.id == assistantId);
         if (idx >= 0) {
+          final errText = l10n.messageErrorPrefix(event.error ?? '');
           _messages = [
             for (final mm in _messages)
               if (mm.id == assistantId)
                 mm.copyWith(
                   content: mm.content.isEmpty
-                      ? '出错了: ${event.error}'
-                      : '${mm.content}\n\n出错了: ${event.error}',
+                      ? errText
+                      : '${mm.content}\n\n$errText',
                 )
               else
                 mm,
@@ -221,11 +224,12 @@ class ChatProvider extends ChangeNotifier {
     }, onError: (e) {
       final idx = _messages.indexWhere((m) => m.id == assistantId);
       if (idx >= 0) {
+        final errText = l10n.messageErrorPrefix(e.toString());
         _messages = [
           for (final mm in _messages)
             if (mm.id == assistantId)
               mm.copyWith(
-                content: mm.content.isEmpty ? '出错了: $e' : '${mm.content}\n\n出错了: $e',
+                content: mm.content.isEmpty ? errText : '${mm.content}\n\n$errText',
               )
             else
               mm,

@@ -174,7 +174,7 @@ class ApiService {
     try {
       resp = await _client.send(req);
     } catch (e) {
-      yield StreamEvent.error('请求失败: $e');
+      yield StreamEvent.error('$e');
       return;
     }
 
@@ -271,7 +271,7 @@ class ApiService {
             'arguments': argsJson,
           });
         } catch (e) {
-          toolResult = 'Tool error: $e';
+          toolResult = 'Error: $e';
         }
         toolMessages.add({
           'role': 'tool',
@@ -363,7 +363,7 @@ class ApiService {
     try {
       resp = await _client.send(req);
     } catch (e) {
-      yield StreamEvent.error('请求失败: $e');
+      yield StreamEvent.error('$e');
       return;
     }
 
@@ -447,7 +447,7 @@ class ApiService {
             'arguments': args,
           });
         } catch (e) {
-          toolResult = 'Tool error: $e';
+          toolResult = 'Error: $e';
         }
         toolResults.add({
           'type': 'tool_result',

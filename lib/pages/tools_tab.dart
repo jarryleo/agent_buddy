@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_theme.dart';
 import 'settings_page.dart';
@@ -10,10 +11,11 @@ class ToolsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final tools = settings.tools;
     if (tools.isEmpty) {
-      return const EmptyHint(
-        text: '暂无内置工具',
+      return EmptyHint(
+        text: l10n.toolsListEmpty,
         icon: Icons.handyman_outlined,
       );
     }
@@ -26,6 +28,8 @@ class ToolsTab extends StatelessWidget {
         itemBuilder: (context, index) {
           final t = tools[index];
           final active = settings.activeToolIds.contains(t.id);
+          final name = t.id == 'fetch_web' ? l10n.toolFetchWebName : t.name;
+          final description = t.id == 'fetch_web' ? l10n.toolFetchWebDescription : t.description;
           return Material(
             color: AppTheme.surface,
             borderRadius: BorderRadius.circular(14),
@@ -56,12 +60,12 @@ class ToolsTab extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          t.name,
+                          name,
                           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          t.description,
+                          description,
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppTheme.textSecondary,

@@ -1,0 +1,307 @@
+// ignore: unused_import
+import 'package:intl/intl.dart' as intl;
+import 'app_localizations.dart';
+
+// ignore_for_file: type=lint
+
+/// The translations for Chinese (`zh`).
+class AppLocalizationsZh extends AppLocalizations {
+  AppLocalizationsZh([String locale = 'zh']) : super(locale);
+
+  @override
+  String get appTitle => 'Agent Buddy';
+
+  @override
+  String get commonAdd => '新增';
+
+  @override
+  String get commonSave => '保存';
+
+  @override
+  String get commonCancel => '取消';
+
+  @override
+  String get commonDelete => '删除';
+
+  @override
+  String get commonEdit => '编辑';
+
+  @override
+  String get commonInUse => '使用中';
+
+  @override
+  String get commonError => '出错';
+
+  @override
+  String get homeSettingsTooltip => '设置';
+
+  @override
+  String get homeClearChatTooltip => '清空对话';
+
+  @override
+  String get homeClearChatTitle => '清空对话';
+
+  @override
+  String get homeClearChatMessage => '确认清空所有消息?此操作不可撤销。';
+
+  @override
+  String get homeClearChatConfirm => '清空';
+
+  @override
+  String get homeEmptyTitle => 'Agent Buddy';
+
+  @override
+  String get homeEmptySubtitle => '点击左上角设置按钮,添加模型提供商与角色后开始对话。';
+
+  @override
+  String get homeNoModel => '未配置模型';
+
+  @override
+  String get homeNoModelSelected => '未选模型';
+
+  @override
+  String homeProviderModel(String provider, String model) {
+    return '$provider · $model';
+  }
+
+  @override
+  String get homeCopied => '已复制';
+
+  @override
+  String get settingsTitle => '设置';
+
+  @override
+  String get settingsTabProvider => 'Provider';
+
+  @override
+  String get settingsTabRole => 'Role';
+
+  @override
+  String get settingsTabTools => 'Tools';
+
+  @override
+  String get settingsTabSkill => 'Skill';
+
+  @override
+  String get providerListEmpty => '还没有添加任何模型提供商\n点击右下角\"新增\"开始';
+
+  @override
+  String get providerAddTitle => '新增提供商';
+
+  @override
+  String get providerEditTitle => '编辑提供商';
+
+  @override
+  String get providerProtocol => '协议';
+
+  @override
+  String get providerProtocolOpenAI => 'OpenAI';
+
+  @override
+  String get providerProtocolAnthropic => 'Anthropic';
+
+  @override
+  String get providerName => '名称';
+
+  @override
+  String get providerNameHint => '例如: OpenAI 官方';
+
+  @override
+  String get providerNameRequired => '请输入名称';
+
+  @override
+  String get providerBaseUrl => 'Base URL';
+
+  @override
+  String get providerBaseUrlHint => 'https://api.openai.com';
+
+  @override
+  String get providerBaseUrlRequired => '请输入 Base URL';
+
+  @override
+  String get providerApiKey => 'API Key';
+
+  @override
+  String get providerApiKeyRequired => '请输入 API Key';
+
+  @override
+  String get providerChatPath => 'Chat Path';
+
+  @override
+  String get providerChatPathHelper => '已根据协议自动补全,通常无需修改';
+
+  @override
+  String get providerChatPathRequired => '请输入 Chat Path';
+
+  @override
+  String get providerTestConnection => '测试连接';
+
+  @override
+  String get providerFetchModels => '获取模型';
+
+  @override
+  String get providerSelectModel => '选择默认模型';
+
+  @override
+  String get providerTesting => '正在测试连接…';
+
+  @override
+  String get providerTestSuccess => '连接成功';
+
+  @override
+  String get providerTestFailed => '连接失败,请检查 URL/API Key';
+
+  @override
+  String get providerFetching => '正在获取模型列表…';
+
+  @override
+  String providerFetchSuccess(int count) {
+    return '获取到 $count 个模型';
+  }
+
+  @override
+  String providerFetchFailed(String error) {
+    return '获取失败: $error';
+  }
+
+  @override
+  String providerModelCount(int count) {
+    return '$count 个模型';
+  }
+
+  @override
+  String providerCurrentModel(String model) {
+    return '当前模型: $model';
+  }
+
+  @override
+  String get providerSetAsDefault => '设为默认';
+
+  @override
+  String get providerTest => '测试';
+
+  @override
+  String get providerDeleteTitle => '删除提供商';
+
+  @override
+  String providerDeleteConfirm(String name) {
+    return '确认删除 \"$name\"?';
+  }
+
+  @override
+  String get roleListEmpty => '还没有添加任何角色\n点击右下角\"新增\"创建你的第一个角色';
+
+  @override
+  String get roleAddTitle => '新增角色';
+
+  @override
+  String get roleEditTitle => '编辑角色';
+
+  @override
+  String get roleName => '名称';
+
+  @override
+  String get roleNameHint => '例如: 翻译助手';
+
+  @override
+  String get roleNameRequired => '请输入角色名称';
+
+  @override
+  String get roleDescription => '简介';
+
+  @override
+  String get roleDescriptionHint => '一句话描述这个角色的作用';
+
+  @override
+  String get roleSystemPrompt => '系统提示词 (System Prompt)';
+
+  @override
+  String get roleSystemPromptHint => '描述角色的身份、行为、风格、规则等';
+
+  @override
+  String get roleUseRole => '使用此角色';
+
+  @override
+  String get roleUnuseRole => '取消使用';
+
+  @override
+  String get roleDeleteTitle => '删除角色';
+
+  @override
+  String roleDeleteConfirm(String name) {
+    return '确认删除 \"$name\"?';
+  }
+
+  @override
+  String get toolsListEmpty => '暂无内置工具';
+
+  @override
+  String get toolFetchWebName => 'Fetch Web';
+
+  @override
+  String get toolFetchWebDescription => '获取指定网址的内容,返回网页的纯文本。';
+
+  @override
+  String get skillListEmpty =>
+      '还没有添加任何技能\n技能可在对话时为 AI 提供额外的能力说明\n点击右下角\"新增\"开始';
+
+  @override
+  String get skillAddTitle => '新增技能';
+
+  @override
+  String get skillEditTitle => '编辑技能';
+
+  @override
+  String get skillName => '名称';
+
+  @override
+  String get skillNameHint => '例如: 代码审查';
+
+  @override
+  String get skillNameRequired => '请输入技能名称';
+
+  @override
+  String get skillDescription => '简介';
+
+  @override
+  String get skillDescriptionHint => '一句话描述这个技能的用途';
+
+  @override
+  String get skillContent => '内容 (Markdown)';
+
+  @override
+  String get skillContentHint => '技能的具体内容,使用 Markdown 格式';
+
+  @override
+  String get skillDeleteTitle => '删除技能';
+
+  @override
+  String skillDeleteConfirm(String name) {
+    return '确认删除 \"$name\"?';
+  }
+
+  @override
+  String get chatInputHint => '说点什么…';
+
+  @override
+  String get chatInputHintNoModel => '请先在设置中添加模型';
+
+  @override
+  String get messageThinking => '思考过程';
+
+  @override
+  String messageErrorPrefix(String error) {
+    return '出错了: $error';
+  }
+
+  @override
+  String get chatNoProvider => '请先在设置中添加并启用一个模型提供商。';
+
+  @override
+  String get chatNoModel => '当前提供商没有可用模型,请先在设置中获取模型列表并选择一个模型。';
+
+  @override
+  String chatRequestFailed(String error) {
+    return '请求失败: $error';
+  }
+}

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/provider.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_theme.dart';
@@ -32,41 +33,43 @@ class ProvidersTab extends StatelessWidget {
   }
 
   Future<void> _testConnection(BuildContext context, ModelProvider p) async {
+    final l10n = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(const SnackBar(
-      content: Text('正在测试连接…'),
-      duration: Duration(seconds: 1),
+    messenger.showSnackBar(SnackBar(
+      content: Text(l10n.providerTesting),
+      duration: const Duration(seconds: 1),
     ));
     final api = ApiService();
     final ok = await api.testConnection(p);
     api.dispose();
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(SnackBar(
-      content: Text(ok ? '✅ 连接成功' : '❌ 连接失败,请检查 URL/API Key'),
+      content: Text(ok ? l10n.providerTestSuccess : l10n.providerTestFailed),
       behavior: SnackBarBehavior.floating,
     ));
   }
 
   Future<void> _fetchModels(BuildContext context, ModelProvider p) async {
+    final l10n = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
     final api = ApiService();
     try {
-      messenger.showSnackBar(const SnackBar(
-        content: Text('正在获取模型列表…'),
-        duration: Duration(seconds: 1),
+      messenger.showSnackBar(SnackBar(
+        content: Text(l10n.providerFetching),
+        duration: const Duration(seconds: 1),
       ));
       final models = await api.fetchModels(p);
       final updated = p.copyWith(models: models);
       await settings.updateProvider(updated);
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(SnackBar(
-        content: Text('✅ 获取到 ${models.length} 个模型'),
+        content: Text(l10n.providerFetchSuccess(models.length)),
         behavior: SnackBarBehavior.floating,
       ));
     } catch (e) {
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(SnackBar(
-        content: Text('❌ 获取失败: $e'),
+        content: Text(l10n.providerFetchFailed(e.toString())),
         behavior: SnackBarBehavior.floating,
       ));
     } finally {
@@ -76,19 +79,20 @@ class ProvidersTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final providers = settings.providers;
     return Scaffold(
       backgroundColor: AppTheme.bg,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openAdd(context),
         icon: const Icon(Icons.add),
-        label: const Text('新增'),
+        label: Text(l10n.commonAdd),
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
       ),
       body: providers.isEmpty
-          ? const EmptyHint(
-              text: '还没有添加任何模型提供商\n点击右下角"新增"开始',
+          ? EmptyHint(
+              text: l10n.providerListEmpty,
               icon: Icons.cloud_outlined,
             )
           : ListView.separated(
@@ -100,6 +104,7 @@ class ProvidersTab extends StatelessWidget {
                 return _ProviderCard(
                   provider: p,
                   isActive: settings.activeProviderId == p.id,
+                  l10n: l10n,
                   onTap: () => _openEdit(context, p),
                   onToggle: (v) => settings.toggleProvider(p.id, v),
                   onSetActive: () => settings.setActiveProvider(p.id),
@@ -109,16 +114,16 @@ class ProvidersTab extends StatelessWidget {
                     final confirm = await showDialog<bool>(
                       context: context,
                       builder: (ctx) => AlertDialog(
-                        title: const Text('删除提供商'),
-                        content: Text('确认删除 "${p.name}"?'),
+                        title: Text(l10n.providerDeleteTitle),
+                        content: Text(l10n.providerDeleteConfirm(p.name)),
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('取消'),
+                            child: Text(l10n.commonCancel),
                           ),
                           TextButton(
                             onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('删除'),
+                            child: Text(l10n.commonDelete),
                           ),
                         ],
                       ),
@@ -139,6 +144,7 @@ class _ProviderCard extends StatelessWidget {
   const _ProviderCard({
     required this.provider,
     required this.isActive,
+    required this.l10n,
     required this.onTap,
     required this.onToggle,
     required this.onSetActive,
@@ -149,12 +155,23 @@ class _ProviderCard extends StatelessWidget {
 
   final ModelProvider provider;
   final bool isActive;
+  final AppLocalizations l10n;
   final VoidCallback onTap;
   final ValueChanged<bool> onToggle;
   final VoidCallback onSetActive;
   final VoidCallback onTest;
   final VoidCallback onFetch;
   final VoidCallback onDelete;
+
+  String _protocolLabel(BuildContext context) {
+    switch (provider.protocol.name) {
+      case 'openai':
+        return l10n.providerProtocolOpenAI;
+      case 'anthropic':
+        return l10n.providerProtocolAnthropic;
+    }
+    return provider.protocol.name;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -211,9 +228,9 @@ class _ProviderCard extends StatelessWidget {
                                   color: AppTheme.primary,
                                   borderRadius: BorderRadius.circular(4),
                                 ),
-                                child: const Text(
-                                  '使用中',
-                                  style: TextStyle(
+                                child: Text(
+                                  l10n.commonInUse,
+                                  style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 10,
                                     fontWeight: FontWeight.w600,
@@ -224,7 +241,7 @@ class _ProviderCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${provider.protocol.label} · ${provider.models.length} 个模型',
+                          '${_protocolLabel(context)} · ${l10n.providerModelCount(provider.models.length)}',
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppTheme.textSecondary,
@@ -246,7 +263,7 @@ class _ProviderCard extends StatelessWidget {
               if (provider.models.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 Text(
-                  '当前模型: ${provider.selectedModel ?? provider.models.first}',
+                  l10n.providerCurrentModel(provider.selectedModel ?? provider.models.first),
                   style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                 ),
               ],
@@ -256,7 +273,7 @@ class _ProviderCard extends StatelessWidget {
                   TextButton.icon(
                     onPressed: onSetActive,
                     icon: const Icon(Icons.check_circle_outline, size: 16),
-                    label: const Text('设为默认'),
+                    label: Text(l10n.providerSetAsDefault),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                       minimumSize: const Size(0, 32),
@@ -267,7 +284,7 @@ class _ProviderCard extends StatelessWidget {
                   TextButton.icon(
                     onPressed: onTest,
                     icon: const Icon(Icons.wifi_tethering, size: 16),
-                    label: const Text('测试'),
+                    label: Text(l10n.providerTest),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                       minimumSize: const Size(0, 32),
@@ -278,7 +295,7 @@ class _ProviderCard extends StatelessWidget {
                   TextButton.icon(
                     onPressed: onFetch,
                     icon: const Icon(Icons.refresh, size: 16),
-                    label: const Text('获取模型'),
+                    label: Text(l10n.providerFetchModels),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                       minimumSize: const Size(0, 32),
