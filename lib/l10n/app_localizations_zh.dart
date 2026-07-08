@@ -258,6 +258,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolAskUserDescription => '向用户提出一个多选或单选问题,用户作答后把结果回传给模型。';
 
   @override
+  String get toolRunCommandName => '命令行执行';
+
+  @override
+  String get toolRunCommandDescription =>
+      '在主机上执行 shell 命令,返回 stdout、stderr 与退出码。仅桌面端可用 (Windows / macOS / Linux)。';
+
+  @override
   String get skillListEmpty =>
       '还没有添加任何技能\n技能可在对话时为 AI 提供额外的能力说明\n点击右下角\"新增\"开始';
 

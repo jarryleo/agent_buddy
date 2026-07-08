@@ -268,6 +268,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Ask the user a multiple-choice or single-choice question. The user\'s selection is returned to the model.';
 
   @override
+  String get toolRunCommandName => 'Run Command';
+
+  @override
+  String get toolRunCommandDescription =>
+      'Execute a shell command on the host. Returns stdout, stderr, and exit code. Desktop only (Windows / macOS / Linux).';
+
+  @override
   String get skillListEmpty =>
       'No skills added yet.\nSkills provide extra instructions to the AI during chat.\nTap \"Add\" in the bottom right to start.';
 

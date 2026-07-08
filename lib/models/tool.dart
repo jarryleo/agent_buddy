@@ -1,9 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 enum BuiltinTool {
   fetchWeb,
   currentTime,
   askUser,
+  runCommand,
 }
 
 extension BuiltinToolX on BuiltinTool {
@@ -15,6 +19,8 @@ extension BuiltinToolX on BuiltinTool {
         return 'current_time';
       case BuiltinTool.askUser:
         return 'ask_user';
+      case BuiltinTool.runCommand:
+        return 'run_command';
     }
   }
 
@@ -26,6 +32,8 @@ extension BuiltinToolX on BuiltinTool {
         return 'Current Time';
       case BuiltinTool.askUser:
         return 'Ask User';
+      case BuiltinTool.runCommand:
+        return 'Run Command';
     }
   }
 
@@ -37,6 +45,23 @@ extension BuiltinToolX on BuiltinTool {
         return '获取当前日期与时间,返回本地时间、ISO 8601 与 Unix 时间戳。';
       case BuiltinTool.askUser:
         return '向用户提出一个多选或单选问题,用户作答后把结果回传给模型。';
+      case BuiltinTool.runCommand:
+        return '在主机上执行 shell 命令,返回 stdout、stderr 与退出码。仅桌面端 (Windows / macOS / Linux) 可用。';
+    }
+  }
+
+  /// True on platforms that can actually run this tool. Used to skip
+  /// the schema and the settings backfill on platforms where the
+  /// underlying API isn't available.
+  bool get isSupportedOnCurrentPlatform {
+    switch (this) {
+      case BuiltinTool.fetchWeb:
+      case BuiltinTool.currentTime:
+      case BuiltinTool.askUser:
+        return true;
+      case BuiltinTool.runCommand:
+        if (kIsWeb) return false;
+        return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
     }
   }
 }

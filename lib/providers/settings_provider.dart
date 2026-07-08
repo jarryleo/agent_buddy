@@ -69,18 +69,20 @@ class SettingsProvider extends ChangeNotifier {
     if (_tools.isEmpty) {
       _tools = [
         for (final b in BuiltinTool.values)
-          AgentTool(
-            id: b.id,
-            name: b.name,
-            description: b.description,
-            enabled: true,
-          ),
+          if (b.isSupportedOnCurrentPlatform)
+            AgentTool(
+              id: b.id,
+              name: b.name,
+              description: b.description,
+              enabled: true,
+            ),
       ];
       await _storage.saveTools(_tools);
     } else {
       final existingIds = _tools.map((t) => t.id).toSet();
       var changed = false;
       for (final b in BuiltinTool.values) {
+        if (!b.isSupportedOnCurrentPlatform) continue;
         if (!existingIds.contains(b.id)) {
           _tools = [
             ..._tools,
@@ -114,11 +116,15 @@ class SettingsProvider extends ChangeNotifier {
     // off keeps it off, while a newly-shipped builtin (e.g. upgrading
     // from a build that didn't have `current_time`) is enabled.
     if (_activeToolIds.isEmpty) {
-      _activeToolIds = {for (final b in BuiltinTool.values) b.id};
+      _activeToolIds = {
+        for (final b in BuiltinTool.values)
+          if (b.isSupportedOnCurrentPlatform) b.id,
+      };
       await _storage.setActiveToolIds(_activeToolIds.toList());
     } else {
       var changed = false;
       for (final b in BuiltinTool.values) {
+        if (!b.isSupportedOnCurrentPlatform) continue;
         if (!_activeToolIds.contains(b.id)) {
           _activeToolIds.add(b.id);
           changed = true;

@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/widgets.dart';
 import 'package:uuid/uuid.dart';
 
@@ -151,6 +153,42 @@ class ChatProvider extends ChangeNotifier {
             },
           });
           break;
+        case 'run_command':
+          // The tool service throws on non-desktop; don't even hand
+          // the schema to the model on those platforms.
+          if (kIsWeb ||
+              !(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+            break;
+          }
+          list.add({
+            'type': 'function',
+            'function': {
+              'name': 'run_command',
+              'description': t.description,
+              'parameters': {
+                'type': 'object',
+                'properties': {
+                  'command': {
+                    'type': 'string',
+                    'description': '要执行的 shell 命令(通过系统 shell 运行)',
+                  },
+                  'cwd': {
+                    'type': 'string',
+                    'description': '工作目录,可选,默认当前目录',
+                  },
+                  'timeout_seconds': {
+                    'type': 'integer',
+                    'description': '超时秒数,默认 30,超时后进程会被 kill',
+                    'default': 30,
+                    'minimum': 1,
+                    'maximum': 600,
+                  },
+                },
+                'required': ['command'],
+              },
+            },
+          });
+          break;
       }
     }
     return list;
@@ -215,6 +253,18 @@ class ChatProvider extends ChangeNotifier {
         } finally {
           _pendingAskUser.remove(toolId);
         }
+      case 'run_command':
+        final command = args['command'] as String? ?? '';
+        final cwd = args['cwd'] as String?;
+        final timeout = (args['timeout_seconds'] as int?) ?? 30;
+        if (command.trim().isEmpty) {
+          throw ToolException('command is required');
+        }
+        return await _tools.runCommand(
+          command: command,
+          cwd: cwd,
+          timeoutSeconds: timeout,
+        );
       default:
         throw ToolException('unknown tool: $name');
     }

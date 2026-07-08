@@ -119,6 +119,8 @@
   "toolCurrentTimeDescription": "Get the current date and time as local time, ISO 8601, and Unix timestamp.",
   "toolAskUserName": "Ask User",
   "toolAskUserDescription": "Ask the user a multiple-choice or single-choice question. The user's selection is returned to the model.",
+  "toolRunCommandName": "Run Command",
+  "toolRunCommandDescription": "Execute a shell command on the host. Returns stdout, stderr, and exit code. Desktop only (Windows / macOS / Linux).",
 
   "skillListEmpty": "No skills added yet.\nSkills provide extra instructions to the AI during chat.\nTap \"Add\" in the bottom right to start.",
   "skillAddTitle": "Add Skill",

@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 
@@ -112,4 +115,82 @@ class ToolService {
 
   String _four(int n) => n.toString().padLeft(4, '0');
   String _two(int n) => n.toString().padLeft(2, '0');
+
+  /// Runs [command] through the system shell and returns the captured
+  /// stdout, stderr and exit code as a JSON string:
+  /// ```json
+  /// {"exit_code": 0, "stdout": "...", "stderr": "..."}
+  /// ```
+  /// Only available on macOS / Windows / Linux; throws [ToolException]
+  /// on web and mobile. If the command doesn't finish within
+  /// [timeoutSeconds] the underlying process is killed and a timeout
+  /// error is thrown.
+  Future<String> runCommand({
+    required String command,
+    String? cwd,
+    int timeoutSeconds = 30,
+  }) async {
+    if (kIsWeb) {
+      throw ToolException('run_command is not supported on web');
+    }
+    if (!Platform.isMacOS && !Platform.isLinux && !Platform.isWindows) {
+      throw ToolException(
+        'run_command is only supported on desktop (macOS / Windows / Linux)',
+      );
+    }
+    if (command.trim().isEmpty) {
+      throw ToolException('command must not be empty');
+    }
+
+    // Use Process.start (not Process.run) so we can kill the child
+    // when the user-configured timeout fires — otherwise a runaway
+    // command (e.g. `sleep 9999`) would keep eating CPU past the
+    // timeout.
+    final Process process;
+    try {
+      process = await Process.start(
+        command,
+        const [],
+        workingDirectory: cwd,
+        runInShell: true,
+      );
+    } catch (e) {
+      throw ToolException('failed to start command: $e');
+    }
+
+    // Use the system's encoding rather than forcing UTF-8: macOS and
+    // Linux default to UTF-8 (so this is a no-op there), but Windows
+    // uses its OEM code page — GBK on Chinese systems, CP437 on
+    // Western systems, etc. Decoding GBK/CP437 bytes with UTF-8
+    // produces mojibake at best and `FormatException` at worst, and
+    // the previous code was silently swallowing the latter via
+    // `onError: (_) {}` — leaving the AI to wonder why `dir` and
+    // `ipconfig` returned empty stdout.
+    final decoder = systemEncoding.decoder;
+    // Use `toList()` rather than `listen()` and write to a list. The
+    // latter races: `await process.exitCode` can resolve before the
+    // last chunked bytes are delivered to the listener, and the
+    // function returns with a half-drained stdout. `toList()` returns
+    // a Future that only completes when the stream is closed, so
+    // awaiting it after the exit code guarantees we have every byte.
+    final stdoutFuture = process.stdout.transform(decoder).toList();
+    final stderrFuture = process.stderr.transform(decoder).toList();
+
+    final exitCode = await process.exitCode.timeout(
+      Duration(seconds: timeoutSeconds),
+      onTimeout: () {
+        process.kill();
+        throw TimeoutException('command timed out after ${timeoutSeconds}s');
+      },
+    );
+
+    final stdout = (await stdoutFuture).join();
+    final stderr = (await stderrFuture).join();
+
+    return jsonEncode({
+      'exit_code': exitCode,
+      'stdout': stdout,
+      'stderr': stderr,
+    });
+  }
 }

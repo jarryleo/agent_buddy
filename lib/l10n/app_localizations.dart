@@ -566,6 +566,18 @@ abstract class AppLocalizations {
   /// **'Ask the user a multiple-choice or single-choice question. The user\'s selection is returned to the model.'**
   String get toolAskUserDescription;
 
+  /// No description provided for @toolRunCommandName.
+  ///
+  /// In en, this message translates to:
+  /// **'Run Command'**
+  String get toolRunCommandName;
+
+  /// No description provided for @toolRunCommandDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Execute a shell command on the host. Returns stdout, stderr, and exit code. Desktop only (Windows / macOS / Linux).'**
+  String get toolRunCommandDescription;
+
   /// No description provided for @skillListEmpty.
   ///
   /// In en, this message translates to:
