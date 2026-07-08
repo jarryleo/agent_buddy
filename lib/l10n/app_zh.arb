@@ -8,6 +8,7 @@
   "commonEdit": "编辑",
   "commonInUse": "使用中",
   "commonError": "出错",
+  "commonConfirm": "确认",
 
   "homeSettingsTooltip": "设置",
   "homeClearChatTooltip": "清空对话",
@@ -80,6 +81,8 @@
   "toolFetchWebDescription": "获取指定网址的内容,返回网页的纯文本。",
   "toolCurrentTimeName": "当前时间",
   "toolCurrentTimeDescription": "获取当前日期与时间,返回本地时间、ISO 8601 与 Unix 时间戳。",
+  "toolAskUserName": "询问用户",
+  "toolAskUserDescription": "向用户提出一个多选或单选问题,用户作答后把结果回传给模型。",
 
   "skillListEmpty": "还没有添加任何技能\n技能可在对话时为 AI 提供额外的能力说明\n点击右下角\"新增\"开始",
   "skillAddTitle": "新增技能",

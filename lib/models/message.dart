@@ -27,6 +27,14 @@ class ToolCall {
   final DateTime startedAt;
   final DateTime? finishedAt;
 
+  // Populated for the `ask_user` tool: the question, the choice list,
+  // and whether the user can pick more than one. We persist these on
+  // the tool call itself so the chat history stays self-describing
+  // even after the app restarts mid-question.
+  final String? question;
+  final List<String>? options;
+  final bool? multiSelect;
+
   ToolCall({
     required this.id,
     required this.name,
@@ -34,6 +42,9 @@ class ToolCall {
     this.status = ToolCallStatus.pending,
     this.result,
     this.error,
+    this.question,
+    this.options,
+    this.multiSelect,
     DateTime? startedAt,
     this.finishedAt,
   }) : startedAt = startedAt ?? DateTime.now();
@@ -51,6 +62,9 @@ class ToolCall {
     String? result,
     String? error,
     DateTime? finishedAt,
+    String? question,
+    List<String>? options,
+    bool? multiSelect,
   }) {
     return ToolCall(
       id: id,
@@ -59,6 +73,9 @@ class ToolCall {
       status: status ?? this.status,
       result: result ?? this.result,
       error: error ?? this.error,
+      question: question ?? this.question,
+      options: options ?? this.options,
+      multiSelect: multiSelect ?? this.multiSelect,
       startedAt: startedAt,
       finishedAt: finishedAt ?? this.finishedAt,
     );
@@ -73,6 +90,9 @@ class ToolCall {
         'error': error,
         'startedAt': startedAt.toIso8601String(),
         'finishedAt': finishedAt?.toIso8601String(),
+        if (question != null) 'question': question,
+        if (options != null) 'options': options,
+        if (multiSelect != null) 'multiSelect': multiSelect,
       };
 
   factory ToolCall.fromJson(Map<String, dynamic> json) {
@@ -86,6 +106,9 @@ class ToolCall {
       ),
       result: json['result'] as String?,
       error: json['error'] as String?,
+      question: json['question'] as String?,
+      options: (json['options'] as List?)?.cast<String>(),
+      multiSelect: json['multiSelect'] as bool?,
       startedAt: DateTime.tryParse(json['startedAt'] as String? ?? '') ??
           DateTime.now(),
       finishedAt: DateTime.tryParse(json['finishedAt'] as String? ?? ''),

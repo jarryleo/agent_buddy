@@ -4,9 +4,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/message.dart';
+import '../providers/chat_provider.dart';
 import '../theme/app_theme.dart';
 import 'image_preview.dart';
 import 'markdown_content.dart';
@@ -322,6 +324,18 @@ class _MessageBubbleState extends State<MessageBubble> {
       children: [
         for (final tc in calls) ...[
           _ToolCallCard(toolCall: tc),
+          if (tc.question != null && tc.options != null) ...[
+            const SizedBox(height: 4),
+            _AskUserOptions(
+              key: ValueKey('ask_user_${tc.id}'),
+              toolCall: tc,
+              onSubmit: (selection) {
+                context
+                    .read<ChatProvider>()
+                    .resolveAskUser(tc.id, selection);
+              },
+            ),
+          ],
           const SizedBox(height: 6),
         ],
       ],
@@ -667,6 +681,180 @@ class _TypingIndicatorState extends State<_TypingIndicator>
             },
           );
         }),
+      ),
+    );
+  }
+}
+
+/// Inline option chips rendered below an `ask_user` tool call card.
+/// Tapping a chip (single-select) or tapping Confirm (multi-select)
+/// hands the selection to [ChatProvider.resolveAskUser], which
+/// unblocks the SSE stream's `await` on the tool call.
+class _AskUserOptions extends StatefulWidget {
+  const _AskUserOptions({
+    super.key,
+    required this.toolCall,
+    required this.onSubmit,
+  });
+
+  final ToolCall toolCall;
+  final ValueChanged<String> onSubmit;
+
+  @override
+  State<_AskUserOptions> createState() => _AskUserOptionsState();
+}
+
+class _AskUserOptionsState extends State<_AskUserOptions> {
+  final Set<String> _localSelected = <String>{};
+  bool _submitted = false;
+
+  bool get _isMulti => widget.toolCall.multiSelect ?? false;
+
+  bool get _isInteractive =>
+      widget.toolCall.status == ToolCallStatus.running && !_submitted;
+
+  /// Once the tool call has succeeded, derive the final pick(s) from
+  /// the persisted result JSON. While still running, fall back to the
+  /// in-progress multi-select state.
+  Set<String> get _effectiveSelected {
+    if (widget.toolCall.status == ToolCallStatus.success) {
+      return _parseSelection(widget.toolCall.result ?? '');
+    }
+    return _localSelected;
+  }
+
+  void _onPick(String option) {
+    if (!_isInteractive) return;
+    if (_isMulti) {
+      setState(() {
+        if (_localSelected.contains(option)) {
+          _localSelected.remove(option);
+        } else {
+          _localSelected.add(option);
+        }
+      });
+    } else {
+      setState(() => _submitted = true);
+      widget.onSubmit(jsonEncode({'selection': option}));
+    }
+  }
+
+  void _submitMulti() {
+    if (_localSelected.isEmpty) return;
+    setState(() => _submitted = true);
+    widget
+        .onSubmit(jsonEncode({'selection': _localSelected.toList()}));
+  }
+
+  static Set<String> _parseSelection(String result) {
+    try {
+      final decoded = jsonDecode(result);
+      if (decoded is Map && decoded['selection'] != null) {
+        final sel = decoded['selection'];
+        if (sel is String) return {sel};
+        if (sel is List) return sel.map((e) => e.toString()).toSet();
+      }
+    } catch (_) {}
+    return <String>{};
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final selected = _effectiveSelected;
+    final options = widget.toolCall.options ?? const <String>[];
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, right: 4, top: 2, bottom: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final opt in options)
+                _OptionChip(
+                  label: opt,
+                  selected: selected.contains(opt),
+                  enabled: _isInteractive,
+                  onTap: () => _onPick(opt),
+                ),
+            ],
+          ),
+          if (_isMulti && _isInteractive) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                onPressed: _localSelected.isEmpty ? null : _submitMulti,
+                child: Text(l10n.commonConfirm),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _OptionChip extends StatelessWidget {
+  const _OptionChip({
+    required this.label,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bg;
+    final Color fg;
+    if (!enabled) {
+      bg = selected
+          ? AppTheme.primary.withValues(alpha: 0.45)
+          : AppTheme.bg;
+      fg = selected ? Colors.white : AppTheme.textSecondary;
+    } else {
+      bg = selected ? AppTheme.primary : AppTheme.surface;
+      fg = selected ? Colors.white : AppTheme.textPrimary;
+    }
+    return Material(
+      color: bg,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: selected ? AppTheme.primary : AppTheme.border,
+        ),
+      ),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (selected) ...[
+                Icon(Icons.check_rounded, size: 14, color: fg),
+                const SizedBox(width: 4),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  color: fg,
+                  fontSize: 12,
+                  fontWeight:
+                      selected ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

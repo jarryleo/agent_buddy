@@ -33,6 +33,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonError => '出错';
 
   @override
+  String get commonConfirm => '确认';
+
+  @override
   String get homeSettingsTooltip => '设置';
 
   @override
@@ -247,6 +250,12 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get toolCurrentTimeDescription =>
       '获取当前日期与时间,返回本地时间、ISO 8601 与 Unix 时间戳。';
+
+  @override
+  String get toolAskUserName => '询问用户';
+
+  @override
+  String get toolAskUserDescription => '向用户提出一个多选或单选问题,用户作答后把结果回传给模型。';
 
   @override
   String get skillListEmpty =>

@@ -8,6 +8,7 @@
   "commonEdit": "Edit",
   "commonInUse": "In use",
   "commonError": "Error",
+  "commonConfirm": "Confirm",
 
   "homeSettingsTooltip": "Settings",
   "homeClearChatTooltip": "Clear chat",
@@ -116,6 +117,8 @@
   "toolFetchWebDescription": "Fetch the content of a URL and return the plain text of the page.",
   "toolCurrentTimeName": "Current Time",
   "toolCurrentTimeDescription": "Get the current date and time as local time, ISO 8601, and Unix timestamp.",
+  "toolAskUserName": "Ask User",
+  "toolAskUserDescription": "Ask the user a multiple-choice or single-choice question. The user's selection is returned to the model.",
 
   "skillListEmpty": "No skills added yet.\nSkills provide extra instructions to the AI during chat.\nTap \"Add\" in the bottom right to start.",
   "skillAddTitle": "Add Skill",

@@ -146,6 +146,12 @@ abstract class AppLocalizations {
   /// **'Error'**
   String get commonError;
 
+  /// No description provided for @commonConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm'**
+  String get commonConfirm;
+
   /// No description provided for @homeSettingsTooltip.
   ///
   /// In en, this message translates to:
@@ -547,6 +553,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Get the current date and time as local time, ISO 8601, and Unix timestamp.'**
   String get toolCurrentTimeDescription;
+
+  /// No description provided for @toolAskUserName.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask User'**
+  String get toolAskUserName;
+
+  /// No description provided for @toolAskUserDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask the user a multiple-choice or single-choice question. The user\'s selection is returned to the model.'**
+  String get toolAskUserDescription;
 
   /// No description provided for @skillListEmpty.
   ///

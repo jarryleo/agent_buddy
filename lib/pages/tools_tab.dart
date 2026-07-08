@@ -31,11 +31,13 @@ class ToolsTab extends StatelessWidget {
           final name = switch (t.id) {
             'fetch_web' => l10n.toolFetchWebName,
             'current_time' => l10n.toolCurrentTimeName,
+            'ask_user' => l10n.toolAskUserName,
             _ => t.name,
           };
           final description = switch (t.id) {
             'fetch_web' => l10n.toolFetchWebDescription,
             'current_time' => l10n.toolCurrentTimeDescription,
+            'ask_user' => l10n.toolAskUserDescription,
             _ => t.description,
           };
           return Material(

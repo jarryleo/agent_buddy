@@ -33,13 +33,34 @@ class ChatProvider extends ChangeNotifier {
   bool _sending = false;
   bool _disposed = false;
 
+  /// Pending `ask_user` tool calls. When the model invokes ask_user
+  /// we drop a [Completer] here keyed by the tool-call id; the message
+  /// bubble's inline options call [resolveAskUser] when the user picks,
+  /// which completes the future and unblocks the streaming `await`.
+  final Map<String, Completer<String>> _pendingAskUser = {};
+
   List<ChatMessage> get messages => List.unmodifiable(_messages);
   bool get sending => _sending;
 
   Future<void> clearMessages() async {
+    // Fail any in-flight ask_user prompts so the stream doesn't stay
+    // paused waiting for a user response that will never come.
+    for (final c in _pendingAskUser.values) {
+      if (!c.isCompleted) c.completeError(ToolException('chat cleared'));
+    }
+    _pendingAskUser.clear();
     _messages = [];
     await _storage.saveMessages(_messages);
     notifyListeners();
+  }
+
+  /// Called by the message bubble's inline option chips when the user
+  /// picks. Unblocks the streaming `await` on this tool call.
+  void resolveAskUser(String toolId, String selection) {
+    final completer = _pendingAskUser[toolId];
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(selection);
+    }
   }
 
   String _buildSystemPrompt() {
@@ -100,12 +121,46 @@ class ChatProvider extends ChangeNotifier {
             },
           });
           break;
+        case 'ask_user':
+          list.add({
+            'type': 'function',
+            'function': {
+              'name': 'ask_user',
+              'description': t.description,
+              'parameters': {
+                'type': 'object',
+                'properties': {
+                  'question': {
+                    'type': 'string',
+                    'description': '要向用户提出的问题',
+                  },
+                  'options': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'description': '用户可选择的选项(至少 2 个)',
+                    'minItems': 2,
+                  },
+                  'multi_select': {
+                    'type': 'boolean',
+                    'description': '是否允许多选,默认 false (单选)',
+                    'default': false,
+                  },
+                },
+                'required': ['question', 'options'],
+              },
+            },
+          });
+          break;
       }
     }
     return list;
   }
 
-  Future<String> _onToolCall(Map<String, dynamic> toolCall) async {
+  Future<String> _onToolCall(
+    BuildContext context,
+    Map<String, dynamic> toolCall,
+    String assistantId,
+  ) async {
     final name = toolCall['name'] as String? ?? '';
     final args = (toolCall['arguments'] as Map?)?.cast<String, dynamic>() ??
         const {};
@@ -118,6 +173,48 @@ class ChatProvider extends ChangeNotifier {
         return await _tools.fetchWeb(url);
       case 'current_time':
         return await _tools.currentTime();
+      case 'ask_user':
+        final question = args['question'] as String? ?? '';
+        final options =
+            (args['options'] as List?)?.cast<String>() ?? const [];
+        final multiSelect = args['multi_select'] as bool? ?? false;
+        final toolId = toolCall['id'] as String? ?? '';
+        if (question.isEmpty) {
+          throw ToolException('question is required');
+        }
+        if (options.length < 2) {
+          throw ToolException('at least 2 options are required');
+        }
+        // Stash the question/options on the tool call so the chat
+        // bubble can render the inline option chips. The stream is
+        // paused on the `await` below until the user picks.
+        _messages = [
+          for (final m in _messages)
+            if (m.id == assistantId)
+              m.copyWith(
+                toolCalls: [
+                  for (final tc in m.toolCalls)
+                    if (tc.id == toolId)
+                      tc.copyWith(
+                        question: question,
+                        options: options,
+                        multiSelect: multiSelect,
+                      )
+                    else
+                      tc,
+                ],
+              )
+            else
+              m,
+        ];
+        notifyListeners();
+        final completer = Completer<String>();
+        _pendingAskUser[toolId] = completer;
+        try {
+          return await completer.future;
+        } finally {
+          _pendingAskUser.remove(toolId);
+        }
       default:
         throw ToolException('unknown tool: $name');
     }
@@ -224,7 +321,7 @@ class ChatProvider extends ChangeNotifier {
       messages: requestMessages,
       systemPrompt: systemPrompt.isEmpty ? null : systemPrompt,
       tools: tools.isEmpty ? null : tools,
-      onToolCall: _onToolCall,
+      onToolCall: (tc) => _onToolCall(context, tc, assistantId),
     )
         .listen((event) {
       if (event.type == 'toolStart') {
@@ -382,6 +479,12 @@ class ChatProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    for (final c in _pendingAskUser.values) {
+      if (!c.isCompleted) {
+        c.completeError(ToolException('disposed before user responded'));
+      }
+    }
+    _pendingAskUser.clear();
     _disposed = true;
     super.dispose();
   }

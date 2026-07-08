@@ -33,6 +33,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonError => 'Error';
 
   @override
+  String get commonConfirm => 'Confirm';
+
+  @override
   String get homeSettingsTooltip => 'Settings';
 
   @override
@@ -256,6 +259,13 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get toolCurrentTimeDescription =>
       'Get the current date and time as local time, ISO 8601, and Unix timestamp.';
+
+  @override
+  String get toolAskUserName => 'Ask User';
+
+  @override
+  String get toolAskUserDescription =>
+      'Ask the user a multiple-choice or single-choice question. The user\'s selection is returned to the model.';
 
   @override
   String get skillListEmpty =>
