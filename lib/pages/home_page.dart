@@ -8,6 +8,7 @@ import '../providers/settings_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat_input.dart';
 import '../widgets/message_bubble.dart';
+import '../widgets/no_focus_icon_button.dart';
 import 'settings_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -44,7 +45,7 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
-        leading: IconButton(
+        leading: NoFocusIconButton(
           icon: const Icon(Icons.settings_outlined),
           tooltip: l10n.homeSettingsTooltip,
           onPressed: () {
@@ -80,9 +81,9 @@ class _HomePageState extends State<HomePage> {
         actions: [
           Consumer<ChatProvider>(
             builder: (context, chat, _) {
-              return IconButton(
-                tooltip: l10n.homeClearChatTooltip,
+              return NoFocusIconButton(
                 icon: const Icon(Icons.delete_sweep_outlined),
+                tooltip: l10n.homeClearChatTooltip,
                 onPressed: chat.messages.isEmpty
                     ? null
                     : () async {

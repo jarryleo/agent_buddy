@@ -5,6 +5,7 @@ import '../l10n/app_localizations.dart';
 import '../providers/chat_provider.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_theme.dart';
+import '../widgets/no_focus_icon_button.dart';
 import 'providers_tab.dart';
 import 'roles_tab.dart';
 import 'skills_tab.dart';
@@ -21,7 +22,7 @@ class SettingsPage extends StatelessWidget {
       child: Scaffold(
         appBar: AppBar(
           title: Text(l10n.settingsTitle),
-          leading: IconButton(
+          leading: NoFocusIconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
             onPressed: () => Navigator.of(context).pop(),
           ),
