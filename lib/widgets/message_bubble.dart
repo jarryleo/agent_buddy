@@ -21,7 +21,7 @@ class MessageBubble extends StatefulWidget {
 
 class _MessageBubbleState extends State<MessageBubble> {
   bool _thinkingExpanded = false;
-  static const int _thinkingCollapsedLines = 5;
+  static const int _thinkingCollapsedLines = 3;
   static const int _thinkingExpandedLines = 10;
   static const double _autoScrollBottomTolerance = 24;
 
@@ -53,15 +53,19 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
   }
 
-  void _maybeAutoScrollThinking() {
-    if (!_thinkingAtBottom) return;
+  void _scheduleAutoScrollThinking(bool wasAtBottom) {
+    // We only schedule if the user was at the bottom BEFORE the new
+    // content was laid out. After layout, `pixels` still points at the
+    // old maxScrollExtent while `maxScrollExtent` has grown, so a
+    // re-check in the post-frame callback would incorrectly think the
+    // user is no longer at the bottom and skip the jump. Snapshot the
+    // intent here, and just `jumpTo(newMaxExtent)` in the callback.
+    if (!wasAtBottom) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (!_thinkingScroll.hasClients) return;
       final pos = _thinkingScroll.position;
-      if (pos.pixels >= pos.maxScrollExtent - _autoScrollBottomTolerance) {
-        _thinkingScroll.jumpTo(pos.maxScrollExtent);
-      }
+      _thinkingScroll.jumpTo(pos.maxScrollExtent);
     });
   }
 
@@ -76,9 +80,15 @@ class _MessageBubbleState extends State<MessageBubble> {
     final thinkingChanged = m.thinking != _lastThinking;
     final expandedChanged = maxLines != _lastExpandedLines;
     if (thinkingChanged || expandedChanged) {
+      // Snapshot the bottom state BEFORE updating _lastThinking, so a
+      // listener that fires during layout (and may flip _thinkingAtBottom
+      // to false because the old position is no longer at the new
+      // bottom) cannot retroactively cancel the auto-scroll we want to
+      // do for the next frame's worth of thinking tokens.
+      final wasAtBottom = _thinkingAtBottom;
       _lastThinking = m.thinking;
       _lastExpandedLines = maxLines;
-      _maybeAutoScrollThinking();
+      _scheduleAutoScrollThinking(wasAtBottom);
     }
     return _buildAssistant(context, m);
   }
@@ -186,6 +196,12 @@ class _MessageBubbleState extends State<MessageBubble> {
     final maxLines =
         _thinkingExpanded ? _thinkingExpandedLines : _thinkingCollapsedLines;
     final overflow = lineCount > maxLines;
+    // Toggle is available when:
+    //  - collapsed and the content doesn't fit (▼ to expand), or
+    //  - expanded (▲ to collapse, even if the content already fits in
+    //    the expanded view). Without this second clause, the user
+    //    can't collapse once expanded if lineCount <= expanded limit.
+    final canToggle = _thinkingExpanded || overflow;
     return Container(
       decoration: BoxDecoration(
         color: AppTheme.thinking,
@@ -196,7 +212,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
-            onTap: overflow
+            onTap: canToggle
                 ? () => setState(() => _thinkingExpanded = !_thinkingExpanded)
                 : null,
             borderRadius: BorderRadius.circular(10),
@@ -216,7 +232,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                     ),
                   ),
                   const Spacer(),
-                  if (overflow)
+                  if (canToggle)
                     Icon(
                       _thinkingExpanded
                           ? Icons.expand_less
