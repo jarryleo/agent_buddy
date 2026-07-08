@@ -187,10 +187,23 @@ class ToolService {
     final stdout = (await stdoutFuture).join();
     final stderr = (await stderrFuture).join();
 
-    return jsonEncode({
+    final payload = jsonEncode({
       'exit_code': exitCode,
       'stdout': stdout,
       'stderr': stderr,
     });
+    // Surface a non-zero exit as a *failure* via ToolException, so:
+    //  - the tool card flips to "失败" instead of the misleading
+    //    "成功 32 毫秒" we previously showed for `ip addr show`
+    //    on Windows, and
+    //  - the AI sees the "Error: " prefix in the tool result and
+    //    is much more likely to acknowledge the failure to the
+    //    user instead of silently emitting `[DONE]`. The full
+    //    JSON is preserved inside the exception message so the
+    //    model can still parse exit_code / stdout / stderr.
+    if (exitCode != 0) {
+      throw ToolException(payload);
+    }
+    return payload;
   }
 }

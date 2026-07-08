@@ -82,6 +82,17 @@ class ChatProvider extends ChangeNotifier {
         buffer.writeln();
       }
     }
+    // Encourage the model not to silently end the turn after a
+    // tool returns an error result. Without this hint, some
+    // (especially reasoning) models treat "the tool answered
+    // with stderr" as "I have nothing to add" and emit [DONE]
+    // with an empty content delta, which the user sees as a
+    // hang or an unhelpful "no response".
+    buffer.writeln(
+      '当工具返回错误结果(例如命令退出码非零、网络请求失败、'
+      '抛出的异常)时,务必在回复中向用户说明错误原因,'
+      '并在合适时给出替代方案。不要在工具出错后直接结束本轮。',
+    );
     return buffer.toString().trim();
   }
 

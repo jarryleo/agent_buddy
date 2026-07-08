@@ -273,6 +273,14 @@ class ApiService {
           currentContent += content;
           yield StreamEvent(type: 'content', contentDelta: content);
         }
+        // `refusal` is how OpenAI surfaces a safety/policy
+        // refusal. Surface it as content so the user sees the
+        // reason rather than a silent empty bubble.
+        final refusal = delta['refusal'];
+        if (refusal is String && refusal.isNotEmpty) {
+          currentContent += refusal;
+          yield StreamEvent(type: 'content', contentDelta: refusal);
+        }
 
         final tc = delta['tool_calls'];
         if (tc is List) {
@@ -378,6 +386,13 @@ class ApiService {
         yield StreamEvent.error('HTTP ${followupResp.statusCode}: $body');
         return;
       }
+      // Track finish_reason + whether we ever surfaced any text so
+      // we can show a useful marker if the model was truncated, got
+      // its response filtered, or returned nothing at all. Without
+      // this the chat would silently end with an empty assistant
+      // bubble after the tool card.
+      String? followupFinishReason;
+      var followupYieldedContent = false;
       await for (final line in followupResp.stream
           .transform(utf8.decoder)
           .transform(const LineSplitter())) {
@@ -389,13 +404,47 @@ class ApiService {
           final json = jsonDecode(data) as Map<String, dynamic>;
           final choices = json['choices'] as List?;
           if (choices == null || choices.isEmpty) continue;
-          final delta = (choices.first as Map)['delta'] as Map<String, dynamic>?;
+          final choice = choices.first as Map<String, dynamic>;
+          // `finish_reason` lives on the choice (not the delta) and
+          // is set on the final chunk — usually with an empty delta.
+          final finish = choice['finish_reason'];
+          if (finish is String && finish.isNotEmpty) {
+            followupFinishReason = finish;
+          }
+          final delta = choice['delta'] as Map<String, dynamic>?;
           if (delta == null) continue;
+          // `refusal` is how OpenAI surfaces a safety/policy
+          // refusal. Without this branch, a refused response would
+          // look identical to a hang.
+          final refusal = delta['refusal'];
+          if (refusal is String && refusal.isNotEmpty) {
+            yield StreamEvent(type: 'content', contentDelta: refusal);
+            followupYieldedContent = true;
+          }
           final content = delta['content'];
           if (content is String && content.isNotEmpty) {
             yield StreamEvent(type: 'content', contentDelta: content);
+            followupYieldedContent = true;
           }
         } catch (_) {}
+      }
+      // Surface the three failure modes the user can actually do
+      // something about: truncation (use a smaller tool result),
+      // empty response (often a refusal or model glitch), and
+      // content filter (the API explicitly rejected the response).
+      if (followupFinishReason == 'length') {
+        yield StreamEvent(
+          type: 'content',
+          contentDelta: followupYieldedContent
+              ? '\n\n*(response truncated)*'
+              : '*(response truncated)*',
+        );
+      } else if (!followupYieldedContent) {
+        yield StreamEvent(type: 'content', contentDelta: '*(no response)*');
+      }
+      if (followupFinishReason == 'content_filter') {
+        yield StreamEvent(
+            type: 'error', error: 'Response was filtered by the API');
       }
     }
 
@@ -578,6 +627,11 @@ class ApiService {
         yield StreamEvent.error('HTTP ${followupResp.statusCode}: $body');
         return;
       }
+      // Same kind of post-loop handling as OpenAI: capture the
+      // stop_reason (Anthropic sends it on `message_delta` events)
+      // and surface truncation / empty-response cases.
+      String? followupStopReason;
+      var followupYieldedContent = false;
       await for (final line in followupResp.stream
           .transform(utf8.decoder)
           .transform(const LineSplitter())) {
@@ -594,10 +648,33 @@ class ApiService {
               final text = delta['text'];
               if (text is String && text.isNotEmpty) {
                 yield StreamEvent(type: 'content', contentDelta: text);
+                followupYieldedContent = true;
               }
+            } else if (delta != null && delta['type'] == 'thinking_delta') {
+              final text = delta['thinking'];
+              if (text is String && text.isNotEmpty) {
+                yield StreamEvent(type: 'reasoning', thinkingDelta: text);
+              }
+            }
+          } else if (type == 'message_delta') {
+            // stop_reason is on the delta of message_delta. Values:
+            //   end_turn, max_tokens, stop_sequence, tool_use, refusal.
+            final delta = json['delta'] as Map<String, dynamic>?;
+            if (delta != null && delta['stop_reason'] is String) {
+              followupStopReason = delta['stop_reason'] as String;
             }
           }
         } catch (_) {}
+      }
+      if (followupStopReason == 'max_tokens') {
+        yield StreamEvent(
+          type: 'content',
+          contentDelta: followupYieldedContent
+              ? '\n\n*(response truncated)*'
+              : '*(response truncated)*',
+        );
+      } else if (!followupYieldedContent) {
+        yield StreamEvent(type: 'content', contentDelta: '*(no response)*');
       }
     }
 
