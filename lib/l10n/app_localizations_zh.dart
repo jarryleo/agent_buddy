@@ -265,6 +265,13 @@ class AppLocalizationsZh extends AppLocalizations {
       '在主机上执行 shell 命令,返回 stdout、stderr 与退出码。仅桌面端可用 (Windows / macOS / Linux)。';
 
   @override
+  String get toolGetEnvironmentName => '环境信息';
+
+  @override
+  String get toolGetEnvironmentDescription =>
+      '获取本机环境信息(操作系统、架构、用户、主目录、shell、内核版本),供模型在执行命令行前判断平台特定命令。仅桌面端可用 (Windows / macOS / Linux)。';
+
+  @override
   String get skillListEmpty =>
       '还没有添加任何技能\n技能可在对话时为 AI 提供额外的能力说明\n点击右下角\"新增\"开始';
 

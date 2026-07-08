@@ -8,6 +8,7 @@ enum BuiltinTool {
   currentTime,
   askUser,
   runCommand,
+  getEnvironment,
 }
 
 extension BuiltinToolX on BuiltinTool {
@@ -21,6 +22,8 @@ extension BuiltinToolX on BuiltinTool {
         return 'ask_user';
       case BuiltinTool.runCommand:
         return 'run_command';
+      case BuiltinTool.getEnvironment:
+        return 'get_environment';
     }
   }
 
@@ -34,6 +37,8 @@ extension BuiltinToolX on BuiltinTool {
         return 'Ask User';
       case BuiltinTool.runCommand:
         return 'Run Command';
+      case BuiltinTool.getEnvironment:
+        return 'Get Environment';
     }
   }
 
@@ -47,6 +52,8 @@ extension BuiltinToolX on BuiltinTool {
         return '向用户提出一个多选或单选问题,用户作答后把结果回传给模型。';
       case BuiltinTool.runCommand:
         return '在主机上执行 shell 命令,返回 stdout、stderr 与退出码。仅桌面端 (Windows / macOS / Linux) 可用。';
+      case BuiltinTool.getEnvironment:
+        return '获取本机环境信息(OS、架构、用户、主目录、shell、内核版本),供模型在执行 run_command 前判断平台特定命令。仅桌面端 (Windows / macOS / Linux) 可用。';
     }
   }
 
@@ -60,6 +67,7 @@ extension BuiltinToolX on BuiltinTool {
       case BuiltinTool.askUser:
         return true;
       case BuiltinTool.runCommand:
+      case BuiltinTool.getEnvironment:
         if (kIsWeb) return false;
         return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
     }

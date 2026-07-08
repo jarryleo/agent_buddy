@@ -578,6 +578,18 @@ abstract class AppLocalizations {
   /// **'Execute a shell command on the host. Returns stdout, stderr, and exit code. Desktop only (Windows / macOS / Linux).'**
   String get toolRunCommandDescription;
 
+  /// No description provided for @toolGetEnvironmentName.
+  ///
+  /// In en, this message translates to:
+  /// **'Get Environment'**
+  String get toolGetEnvironmentName;
+
+  /// No description provided for @toolGetEnvironmentDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Get local system information (OS, architecture, user, home directory, shell, kernel version) so the model can pick platform-specific commands. Desktop only (Windows / macOS / Linux).'**
+  String get toolGetEnvironmentDescription;
+
   /// No description provided for @skillListEmpty.
   ///
   /// In en, this message translates to:

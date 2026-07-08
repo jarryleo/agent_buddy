@@ -116,6 +116,75 @@ class ToolService {
   String _four(int n) => n.toString().padLeft(4, '0');
   String _two(int n) => n.toString().padLeft(2, '0');
 
+  /// Returns a JSON snapshot of the local desktop environment so the
+  /// model can pick the right commands before calling `run_command`
+  /// (e.g. `ipconfig` on Windows vs `ip addr` on Linux, `/Users/x`
+  /// vs `C:\Users\x`). Includes:
+  ///   os, os_version, arch, hostname, user, home, shell, cwd,
+  ///   num_processors, kernel
+  /// Only available on macOS / Windows / Linux; throws [ToolException]
+  /// on web and mobile.
+  Future<String> getEnvironment() async {
+    if (kIsWeb) {
+      throw ToolException('get_environment is not supported on web');
+    }
+    if (!Platform.isMacOS && !Platform.isLinux && !Platform.isWindows) {
+      throw ToolException(
+        'get_environment is only supported on desktop (macOS / Windows / Linux)',
+      );
+    }
+
+    // `dart:io` already gives us a lot; the kernel string and arch
+    // (on Unix) need a one-shot command. Cap each command at 5s so
+    // a stuck shell doesn't hang the whole tool call.
+    Future<String> runShell(
+      String executable,
+      List<String> args,
+    ) async {
+      try {
+        final result = await Process.run(executable, args, runInShell: true)
+            .timeout(const Duration(seconds: 5));
+        return result.stdout.toString().trim();
+      } catch (_) {
+        return '';
+      }
+    }
+
+    final isWin = Platform.isWindows;
+
+    // Kernel: `uname -a` on Unix, `ver` on Windows. If the command
+    // fails, fall back to whatever dart:io already knows.
+    final kernel = await runShell(
+      isWin ? 'cmd' : 'uname',
+      isWin ? ['/c', 'ver'] : ['-a'],
+    );
+
+    // Arch: env var on Windows, `uname -m` on Unix.
+    final arch = isWin
+        ? (Platform.environment['PROCESSOR_ARCHITECTURE'] ??
+            (await runShell('cmd', ['/c', 'echo %PROCESSOR_ARCHITECTURE%'])))
+        : (await runShell('uname', ['-m']));
+
+    return jsonEncode({
+      'os': Platform.operatingSystem,
+      'os_version': Platform.operatingSystemVersion,
+      'arch': arch.isEmpty ? 'unknown' : arch,
+      'hostname': Platform.localHostname,
+      'user': Platform.environment['USER'] ??
+          Platform.environment['USERNAME'] ??
+          'unknown',
+      'home': Platform.environment['HOME'] ??
+          Platform.environment['USERPROFILE'] ??
+          '',
+      'shell': Platform.environment['SHELL'] ??
+          Platform.environment['COMSPEC'] ??
+          '',
+      'cwd': Directory.current.path,
+      'num_processors': Platform.numberOfProcessors,
+      'kernel': kernel.isEmpty ? Platform.operatingSystemVersion : kernel,
+    });
+  }
+
   /// Runs [command] through the system shell and returns the captured
   /// stdout, stderr and exit code as a JSON string:
   /// ```json

@@ -96,6 +96,15 @@ class ChatProvider extends ChangeNotifier {
     return buffer.toString().trim();
   }
 
+  /// True on platforms where desktop-only tools (run_command,
+  /// get_environment, ...) can actually run. Used to skip the
+  /// schema for those tools on web / mobile so the model doesn't
+  /// even see them in its tool list.
+  bool get _isDesktopPlatform {
+    if (kIsWeb) return false;
+    return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+  }
+
   List<Map<String, dynamic>> _buildToolsSchema() {
     final tools = _settings.activeTools;
     final list = <Map<String, dynamic>>[];
@@ -167,10 +176,7 @@ class ChatProvider extends ChangeNotifier {
         case 'run_command':
           // The tool service throws on non-desktop; don't even hand
           // the schema to the model on those platforms.
-          if (kIsWeb ||
-              !(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
-            break;
-          }
+          if (!_isDesktopPlatform) break;
           list.add({
             'type': 'function',
             'function': {
@@ -196,6 +202,21 @@ class ChatProvider extends ChangeNotifier {
                   },
                 },
                 'required': ['command'],
+              },
+            },
+          });
+          break;
+        case 'get_environment':
+          if (!_isDesktopPlatform) break;
+          list.add({
+            'type': 'function',
+            'function': {
+              'name': 'get_environment',
+              'description': t.description,
+              'parameters': {
+                'type': 'object',
+                'properties': const <String, dynamic>{},
+                'additionalProperties': false,
               },
             },
           });
@@ -276,6 +297,8 @@ class ChatProvider extends ChangeNotifier {
           cwd: cwd,
           timeoutSeconds: timeout,
         );
+      case 'get_environment':
+        return await _tools.getEnvironment();
       default:
         throw ToolException('unknown tool: $name');
     }

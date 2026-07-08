@@ -85,6 +85,8 @@
   "toolAskUserDescription": "向用户提出一个多选或单选问题,用户作答后把结果回传给模型。",
   "toolRunCommandName": "命令行执行",
   "toolRunCommandDescription": "在主机上执行 shell 命令,返回 stdout、stderr 与退出码。仅桌面端可用 (Windows / macOS / Linux)。",
+  "toolGetEnvironmentName": "环境信息",
+  "toolGetEnvironmentDescription": "获取本机环境信息(操作系统、架构、用户、主目录、shell、内核版本),供模型在执行命令行前判断平台特定命令。仅桌面端可用 (Windows / macOS / Linux)。",
 
   "skillListEmpty": "还没有添加任何技能\n技能可在对话时为 AI 提供额外的能力说明\n点击右下角\"新增\"开始",
   "skillAddTitle": "新增技能",

@@ -275,6 +275,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Execute a shell command on the host. Returns stdout, stderr, and exit code. Desktop only (Windows / macOS / Linux).';
 
   @override
+  String get toolGetEnvironmentName => 'Get Environment';
+
+  @override
+  String get toolGetEnvironmentDescription =>
+      'Get local system information (OS, architecture, user, home directory, shell, kernel version) so the model can pick platform-specific commands. Desktop only (Windows / macOS / Linux).';
+
+  @override
   String get skillListEmpty =>
       'No skills added yet.\nSkills provide extra instructions to the AI during chat.\nTap \"Add\" in the bottom right to start.';
 

@@ -33,6 +33,7 @@ class ToolsTab extends StatelessWidget {
             'current_time' => l10n.toolCurrentTimeName,
             'ask_user' => l10n.toolAskUserName,
             'run_command' => l10n.toolRunCommandName,
+            'get_environment' => l10n.toolGetEnvironmentName,
             _ => t.name,
           };
           final description = switch (t.id) {
@@ -40,6 +41,7 @@ class ToolsTab extends StatelessWidget {
             'current_time' => l10n.toolCurrentTimeDescription,
             'ask_user' => l10n.toolAskUserDescription,
             'run_command' => l10n.toolRunCommandDescription,
+            'get_environment' => l10n.toolGetEnvironmentDescription,
             _ => t.description,
           };
           return Material(
