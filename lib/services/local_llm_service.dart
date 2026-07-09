@@ -44,6 +44,7 @@ class LocalLlmService extends ChangeNotifier {
         modelParams: ModelParams(
           contextSize: provider.contextSize,
           gpuLayers: provider.gpuLayers,
+          flashAttention: FlashAttention.enabled
         ),
       );
       if (provider.mmprojPath != null && provider.mmprojPath!.isNotEmpty) {

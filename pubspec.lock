@@ -441,10 +441,10 @@ packages:
     dependency: "direct main"
     description:
       name: llamadart
-      sha256: "1b53bbab906e10eba39a4556d1a7e0538e40196b45345b085ff9f34c6e505f6e"
+      sha256: "898d3331517aa7e3a536bf83ab96d5747f4627fd9732758f56486bd9279de4f1"
       url: "https://pub.dev"
     source: hosted
-    version: "0.7.2"
+    version: "0.8.13"
   logging:
     dependency: transitive
     description:
