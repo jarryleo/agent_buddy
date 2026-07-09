@@ -218,6 +218,36 @@ abstract class AppLocalizations {
   /// **'Copied'**
   String get homeCopied;
 
+  /// No description provided for @homeLocalModelLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading model…'**
+  String get homeLocalModelLoading;
+
+  /// No description provided for @homeLocalModelReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Model loaded'**
+  String get homeLocalModelReady;
+
+  /// No description provided for @homeLocalModelRelease.
+  ///
+  /// In en, this message translates to:
+  /// **'Release model'**
+  String get homeLocalModelRelease;
+
+  /// No description provided for @homeLocalModelReleaseTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Free the local model from memory'**
+  String get homeLocalModelReleaseTooltip;
+
+  /// No description provided for @homeLocalModelReleased.
+  ///
+  /// In en, this message translates to:
+  /// **'Model released'**
+  String get homeLocalModelReleased;
+
   /// No description provided for @settingsTitle.
   ///
   /// In en, this message translates to:

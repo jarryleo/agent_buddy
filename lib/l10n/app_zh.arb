@@ -21,6 +21,11 @@
   "homeNoModelSelected": "未选模型",
   "homeProviderModel": "{provider} · {model}",
   "homeCopied": "已复制",
+  "homeLocalModelLoading": "正在加载模型…",
+  "homeLocalModelReady": "模型已加载",
+  "homeLocalModelRelease": "释放模型",
+  "homeLocalModelReleaseTooltip": "从内存中释放本地模型",
+  "homeLocalModelReleased": "模型已释放",
 
   "settingsTitle": "设置",
   "settingsTabProvider": "Provider",

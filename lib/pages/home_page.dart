@@ -6,6 +6,7 @@ import '../l10n/app_localizations.dart';
 import '../providers/chat_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/image_service.dart';
+import '../services/local_llm_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat_input.dart';
 import '../widgets/message_bubble.dart';
@@ -139,6 +140,7 @@ class _HomePageState extends State<HomePage> {
           );
           return Column(
             children: [
+              const _LocalModelStatusBar(),
               Expanded(
                 child: chat.messages.isEmpty
                     ? _EmptyState(l10n: l10n)
@@ -242,5 +244,112 @@ class _EmptyState extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Slim bar at the top of the chat showing local-model engine state.
+///
+/// - Hidden when the user isn't on a local model at all.
+/// - Indeterminate progress + label while the model is loading.
+/// - "Release model" button once a model is loaded (so the user can
+///   free RAM/memory-mapping before swapping providers).
+class _LocalModelStatusBar extends StatelessWidget {
+  const _LocalModelStatusBar();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final settings = context.watch<SettingsProvider>();
+    if (!settings.useLocalModel) return const SizedBox.shrink();
+    final local = context.watch<LocalLlmService>();
+
+    if (local.isLoading) {
+      return Container(
+        width: double.infinity,
+        color: AppTheme.primary.withValues(alpha: 0.06),
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                l10n.homeLocalModelLoading,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (local.isReady) {
+      return Container(
+        width: double.infinity,
+        color: AppTheme.primary.withValues(alpha: 0.06),
+        padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+        child: Row(
+          children: [
+            Icon(
+              Icons.check_circle_outline,
+              size: 16,
+              color: AppTheme.primary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                l10n.homeLocalModelReady,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.primary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Tooltip(
+              message: l10n.homeLocalModelReleaseTooltip,
+              child: TextButton.icon(
+                onPressed: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  await context.read<LocalLlmService>().releaseModel();
+                  if (!context.mounted) return;
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(l10n.homeLocalModelReleased),
+                      duration: const Duration(milliseconds: 1200),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.memory_outlined, size: 16),
+                label: Text(
+                  l10n.homeLocalModelRelease,
+                  style: const TextStyle(fontSize: 12),
+                ),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppTheme.primary,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 }

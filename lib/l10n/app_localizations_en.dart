@@ -73,6 +73,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeCopied => 'Copied';
 
   @override
+  String get homeLocalModelLoading => 'Loading model…';
+
+  @override
+  String get homeLocalModelReady => 'Model loaded';
+
+  @override
+  String get homeLocalModelRelease => 'Release model';
+
+  @override
+  String get homeLocalModelReleaseTooltip => 'Free the local model from memory';
+
+  @override
+  String get homeLocalModelReleased => 'Model released';
+
+  @override
   String get settingsTitle => 'Settings';
 
   @override

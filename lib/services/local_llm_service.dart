@@ -1,12 +1,13 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:llamadart/llamadart.dart';
 
 import '../models/local_provider.dart';
 import '../models/message.dart';
 import 'api_service.dart';
 
-class LocalLlmService {
+class LocalLlmService extends ChangeNotifier {
   LlamaEngine? _engine;
   ChatSession? _session;
   String? _loadedProviderId;
@@ -25,6 +26,7 @@ class LocalLlmService {
     if (_loadedProviderId == provider.id && isReady) return;
     await _disposeEngine();
     _loading = true;
+    notifyListeners();
     try {
       final engine = LlamaEngine(LlamaBackend());
       await engine.loadModel(
@@ -52,6 +54,7 @@ class LocalLlmService {
       _loadedProviderId = provider.id;
     } finally {
       _loading = false;
+      notifyListeners();
     }
   }
 
@@ -198,8 +201,13 @@ class LocalLlmService {
     yield StreamEvent.done();
   }
 
-  Future<void> dispose() async {
+  /// Free the loaded model (if any) and drop the engine. The next chat
+  /// will trigger a fresh `ensureLoaded`. Safe to call when nothing is
+  /// loaded.
+  Future<void> releaseModel() async {
+    if (_engine == null && _session == null) return;
     await _disposeEngine();
+    notifyListeners();
   }
 
   Future<void> _disposeEngine() async {
@@ -214,6 +222,20 @@ class LocalLlmService {
         await engine.dispose();
       } catch (_) {}
     }
+  }
+
+  @override
+  void dispose() {
+    // Best-effort: drop the engine handle synchronously. The underlying
+    // LlamaEngine.dispose() is async, but on app shutdown the native side
+    // is torn down anyway. We don't await here because ChangeNotifier's
+    // dispose is sync.
+    _engine = null;
+    _session = null;
+    _loadedProviderId = null;
+    _supportsVision = false;
+    _supportsAudio = false;
+    super.dispose();
   }
 
   void _seedHistory(ChatSession session, List<ChatRequestMessage> messages) {

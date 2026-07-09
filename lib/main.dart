@@ -42,9 +42,8 @@ class AgentBuddyApp extends StatelessWidget {
         Provider<ApiService>(create: (_) => ApiService()),
         Provider<ToolService>(create: (_) => ToolService()),
         Provider<ImageService>(create: (_) => ImageService()),
-        Provider<LocalLlmService>(
+        ChangeNotifierProvider<LocalLlmService>(
           create: (_) => LocalLlmService(),
-          dispose: (_, svc) => svc.dispose(),
         ),
         ChangeNotifierProxyProvider4<
           SettingsProvider,

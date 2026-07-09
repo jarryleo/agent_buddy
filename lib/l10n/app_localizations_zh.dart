@@ -71,6 +71,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeCopied => '已复制';
 
   @override
+  String get homeLocalModelLoading => '正在加载模型…';
+
+  @override
+  String get homeLocalModelReady => '模型已加载';
+
+  @override
+  String get homeLocalModelRelease => '释放模型';
+
+  @override
+  String get homeLocalModelReleaseTooltip => '从内存中释放本地模型';
+
+  @override
+  String get homeLocalModelReleased => '模型已释放';
+
+  @override
   String get settingsTitle => '设置';
 
   @override

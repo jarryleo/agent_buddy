@@ -27,6 +27,11 @@
     }
   },
   "homeCopied": "Copied",
+  "homeLocalModelLoading": "Loading model…",
+  "homeLocalModelReady": "Model loaded",
+  "homeLocalModelRelease": "Release model",
+  "homeLocalModelReleaseTooltip": "Free the local model from memory",
+  "homeLocalModelReleased": "Model released",
 
   "settingsTitle": "Settings",
   "settingsTabProvider": "Provider",
