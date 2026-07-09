@@ -1,6 +1,6 @@
 {
-    "name": "agent_buddy",
-    "short_name": "agent_buddy",
+    "name": "Agent Buddy",
+    "short_name": "Agent Buddy",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

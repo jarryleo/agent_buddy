@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "cn.leo" "\0"
-            VALUE "FileDescription", "agent_buddy" "\0"
+            VALUE "FileDescription", "Agent Buddy" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "agent_buddy" "\0"
+            VALUE "InternalName", "Agent Buddy" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 cn.leo. All rights reserved." "\0"
-            VALUE "OriginalFilename", "agent_buddy.exe" "\0"
-            VALUE "ProductName", "agent_buddy" "\0"
+            VALUE "OriginalFilename", "Agent Buddy.exe" "\0"
+            VALUE "ProductName", "Agent Buddy" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
