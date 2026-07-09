@@ -66,7 +66,9 @@ class ModelProvider {
   }) : createdAt = createdAt ?? DateTime.now();
 
   String get fullChatUrl {
-    final base = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+    final base = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
     final path = chatPath.startsWith('/') ? chatPath : '/$chatPath';
     return '$base$path';
   }
@@ -96,17 +98,17 @@ class ModelProvider {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'protocol': protocol.name,
-        'baseUrl': baseUrl,
-        'apiKey': apiKey,
-        'chatPath': chatPath,
-        'models': models,
-        'enabled': enabled,
-        'selectedModel': selectedModel,
-        'createdAt': createdAt.toIso8601String(),
-      };
+    'id': id,
+    'name': name,
+    'protocol': protocol.name,
+    'baseUrl': baseUrl,
+    'apiKey': apiKey,
+    'chatPath': chatPath,
+    'models': models,
+    'enabled': enabled,
+    'selectedModel': selectedModel,
+    'createdAt': createdAt.toIso8601String(),
+  };
 
   factory ModelProvider.fromJson(Map<String, dynamic> json) {
     return ModelProvider(
@@ -118,11 +120,14 @@ class ModelProvider {
       ),
       baseUrl: json['baseUrl'] as String,
       apiKey: json['apiKey'] as String? ?? '',
-      chatPath: json['chatPath'] as String? ?? ProviderProtocol.openai.defaultPath,
+      chatPath:
+          json['chatPath'] as String? ?? ProviderProtocol.openai.defaultPath,
       models: (json['models'] as List?)?.cast<String>() ?? const [],
       enabled: json['enabled'] as bool? ?? true,
       selectedModel: json['selectedModel'] as String?,
-      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+      createdAt:
+          DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+          DateTime.now(),
     );
   }
 

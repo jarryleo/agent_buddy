@@ -82,18 +82,18 @@ class ToolCall {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'arguments': arguments,
-        'status': status.name,
-        'result': result,
-        'error': error,
-        'startedAt': startedAt.toIso8601String(),
-        'finishedAt': finishedAt?.toIso8601String(),
-        if (question != null) 'question': question,
-        if (options != null) 'options': options,
-        if (multiSelect != null) 'multiSelect': multiSelect,
-      };
+    'id': id,
+    'name': name,
+    'arguments': arguments,
+    'status': status.name,
+    'result': result,
+    'error': error,
+    'startedAt': startedAt.toIso8601String(),
+    'finishedAt': finishedAt?.toIso8601String(),
+    if (question != null) 'question': question,
+    if (options != null) 'options': options,
+    if (multiSelect != null) 'multiSelect': multiSelect,
+  };
 
   factory ToolCall.fromJson(Map<String, dynamic> json) {
     return ToolCall(
@@ -109,7 +109,8 @@ class ToolCall {
       question: json['question'] as String?,
       options: (json['options'] as List?)?.cast<String>(),
       multiSelect: json['multiSelect'] as bool?,
-      startedAt: DateTime.tryParse(json['startedAt'] as String? ?? '') ??
+      startedAt:
+          DateTime.tryParse(json['startedAt'] as String? ?? '') ??
           DateTime.now(),
       finishedAt: DateTime.tryParse(json['finishedAt'] as String? ?? ''),
     );
@@ -162,14 +163,14 @@ class ChatMessage {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'role': role.name,
-        'content': content,
-        'thinking': thinking,
-        'createdAt': createdAt.toIso8601String(),
-        'toolCalls': toolCalls.map((t) => t.toJson()).toList(),
-        'imagePaths': imagePaths,
-      };
+    'id': id,
+    'role': role.name,
+    'content': content,
+    'thinking': thinking,
+    'createdAt': createdAt.toIso8601String(),
+    'toolCalls': toolCalls.map((t) => t.toJson()).toList(),
+    'imagePaths': imagePaths,
+  };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     final tcRaw = json['toolCalls'] as List?;
@@ -183,12 +184,13 @@ class ChatMessage {
       content: json['content'] as String? ?? '',
       thinking: json['thinking'] as String? ?? '',
       createdAt:
-          DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+          DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+          DateTime.now(),
       toolCalls: tcRaw == null
           ? const []
           : tcRaw
-              .map((e) => ToolCall.fromJson(e as Map<String, dynamic>))
-              .toList(),
+                .map((e) => ToolCall.fromJson(e as Map<String, dynamic>))
+                .toList(),
       imagePaths: imgRaw?.cast<String>() ?? const [],
     );
   }

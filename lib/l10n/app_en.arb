@@ -92,6 +92,49 @@
     }
   },
 
+  "settingsTabLocal": "Local",
+  "providerUseLocalModel": "Use a local model instead",
+  "localProviderListEmpty": "No local models added yet.\nTap \"Add\" in the bottom right to load a GGUF model from disk.",
+  "localProviderAddTitle": "Add Local Model",
+  "localProviderEditTitle": "Edit Local Model",
+  "localProviderName": "Display name",
+  "localProviderNameHint": "e.g. Qwen2.5 7B (Local)",
+  "localProviderNameRequired": "Please enter a display name",
+  "localProviderModelFile": "Model file (.gguf)",
+  "localProviderModelFileRequired": "Please pick a model file",
+  "localProviderPickModelFile": "Pick model file",
+  "localProviderMmprojFile": "Multimodal projector (mmproj, optional)",
+  "localProviderPickMmproj": "Pick mmproj file",
+  "localProviderMmprojHint": "If the model is multimodal, pick a matching mmproj-*.gguf from the same directory.",
+  "localProviderAutoDetectMmproj": "Auto-detect from same directory",
+  "localProviderContextSize": "Context size",
+  "localProviderTemperature": "Temperature",
+  "localProviderGpuLayers": "GPU layers",
+  "localProviderGpuLayersHint": "0 = CPU only. Higher values offload more layers to GPU.",
+  "localProviderMaxTokens": "Max generated tokens",
+  "localProviderSetAsDefault": "Set as default",
+  "localProviderDeleteTitle": "Delete Local Model",
+  "localProviderDeleteConfirm": "Delete \"{name}\"?",
+  "@localProviderDeleteConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "localProviderParams": "Parameters",
+  "localProviderFileMissing": "File not found: {path}",
+  "@localProviderFileMissing": {
+    "placeholders": {
+      "path": { "type": "String" }
+    }
+  },
+  "localProviderMmprojDetected": "Detected: {name}",
+  "@localProviderMmprojDetected": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "localProviderClearMmproj": "Clear",
+
   "roleListEmpty": "No roles added yet.\nTap \"Add\" in the bottom right to create your first role.",
   "roleAddTitle": "Add Role",
   "roleEditTitle": "Edit Role",

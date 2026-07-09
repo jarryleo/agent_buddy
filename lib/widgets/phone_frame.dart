@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 
 class PhoneFrame extends StatelessWidget {
-  const PhoneFrame({
-    super.key,
-    required this.child,
-    this.maxWidth = 480,
-  });
+  const PhoneFrame({super.key, required this.child, this.maxWidth = 480});
 
   final Widget child;
   final double maxWidth;
@@ -33,7 +29,10 @@ class PhoneFrame extends StatelessWidget {
     );
   }
 
-  Widget _buildPhoneContainer(BuildContext context, BoxConstraints constraints) {
+  Widget _buildPhoneContainer(
+    BuildContext context,
+    BoxConstraints constraints,
+  ) {
     final width = maxWidth.clamp(320.0, 440.0);
     final ratio = constraints.maxHeight / constraints.maxWidth;
     double height;

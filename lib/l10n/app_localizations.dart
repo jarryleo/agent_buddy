@@ -440,6 +440,168 @@ abstract class AppLocalizations {
   /// **'Delete \"{name}\"?'**
   String providerDeleteConfirm(String name);
 
+  /// No description provided for @settingsTabLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'Local'**
+  String get settingsTabLocal;
+
+  /// No description provided for @providerUseLocalModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a local model instead'**
+  String get providerUseLocalModel;
+
+  /// No description provided for @localProviderListEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No local models added yet.\nTap \"Add\" in the bottom right to load a GGUF model from disk.'**
+  String get localProviderListEmpty;
+
+  /// No description provided for @localProviderAddTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Local Model'**
+  String get localProviderAddTitle;
+
+  /// No description provided for @localProviderEditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit Local Model'**
+  String get localProviderEditTitle;
+
+  /// No description provided for @localProviderName.
+  ///
+  /// In en, this message translates to:
+  /// **'Display name'**
+  String get localProviderName;
+
+  /// No description provided for @localProviderNameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. Qwen2.5 7B (Local)'**
+  String get localProviderNameHint;
+
+  /// No description provided for @localProviderNameRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter a display name'**
+  String get localProviderNameRequired;
+
+  /// No description provided for @localProviderModelFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Model file (.gguf)'**
+  String get localProviderModelFile;
+
+  /// No description provided for @localProviderModelFileRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Please pick a model file'**
+  String get localProviderModelFileRequired;
+
+  /// No description provided for @localProviderPickModelFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick model file'**
+  String get localProviderPickModelFile;
+
+  /// No description provided for @localProviderMmprojFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Multimodal projector (mmproj, optional)'**
+  String get localProviderMmprojFile;
+
+  /// No description provided for @localProviderPickMmproj.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick mmproj file'**
+  String get localProviderPickMmproj;
+
+  /// No description provided for @localProviderMmprojHint.
+  ///
+  /// In en, this message translates to:
+  /// **'If the model is multimodal, pick a matching mmproj-*.gguf from the same directory.'**
+  String get localProviderMmprojHint;
+
+  /// No description provided for @localProviderAutoDetectMmproj.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-detect from same directory'**
+  String get localProviderAutoDetectMmproj;
+
+  /// No description provided for @localProviderContextSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Context size'**
+  String get localProviderContextSize;
+
+  /// No description provided for @localProviderTemperature.
+  ///
+  /// In en, this message translates to:
+  /// **'Temperature'**
+  String get localProviderTemperature;
+
+  /// No description provided for @localProviderGpuLayers.
+  ///
+  /// In en, this message translates to:
+  /// **'GPU layers'**
+  String get localProviderGpuLayers;
+
+  /// No description provided for @localProviderGpuLayersHint.
+  ///
+  /// In en, this message translates to:
+  /// **'0 = CPU only. Higher values offload more layers to GPU.'**
+  String get localProviderGpuLayersHint;
+
+  /// No description provided for @localProviderMaxTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'Max generated tokens'**
+  String get localProviderMaxTokens;
+
+  /// No description provided for @localProviderSetAsDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Set as default'**
+  String get localProviderSetAsDefault;
+
+  /// No description provided for @localProviderDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Local Model'**
+  String get localProviderDeleteTitle;
+
+  /// No description provided for @localProviderDeleteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete \"{name}\"?'**
+  String localProviderDeleteConfirm(String name);
+
+  /// No description provided for @localProviderParams.
+  ///
+  /// In en, this message translates to:
+  /// **'Parameters'**
+  String get localProviderParams;
+
+  /// No description provided for @localProviderFileMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'File not found: {path}'**
+  String localProviderFileMissing(String path);
+
+  /// No description provided for @localProviderMmprojDetected.
+  ///
+  /// In en, this message translates to:
+  /// **'Detected: {name}'**
+  String localProviderMmprojDetected(String name);
+
+  /// No description provided for @localProviderClearMmproj.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get localProviderClearMmproj;
+
   /// No description provided for @roleListEmpty.
   ///
   /// In en, this message translates to:

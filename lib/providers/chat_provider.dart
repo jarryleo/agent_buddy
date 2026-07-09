@@ -9,6 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../models/message.dart';
 import '../services/api_service.dart';
 import '../services/image_service.dart';
+import '../services/local_llm_service.dart';
 import '../services/storage_service.dart';
 import '../services/tool_service.dart';
 import 'settings_provider.dart';
@@ -19,6 +20,7 @@ class ChatProvider extends ChangeNotifier {
     this._api,
     this._tools,
     this._images,
+    this._localLlm,
     this._settings,
   ) {
     _messages = _storage.loadMessages();
@@ -28,6 +30,7 @@ class ChatProvider extends ChangeNotifier {
   final ApiService _api;
   final ToolService _tools;
   final ImageService _images;
+  final LocalLlmService _localLlm;
   final SettingsProvider _settings;
   final _uuid = const Uuid();
 
@@ -152,10 +155,7 @@ class ChatProvider extends ChangeNotifier {
               'parameters': {
                 'type': 'object',
                 'properties': {
-                  'question': {
-                    'type': 'string',
-                    'description': '要向用户提出的问题',
-                  },
+                  'question': {'type': 'string', 'description': '要向用户提出的问题'},
                   'options': {
                     'type': 'array',
                     'items': {'type': 'string'},
@@ -189,10 +189,7 @@ class ChatProvider extends ChangeNotifier {
                     'type': 'string',
                     'description': '要执行的 shell 命令(通过系统 shell 运行)',
                   },
-                  'cwd': {
-                    'type': 'string',
-                    'description': '工作目录,可选,默认当前目录',
-                  },
+                  'cwd': {'type': 'string', 'description': '工作目录,可选,默认当前目录'},
                   'timeout_seconds': {
                     'type': 'integer',
                     'description': '超时秒数,默认 30,超时后进程会被 kill',
@@ -232,8 +229,8 @@ class ChatProvider extends ChangeNotifier {
     String assistantId,
   ) async {
     final name = toolCall['name'] as String? ?? '';
-    final args = (toolCall['arguments'] as Map?)?.cast<String, dynamic>() ??
-        const {};
+    final args =
+        (toolCall['arguments'] as Map?)?.cast<String, dynamic>() ?? const {};
     switch (name) {
       case 'fetch_web':
         final url = args['url'] as String? ?? '';
@@ -245,8 +242,7 @@ class ChatProvider extends ChangeNotifier {
         return await _tools.currentTime();
       case 'ask_user':
         final question = args['question'] as String? ?? '';
-        final options =
-            (args['options'] as List?)?.cast<String>() ?? const [];
+        final options = (args['options'] as List?)?.cast<String>() ?? const [];
         final multiSelect = args['multi_select'] as bool? ?? false;
         final toolId = toolCall['id'] as String? ?? '';
         if (question.isEmpty) {
@@ -312,34 +308,53 @@ class ChatProvider extends ChangeNotifier {
     final l10n = AppLocalizations.of(context);
     final trimmed = text.trim();
     if ((trimmed.isEmpty && imagePaths.isEmpty) || _sending) return;
+    final useLocal = _settings.useLocalModel;
     final provider = _settings.activeProvider;
-    if (provider == null) {
-      _messages = [
-        ..._messages,
-        ChatMessage(
-          id: _uuid.v4(),
-          role: MessageRole.assistant,
-          content: l10n.chatNoProvider,
-        ),
-      ];
-      await _storage.saveMessages(_messages);
-      notifyListeners();
-      return;
-    }
-    final model = provider.selectedModel ??
-        (provider.models.isNotEmpty ? provider.models.first : null);
-    if (model == null) {
-      _messages = [
-        ..._messages,
-        ChatMessage(
-          id: _uuid.v4(),
-          role: MessageRole.assistant,
-          content: l10n.chatNoModel,
-        ),
-      ];
-      await _storage.saveMessages(_messages);
-      notifyListeners();
-      return;
+    final localProvider = _settings.activeLocalProvider;
+    if (useLocal) {
+      if (localProvider == null) {
+        _messages = [
+          ..._messages,
+          ChatMessage(
+            id: _uuid.v4(),
+            role: MessageRole.assistant,
+            content: l10n.chatNoProvider,
+          ),
+        ];
+        await _storage.saveMessages(_messages);
+        notifyListeners();
+        return;
+      }
+    } else {
+      if (provider == null) {
+        _messages = [
+          ..._messages,
+          ChatMessage(
+            id: _uuid.v4(),
+            role: MessageRole.assistant,
+            content: l10n.chatNoProvider,
+          ),
+        ];
+        await _storage.saveMessages(_messages);
+        notifyListeners();
+        return;
+      }
+      final model =
+          provider.selectedModel ??
+          (provider.models.isNotEmpty ? provider.models.first : null);
+      if (model == null) {
+        _messages = [
+          ..._messages,
+          ChatMessage(
+            id: _uuid.v4(),
+            role: MessageRole.assistant,
+            content: l10n.chatNoModel,
+          ),
+        ];
+        await _storage.saveMessages(_messages);
+        notifyListeners();
+        return;
+      }
     }
 
     final userMsg = ChatMessage(
@@ -374,11 +389,13 @@ class ChatProvider extends ChangeNotifier {
       if (m.content.isEmpty && m.imagePaths.isEmpty) continue;
       final dataUrls = <String>[];
       for (final path in m.imagePaths) {
-        try {
-          dataUrls.add(await _images.toBase64DataUrl(path));
-        } catch (e) {
-          // Skip this image silently rather than failing the whole
-          // turn; the user can re-send if needed.
+        if (!useLocal) {
+          try {
+            dataUrls.add(await _images.toBase64DataUrl(path));
+          } catch (e) {
+            // Skip this image silently rather than failing the whole
+            // turn; the user can re-send if needed.
+          }
         }
       }
       requestMessages.add(
@@ -386,6 +403,7 @@ class ChatProvider extends ChangeNotifier {
           role: m.role,
           content: m.content,
           imageDataUrls: dataUrls,
+          imagePaths: useLocal ? List.unmodifiable(m.imagePaths) : const [],
         ),
       );
     }
@@ -398,102 +416,135 @@ class ChatProvider extends ChangeNotifier {
     final controller = StreamController<void>();
     final completer = Completer<void>();
 
-    sub = _api
-        .streamChat(
-      provider: provider,
-      model: model,
-      messages: requestMessages,
-      systemPrompt: systemPrompt.isEmpty ? null : systemPrompt,
-      tools: tools.isEmpty ? null : tools,
-      onToolCall: (tc) => _onToolCall(context, tc, assistantId),
-    )
-        .listen((event) {
-      if (event.type == 'toolStart') {
-        final idx = _messages.indexWhere((m) => m.id == assistantId);
-        if (idx >= 0) {
-          final toolId = event.toolId ?? '';
-          _messages = [
-            for (final mm in _messages)
-              if (mm.id == assistantId)
-                mm.copyWith(
-                  toolCalls: [
-                    ...mm.toolCalls,
-                    ToolCall(
-                      id: toolId,
-                      name: event.toolName ?? '',
-                      arguments: event.toolArguments ?? '',
-                      status: ToolCallStatus.running,
-                    ),
-                  ],
-                )
-              else
-                mm,
-          ];
-          controller.add(null);
-        }
-      } else if (event.type == 'toolDone') {
-        final idx = _messages.indexWhere((m) => m.id == assistantId);
-        if (idx >= 0) {
-          final toolId = event.toolId ?? '';
-          final now = DateTime.now();
-          _messages = [
-            for (final mm in _messages)
-              if (mm.id == assistantId)
-                mm.copyWith(
-                  toolCalls: [
-                    for (final tc in mm.toolCalls)
-                      if (tc.id == toolId)
-                        tc.copyWith(
-                          status: (event.toolSuccess ?? false)
-                              ? ToolCallStatus.success
-                              : ToolCallStatus.failed,
-                          result: event.toolResult,
-                          error: event.toolError,
-                          finishedAt: now,
-                        )
-                      else
-                        tc,
-                  ],
-                )
-              else
-                mm,
-          ];
-          controller.add(null);
-        }
-      } else if (event.type == 'reasoning' && event.thinkingDelta != null) {
-        final idx = _messages.indexWhere((m) => m.id == assistantId);
-        if (idx >= 0) {
-          _messages = [
-            for (final mm in _messages)
-              if (mm.id == assistantId)
-                mm.copyWith(thinking: mm.thinking + event.thinkingDelta!)
-              else
-                mm,
-          ];
-          if (!updated) {
-            updated = true;
+    final stream = useLocal
+        ? _localLlm.streamChat(
+            provider: localProvider!,
+            systemPrompt: systemPrompt,
+            messages: requestMessages,
+            tools: tools,
+            onToolCall: (tc) => _onToolCall(context, tc, assistantId),
+          )
+        : _api.streamChat(
+            provider: provider!,
+            model:
+                provider.selectedModel ??
+                (provider.models.isNotEmpty ? provider.models.first : ''),
+            messages: requestMessages,
+            systemPrompt: systemPrompt.isEmpty ? null : systemPrompt,
+            tools: tools.isEmpty ? null : tools,
+            onToolCall: (tc) => _onToolCall(context, tc, assistantId),
+          );
+
+    sub = stream.listen(
+      (event) {
+        if (event.type == 'toolStart') {
+          final idx = _messages.indexWhere((m) => m.id == assistantId);
+          if (idx >= 0) {
+            final toolId = event.toolId ?? '';
+            _messages = [
+              for (final mm in _messages)
+                if (mm.id == assistantId)
+                  mm.copyWith(
+                    toolCalls: [
+                      ...mm.toolCalls,
+                      ToolCall(
+                        id: toolId,
+                        name: event.toolName ?? '',
+                        arguments: event.toolArguments ?? '',
+                        status: ToolCallStatus.running,
+                      ),
+                    ],
+                  )
+                else
+                  mm,
+            ];
+            controller.add(null);
           }
-          controller.add(null);
-        }
-      } else if (event.type == 'content' && event.contentDelta != null) {
-        final idx = _messages.indexWhere((m) => m.id == assistantId);
-        if (idx >= 0) {
-          _messages = [
-            for (final mm in _messages)
-              if (mm.id == assistantId)
-                mm.copyWith(content: mm.content + event.contentDelta!)
-              else
-                mm,
-          ];
-          if (!updated) {
-            updated = true;
+        } else if (event.type == 'toolDone') {
+          final idx = _messages.indexWhere((m) => m.id == assistantId);
+          if (idx >= 0) {
+            final toolId = event.toolId ?? '';
+            final now = DateTime.now();
+            _messages = [
+              for (final mm in _messages)
+                if (mm.id == assistantId)
+                  mm.copyWith(
+                    toolCalls: [
+                      for (final tc in mm.toolCalls)
+                        if (tc.id == toolId)
+                          tc.copyWith(
+                            status: (event.toolSuccess ?? false)
+                                ? ToolCallStatus.success
+                                : ToolCallStatus.failed,
+                            result: event.toolResult,
+                            error: event.toolError,
+                            finishedAt: now,
+                          )
+                        else
+                          tc,
+                    ],
+                  )
+                else
+                  mm,
+            ];
+            controller.add(null);
           }
-          controller.add(null);
+        } else if (event.type == 'reasoning' && event.thinkingDelta != null) {
+          final idx = _messages.indexWhere((m) => m.id == assistantId);
+          if (idx >= 0) {
+            _messages = [
+              for (final mm in _messages)
+                if (mm.id == assistantId)
+                  mm.copyWith(thinking: mm.thinking + event.thinkingDelta!)
+                else
+                  mm,
+            ];
+            if (!updated) {
+              updated = true;
+            }
+            controller.add(null);
+          }
+        } else if (event.type == 'content' && event.contentDelta != null) {
+          final idx = _messages.indexWhere((m) => m.id == assistantId);
+          if (idx >= 0) {
+            _messages = [
+              for (final mm in _messages)
+                if (mm.id == assistantId)
+                  mm.copyWith(content: mm.content + event.contentDelta!)
+                else
+                  mm,
+            ];
+            if (!updated) {
+              updated = true;
+            }
+            controller.add(null);
+          }
+        } else if (event.type == 'error') {
+          final idx = _messages.indexWhere((m) => m.id == assistantId);
+          if (idx >= 0) {
+            final errText = l10n.messageErrorPrefix(event.error ?? '');
+            _messages = [
+              for (final mm in _messages)
+                if (mm.id == assistantId)
+                  mm.copyWith(
+                    content: mm.content.isEmpty
+                        ? errText
+                        : '${mm.content}\n\n$errText',
+                  )
+                else
+                  mm,
+            ];
+            controller.add(null);
+          }
+          if (!completer.isCompleted) completer.complete();
+        } else if (event.type == 'done') {
+          completer.complete();
         }
-      } else if (event.type == 'error') {
+      },
+      onError: (e) {
         final idx = _messages.indexWhere((m) => m.id == assistantId);
         if (idx >= 0) {
-          final errText = l10n.messageErrorPrefix(event.error ?? '');
+          final errText = l10n.messageErrorPrefix(e.toString());
           _messages = [
             for (final mm in _messages)
               if (mm.id == assistantId)
@@ -508,26 +559,8 @@ class ChatProvider extends ChangeNotifier {
           controller.add(null);
         }
         if (!completer.isCompleted) completer.complete();
-      } else if (event.type == 'done') {
-        completer.complete();
-      }
-    }, onError: (e) {
-      final idx = _messages.indexWhere((m) => m.id == assistantId);
-      if (idx >= 0) {
-        final errText = l10n.messageErrorPrefix(e.toString());
-        _messages = [
-          for (final mm in _messages)
-            if (mm.id == assistantId)
-              mm.copyWith(
-                content: mm.content.isEmpty ? errText : '${mm.content}\n\n$errText',
-              )
-            else
-              mm,
-        ];
-        controller.add(null);
-      }
-      if (!completer.isCompleted) completer.complete();
-    });
+      },
+    );
 
     // Throttle notifyListeners to ~80ms during streaming and debounce
     // persistence to 300ms, so we don't trigger excessive rebuilds while

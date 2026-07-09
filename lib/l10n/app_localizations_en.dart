@@ -197,6 +197,97 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get settingsTabLocal => 'Local';
+
+  @override
+  String get providerUseLocalModel => 'Use a local model instead';
+
+  @override
+  String get localProviderListEmpty =>
+      'No local models added yet.\nTap \"Add\" in the bottom right to load a GGUF model from disk.';
+
+  @override
+  String get localProviderAddTitle => 'Add Local Model';
+
+  @override
+  String get localProviderEditTitle => 'Edit Local Model';
+
+  @override
+  String get localProviderName => 'Display name';
+
+  @override
+  String get localProviderNameHint => 'e.g. Qwen2.5 7B (Local)';
+
+  @override
+  String get localProviderNameRequired => 'Please enter a display name';
+
+  @override
+  String get localProviderModelFile => 'Model file (.gguf)';
+
+  @override
+  String get localProviderModelFileRequired => 'Please pick a model file';
+
+  @override
+  String get localProviderPickModelFile => 'Pick model file';
+
+  @override
+  String get localProviderMmprojFile =>
+      'Multimodal projector (mmproj, optional)';
+
+  @override
+  String get localProviderPickMmproj => 'Pick mmproj file';
+
+  @override
+  String get localProviderMmprojHint =>
+      'If the model is multimodal, pick a matching mmproj-*.gguf from the same directory.';
+
+  @override
+  String get localProviderAutoDetectMmproj => 'Auto-detect from same directory';
+
+  @override
+  String get localProviderContextSize => 'Context size';
+
+  @override
+  String get localProviderTemperature => 'Temperature';
+
+  @override
+  String get localProviderGpuLayers => 'GPU layers';
+
+  @override
+  String get localProviderGpuLayersHint =>
+      '0 = CPU only. Higher values offload more layers to GPU.';
+
+  @override
+  String get localProviderMaxTokens => 'Max generated tokens';
+
+  @override
+  String get localProviderSetAsDefault => 'Set as default';
+
+  @override
+  String get localProviderDeleteTitle => 'Delete Local Model';
+
+  @override
+  String localProviderDeleteConfirm(String name) {
+    return 'Delete \"$name\"?';
+  }
+
+  @override
+  String get localProviderParams => 'Parameters';
+
+  @override
+  String localProviderFileMissing(String path) {
+    return 'File not found: $path';
+  }
+
+  @override
+  String localProviderMmprojDetected(String name) {
+    return 'Detected: $name';
+  }
+
+  @override
+  String get localProviderClearMmproj => 'Clear';
+
+  @override
   String get roleListEmpty =>
       'No roles added yet.\nTap \"Add\" in the bottom right to create your first role.';
 

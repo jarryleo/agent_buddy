@@ -34,9 +34,13 @@ class _AddProviderPageState extends State<AddProviderPage> {
     final p = widget.existing;
     _name = TextEditingController(text: p?.name ?? '');
     _protocol = p?.protocol ?? ProviderProtocol.openai;
-    _baseUrl = TextEditingController(text: p?.baseUrl ?? _protocol.defaultBaseUrl);
+    _baseUrl = TextEditingController(
+      text: p?.baseUrl ?? _protocol.defaultBaseUrl,
+    );
     _apiKey = TextEditingController(text: p?.apiKey ?? '');
-    _chatPath = TextEditingController(text: p?.chatPath ?? _protocol.defaultPath);
+    _chatPath = TextEditingController(
+      text: p?.chatPath ?? _protocol.defaultPath,
+    );
     _models = List.from(p?.models ?? const []);
     _selectedModel = p?.selectedModel;
   }
@@ -80,10 +84,12 @@ class _AddProviderPageState extends State<AddProviderPage> {
     api.dispose();
     if (!mounted) return;
     setState(() => _busy = false);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(ok ? l10n.providerTestSuccess : l10n.providerTestFailed),
-      behavior: SnackBarBehavior.floating,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? l10n.providerTestSuccess : l10n.providerTestFailed),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   Future<void> _fetchModels() async {
@@ -108,16 +114,20 @@ class _AddProviderPageState extends State<AddProviderPage> {
           _selectedModel = models.isNotEmpty ? models.first : null;
         }
       });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(l10n.providerFetchSuccess(models.length)),
-        behavior: SnackBarBehavior.floating,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.providerFetchSuccess(models.length)),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(l10n.providerFetchFailed(e.toString())),
-        behavior: SnackBarBehavior.floating,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.providerFetchFailed(e.toString())),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } finally {
       api.dispose();
       if (mounted) setState(() => _busy = false);
@@ -141,10 +151,7 @@ class _AddProviderPageState extends State<AddProviderPage> {
         chatPath: chatPath,
       );
       await widget.settings.updateProvider(
-        provider.copyWith(
-          models: _models,
-          selectedModel: _selectedModel,
-        ),
+        provider.copyWith(models: _models, selectedModel: _selectedModel),
       );
     } else {
       final updated = existing.copyWith(
@@ -168,7 +175,11 @@ class _AddProviderPageState extends State<AddProviderPage> {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.existing == null ? l10n.providerAddTitle : l10n.providerEditTitle),
+        title: Text(
+          widget.existing == null
+              ? l10n.providerAddTitle
+              : l10n.providerEditTitle,
+        ),
       ),
       body: Form(
         key: _formKey,
@@ -197,14 +208,18 @@ class _AddProviderPageState extends State<AddProviderPage> {
             TextFormField(
               controller: _name,
               decoration: InputDecoration(hintText: l10n.providerNameHint),
-              validator: (v) => (v == null || v.trim().isEmpty) ? l10n.providerNameRequired : null,
+              validator: (v) => (v == null || v.trim().isEmpty)
+                  ? l10n.providerNameRequired
+                  : null,
             ),
             const SizedBox(height: 14),
             _Label(text: l10n.providerBaseUrl),
             TextFormField(
               controller: _baseUrl,
               decoration: InputDecoration(hintText: l10n.providerBaseUrlHint),
-              validator: (v) => (v == null || v.trim().isEmpty) ? l10n.providerBaseUrlRequired : null,
+              validator: (v) => (v == null || v.trim().isEmpty)
+                  ? l10n.providerBaseUrlRequired
+                  : null,
             ),
             const SizedBox(height: 14),
             _Label(text: l10n.providerApiKey),
@@ -214,11 +229,16 @@ class _AddProviderPageState extends State<AddProviderPage> {
               decoration: InputDecoration(
                 hintText: l10n.providerApiKey,
                 suffixIcon: IconButton(
-                  icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, size: 18),
+                  icon: Icon(
+                    _obscure ? Icons.visibility_off : Icons.visibility,
+                    size: 18,
+                  ),
                   onPressed: () => setState(() => _obscure = !_obscure),
                 ),
               ),
-              validator: (v) => (v == null || v.trim().isEmpty) ? l10n.providerApiKeyRequired : null,
+              validator: (v) => (v == null || v.trim().isEmpty)
+                  ? l10n.providerApiKeyRequired
+                  : null,
             ),
             const SizedBox(height: 14),
             _Label(text: l10n.providerChatPath),
@@ -227,9 +247,14 @@ class _AddProviderPageState extends State<AddProviderPage> {
               decoration: InputDecoration(
                 hintText: _protocol.defaultPath,
                 helperText: l10n.providerChatPathHelper,
-                helperStyle: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                helperStyle: const TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.textSecondary,
+                ),
               ),
-              validator: (v) => (v == null || v.trim().isEmpty) ? l10n.providerChatPathRequired : null,
+              validator: (v) => (v == null || v.trim().isEmpty)
+                  ? l10n.providerChatPathRequired
+                  : null,
             ),
             const SizedBox(height: 16),
             Row(
@@ -277,14 +302,19 @@ class _AddProviderPageState extends State<AddProviderPage> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primary,
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   elevation: 0,
                 ),
                 child: _busy
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     : Text(l10n.commonSave),
               ),

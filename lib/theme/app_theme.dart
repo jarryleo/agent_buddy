@@ -54,7 +54,10 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: const BorderSide(color: border),
@@ -75,7 +78,10 @@ class AppTheme {
         indicatorColor: primary,
         indicatorSize: TabBarIndicatorSize.label,
         labelStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+        unselectedLabelStyle: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+        ),
         dividerColor: border,
       ),
       switchTheme: SwitchThemeData(

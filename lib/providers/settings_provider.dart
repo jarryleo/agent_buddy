@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../models/local_provider.dart';
 import '../models/provider.dart';
 import '../models/role.dart';
 import '../models/skill.dart';
@@ -14,19 +15,25 @@ class SettingsProvider extends ChangeNotifier {
   final _uuid = const Uuid();
 
   List<ModelProvider> _providers = [];
+  List<LocalProvider> _localProviders = [];
   List<Role> _roles = [];
   List<AgentTool> _tools = [];
   List<Skill> _skills = [];
   String? _activeProviderId;
+  String? _activeLocalProviderId;
+  bool _useLocalModel = false;
   String? _activeRoleId;
   Set<String> _activeToolIds = {};
   Set<String> _activeSkillIds = {};
 
   List<ModelProvider> get providers => List.unmodifiable(_providers);
+  List<LocalProvider> get localProviders => List.unmodifiable(_localProviders);
   List<Role> get roles => List.unmodifiable(_roles);
   List<AgentTool> get tools => List.unmodifiable(_tools);
   List<Skill> get skills => List.unmodifiable(_skills);
   String? get activeProviderId => _activeProviderId;
+  String? get activeLocalProviderId => _activeLocalProviderId;
+  bool get useLocalModel => _useLocalModel;
   String? get activeRoleId => _activeRoleId;
   Set<String> get activeToolIds => Set.unmodifiable(_activeToolIds);
   Set<String> get activeSkillIds => Set.unmodifiable(_activeSkillIds);
@@ -35,6 +42,14 @@ class SettingsProvider extends ChangeNotifier {
     if (_activeProviderId == null) return null;
     for (final p in _providers) {
       if (p.id == _activeProviderId) return p;
+    }
+    return null;
+  }
+
+  LocalProvider? get activeLocalProvider {
+    if (_activeLocalProviderId == null) return null;
+    for (final p in _localProviders) {
+      if (p.id == _activeLocalProviderId) return p;
     }
     return null;
   }
@@ -54,10 +69,13 @@ class SettingsProvider extends ChangeNotifier {
 
   Future<void> load() async {
     _providers = _storage.loadProviders();
+    _localProviders = _storage.loadLocalProviders();
     _roles = _storage.loadRoles();
     _tools = _storage.loadTools();
     _skills = _storage.loadSkills();
     _activeProviderId = _storage.activeProviderId;
+    _activeLocalProviderId = _storage.activeLocalProviderId;
+    _useLocalModel = _storage.useLocalModel;
     _activeRoleId = _storage.activeRoleId;
     _activeToolIds = _storage.activeToolIds.toSet();
     _activeSkillIds = _storage.activeSkillIds.toSet();
@@ -107,6 +125,16 @@ class SettingsProvider extends ChangeNotifier {
       );
       _activeProviderId = enabled.id;
       await _storage.setActiveProviderId(_activeProviderId);
+    }
+
+    // Default active local provider = first enabled
+    if (_activeLocalProviderId == null && _localProviders.isNotEmpty) {
+      final enabled = _localProviders.firstWhere(
+        (p) => p.enabled,
+        orElse: () => _localProviders.first,
+      );
+      _activeLocalProviderId = enabled.id;
+      await _storage.setActiveLocalProviderId(_activeLocalProviderId);
     }
 
     // Default active tools: every built-in tool, so the user gets
@@ -196,12 +224,86 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setProviderSelectedModel(String providerId, String? model) async {
+  Future<void> setProviderSelectedModel(
+    String providerId,
+    String? model,
+  ) async {
     _providers = [
       for (final p in _providers)
         if (p.id == providerId) p.copyWith(selectedModel: model) else p,
     ];
     await _storage.saveProviders(_providers);
+    notifyListeners();
+  }
+
+  // Local providers
+  Future<LocalProvider> addLocalProvider({
+    required String name,
+    required String modelPath,
+    String? mmprojPath,
+    int contextSize = 4096,
+    double temperature = 0.7,
+    int gpuLayers = 0,
+    int maxTokens = 1024,
+  }) async {
+    final provider = LocalProvider(
+      id: _uuid.v4(),
+      name: name,
+      modelPath: modelPath,
+      mmprojPath: mmprojPath,
+      contextSize: contextSize,
+      temperature: temperature,
+      gpuLayers: gpuLayers,
+      maxTokens: maxTokens,
+    );
+    _localProviders = [..._localProviders, provider];
+    if (_activeLocalProviderId == null) {
+      _activeLocalProviderId = provider.id;
+      await _storage.setActiveLocalProviderId(_activeLocalProviderId);
+    }
+    await _storage.saveLocalProviders(_localProviders);
+    notifyListeners();
+    return provider;
+  }
+
+  Future<void> updateLocalProvider(LocalProvider provider) async {
+    _localProviders = [
+      for (final p in _localProviders) p.id == provider.id ? provider : p,
+    ];
+    await _storage.saveLocalProviders(_localProviders);
+    notifyListeners();
+  }
+
+  Future<void> deleteLocalProvider(String id) async {
+    _localProviders = _localProviders.where((p) => p.id != id).toList();
+    if (_activeLocalProviderId == id) {
+      _activeLocalProviderId = _localProviders.isNotEmpty
+          ? _localProviders.first.id
+          : null;
+      await _storage.setActiveLocalProviderId(_activeLocalProviderId);
+    }
+    await _storage.saveLocalProviders(_localProviders);
+    notifyListeners();
+  }
+
+  Future<void> toggleLocalProvider(String id, bool enabled) async {
+    _localProviders = [
+      for (final p in _localProviders)
+        p.id == id ? p.copyWith(enabled: enabled) : p,
+    ];
+    await _storage.saveLocalProviders(_localProviders);
+    notifyListeners();
+  }
+
+  Future<void> setActiveLocalProvider(String id) async {
+    _activeLocalProviderId = id;
+    await _storage.setActiveLocalProviderId(id);
+    notifyListeners();
+  }
+
+  Future<void> setUseLocalModel(bool value) async {
+    _useLocalModel = value;
+    await _storage.setUseLocalModel(value);
     notifyListeners();
   }
 
@@ -226,9 +328,7 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   Future<void> updateRole(Role role) async {
-    _roles = [
-      for (final r in _roles) r.id == role.id ? role : r,
-    ];
+    _roles = [for (final r in _roles) r.id == role.id ? role : r];
     await _storage.saveRoles(_roles);
     notifyListeners();
   }
@@ -291,9 +391,7 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   Future<void> updateSkill(Skill skill) async {
-    _skills = [
-      for (final s in _skills) s.id == skill.id ? skill : s,
-    ];
+    _skills = [for (final s in _skills) s.id == skill.id ? skill : s];
     await _storage.saveSkills(_skills);
     notifyListeners();
   }

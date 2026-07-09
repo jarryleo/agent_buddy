@@ -15,7 +15,12 @@ class Skill {
     this.enabled = true,
   });
 
-  Skill copyWith({String? name, String? description, String? content, bool? enabled}) {
+  Skill copyWith({
+    String? name,
+    String? description,
+    String? content,
+    bool? enabled,
+  }) {
     return Skill(
       id: id,
       name: name ?? this.name,
@@ -26,12 +31,12 @@ class Skill {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'description': description,
-        'content': content,
-        'enabled': enabled,
-      };
+    'id': id,
+    'name': name,
+    'description': description,
+    'content': content,
+    'enabled': enabled,
+  };
 
   factory Skill.fromJson(Map<String, dynamic> json) {
     return Skill(

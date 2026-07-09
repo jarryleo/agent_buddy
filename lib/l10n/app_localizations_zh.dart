@@ -192,6 +192,93 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get settingsTabLocal => '本地';
+
+  @override
+  String get providerUseLocalModel => '使用本地模型';
+
+  @override
+  String get localProviderListEmpty => '还没有添加任何本地模型\n点击右下角\"新增\"加载本地 GGUF 模型';
+
+  @override
+  String get localProviderAddTitle => '新增本地模型';
+
+  @override
+  String get localProviderEditTitle => '编辑本地模型';
+
+  @override
+  String get localProviderName => '显示名称';
+
+  @override
+  String get localProviderNameHint => '例如: Qwen2.5 7B (本地)';
+
+  @override
+  String get localProviderNameRequired => '请输入显示名称';
+
+  @override
+  String get localProviderModelFile => '模型文件 (.gguf)';
+
+  @override
+  String get localProviderModelFileRequired => '请选择模型文件';
+
+  @override
+  String get localProviderPickModelFile => '选择模型文件';
+
+  @override
+  String get localProviderMmprojFile => '多模态投影 (mmproj, 可选)';
+
+  @override
+  String get localProviderPickMmproj => '选择 mmproj 文件';
+
+  @override
+  String get localProviderMmprojHint => '如果模型支持多模态,请从同目录选择对应的 mmproj-*.gguf。';
+
+  @override
+  String get localProviderAutoDetectMmproj => '从同目录自动检测';
+
+  @override
+  String get localProviderContextSize => '上下文长度';
+
+  @override
+  String get localProviderTemperature => '温度';
+
+  @override
+  String get localProviderGpuLayers => 'GPU 层数';
+
+  @override
+  String get localProviderGpuLayersHint => '0 = 仅 CPU。数值越大,卸载到 GPU 的层数越多。';
+
+  @override
+  String get localProviderMaxTokens => '最大生成 token';
+
+  @override
+  String get localProviderSetAsDefault => '设为默认';
+
+  @override
+  String get localProviderDeleteTitle => '删除本地模型';
+
+  @override
+  String localProviderDeleteConfirm(String name) {
+    return '确认删除 \"$name\"?';
+  }
+
+  @override
+  String get localProviderParams => '参数';
+
+  @override
+  String localProviderFileMissing(String path) {
+    return '文件不存在: $path';
+  }
+
+  @override
+  String localProviderMmprojDetected(String name) {
+    return '已检测到: $name';
+  }
+
+  @override
+  String get localProviderClearMmproj => '清除';
+
+  @override
   String get roleListEmpty => '还没有添加任何角色\n点击右下角\"新增\"创建你的第一个角色';
 
   @override

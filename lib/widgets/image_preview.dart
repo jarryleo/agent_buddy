@@ -3,25 +3,17 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 class ImagePreviewPage extends StatelessWidget {
-  const ImagePreviewPage({
-    super.key,
-    this.url,
-    this.localPath,
-    this.title,
-  }) : assert(
-          (url == null) != (localPath == null),
-          'Provide exactly one of url or localPath',
-        );
+  const ImagePreviewPage({super.key, this.url, this.localPath, this.title})
+    : assert(
+        (url == null) != (localPath == null),
+        'Provide exactly one of url or localPath',
+      );
 
   final String? url;
   final String? localPath;
   final String? title;
 
-  static void showNetwork(
-    BuildContext context,
-    String url, {
-    String? title,
-  }) {
+  static void showNetwork(BuildContext context, String url, {String? title}) {
     _show(context, ImagePreviewPage(url: url, title: title));
   }
 
@@ -55,8 +47,11 @@ class ImagePreviewPage extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.broken_image_outlined,
-                      color: Colors.white70, size: 40),
+                  Icon(
+                    Icons.broken_image_outlined,
+                    color: Colors.white70,
+                    size: 40,
+                  ),
                   SizedBox(height: 8),
                   Text(
                     'Failed to load image',
@@ -78,7 +73,7 @@ class ImagePreviewPage extends StatelessWidget {
                   strokeWidth: 2.4,
                   value: progress.expectedTotalBytes != null
                       ? progress.cumulativeBytesLoaded /
-                          (progress.expectedTotalBytes ?? 1)
+                            (progress.expectedTotalBytes ?? 1)
                       : null,
                   color: Colors.white,
                 ),
@@ -89,8 +84,11 @@ class ImagePreviewPage extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.broken_image_outlined,
-                      color: Colors.white70, size: 40),
+                  Icon(
+                    Icons.broken_image_outlined,
+                    color: Colors.white70,
+                    size: 40,
+                  ),
                   SizedBox(height: 8),
                   Text(
                     'Failed to load image',
@@ -111,11 +109,7 @@ class ImagePreviewPage extends StatelessWidget {
             ),
           ),
           Center(
-            child: InteractiveViewer(
-              minScale: 1,
-              maxScale: 5,
-              child: image,
-            ),
+            child: InteractiveViewer(minScale: 1, maxScale: 5, child: image),
           ),
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,

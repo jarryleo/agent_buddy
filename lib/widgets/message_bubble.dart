@@ -79,8 +79,9 @@ class _MessageBubbleState extends State<MessageBubble> {
     if (m.role == MessageRole.user) {
       return _buildUser(context, m);
     }
-    final maxLines =
-        _thinkingExpanded ? _thinkingExpandedLines : _thinkingCollapsedLines;
+    final maxLines = _thinkingExpanded
+        ? _thinkingExpandedLines
+        : _thinkingCollapsedLines;
     final thinkingChanged = m.thinking != _lastThinking;
     final expandedChanged = maxLines != _lastExpandedLines;
     if (thinkingChanged || expandedChanged) {
@@ -110,11 +111,14 @@ class _MessageBubbleState extends State<MessageBubble> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 if (hasImages) _buildUserImages(context, m.imagePaths),
-                if (hasImages && m.content.isNotEmpty) const SizedBox(height: 6),
+                if (hasImages && m.content.isNotEmpty)
+                  const SizedBox(height: 6),
                 if (m.content.isNotEmpty)
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: AppTheme.bubbleUser,
                       borderRadius: const BorderRadius.only(
@@ -127,7 +131,10 @@ class _MessageBubbleState extends State<MessageBubble> {
                     child: Text(
                       m.content,
                       style: const TextStyle(
-                          color: Colors.white, fontSize: 15, height: 1.4),
+                        color: Colors.white,
+                        fontSize: 15,
+                        height: 1.4,
+                      ),
                     ),
                   ),
               ],
@@ -141,7 +148,9 @@ class _MessageBubbleState extends State<MessageBubble> {
   Widget _buildUserImages(BuildContext context, List<String> paths) {
     final maxWidth = MediaQuery.of(context).size.width * 0.65;
     final thumbSize = paths.length == 1 ? 160.0 : 88.0;
-    final crossAxisCount = paths.length == 1 ? 1 : (paths.length >= 3 ? 2 : paths.length);
+    final crossAxisCount = paths.length == 1
+        ? 1
+        : (paths.length >= 3 ? 2 : paths.length);
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth),
       child: GridView.builder(
@@ -168,8 +177,10 @@ class _MessageBubbleState extends State<MessageBubble> {
                 errorBuilder: (context, error, stack) => Container(
                   color: AppTheme.bg,
                   alignment: Alignment.center,
-                  child: const Icon(Icons.broken_image_outlined,
-                      color: AppTheme.textSecondary),
+                  child: const Icon(
+                    Icons.broken_image_outlined,
+                    color: AppTheme.textSecondary,
+                  ),
                 ),
               ),
             ),
@@ -192,8 +203,7 @@ class _MessageBubbleState extends State<MessageBubble> {
           if (m.content.isNotEmpty || m.streaming)
             Container(
               margin: EdgeInsets.only(top: (hasThinking || hasTools) ? 6 : 0),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: AppTheme.bubbleAssistant,
                 borderRadius: const BorderRadius.only(
@@ -231,8 +241,11 @@ class _MessageBubbleState extends State<MessageBubble> {
                     borderRadius: BorderRadius.circular(4),
                     child: const Padding(
                       padding: EdgeInsets.all(2),
-                      child: Icon(Icons.copy_rounded,
-                          size: 12, color: AppTheme.textSecondary),
+                      child: Icon(
+                        Icons.copy_rounded,
+                        size: 12,
+                        color: AppTheme.textSecondary,
+                      ),
                     ),
                   ),
                 ],
@@ -247,8 +260,9 @@ class _MessageBubbleState extends State<MessageBubble> {
   Widget _buildThinking(BuildContext context, ChatMessage m) {
     final l10n = AppLocalizations.of(context);
     final lineCount = '\n'.allMatches(m.thinking).length + 1;
-    final maxLines =
-        _thinkingExpanded ? _thinkingExpandedLines : _thinkingCollapsedLines;
+    final maxLines = _thinkingExpanded
+        ? _thinkingExpandedLines
+        : _thinkingCollapsedLines;
     final overflow = lineCount > maxLines;
     // Toggle is available when:
     //  - collapsed and the content doesn't fit (▼ to expand), or
@@ -274,8 +288,11 @@ class _MessageBubbleState extends State<MessageBubble> {
               padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
               child: Row(
                 children: [
-                  const Icon(Icons.psychology_outlined,
-                      size: 14, color: Color(0xFFA37300)),
+                  const Icon(
+                    Icons.psychology_outlined,
+                    size: 14,
+                    color: Color(0xFFA37300),
+                  ),
                   const SizedBox(width: 6),
                   Text(
                     l10n.messageThinking,
@@ -288,9 +305,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                   const Spacer(),
                   if (canToggle)
                     Icon(
-                      _thinkingExpanded
-                          ? Icons.expand_less
-                          : Icons.expand_more,
+                      _thinkingExpanded ? Icons.expand_less : Icons.expand_more,
                       size: 16,
                       color: const Color(0xFF8A5C00),
                     ),
@@ -330,9 +345,7 @@ class _MessageBubbleState extends State<MessageBubble> {
               key: ValueKey('ask_user_${tc.id}'),
               toolCall: tc,
               onSubmit: (selection) {
-                context
-                    .read<ChatProvider>()
-                    .resolveAskUser(tc.id, selection);
+                context.read<ChatProvider>().resolveAskUser(tc.id, selection);
               },
             ),
           ],
@@ -478,7 +491,11 @@ class _ToolCallCardState extends State<_ToolCallCard> {
     );
   }
 
-  Widget _buildDetails(BuildContext context, ToolCall tc, AppLocalizations l10n) {
+  Widget _buildDetails(
+    BuildContext context,
+    ToolCall tc,
+    AppLocalizations l10n,
+  ) {
     final hasArgs = tc.arguments.trim().isNotEmpty;
     return Container(
       width: double.infinity,
@@ -532,9 +549,7 @@ class _ToolCallCardState extends State<_ToolCallCard> {
               width: double.infinity,
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: tc.isFailed
-                    ? const Color(0xFFFFF5F5)
-                    : Colors.white,
+                color: tc.isFailed ? const Color(0xFFFFF5F5) : Colors.white,
                 borderRadius: BorderRadius.circular(4),
                 border: Border.all(
                   color: tc.isFailed
@@ -543,9 +558,7 @@ class _ToolCallCardState extends State<_ToolCallCard> {
                 ),
               ),
               child: Text(
-                (tc.result ?? '').isEmpty
-                    ? l10n.toolCallNoResult
-                    : tc.result!,
+                (tc.result ?? '').isEmpty ? l10n.toolCallNoResult : tc.result!,
                 style: TextStyle(
                   fontSize: 11,
                   fontFamily: 'monospace',
@@ -646,9 +659,10 @@ class _TypingIndicator extends StatefulWidget {
 
 class _TypingIndicatorState extends State<_TypingIndicator>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _c =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
-        ..repeat();
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat();
 
   @override
   void dispose() {
@@ -742,8 +756,7 @@ class _AskUserOptionsState extends State<_AskUserOptions> {
   void _submitMulti() {
     if (_localSelected.isEmpty) return;
     setState(() => _submitted = true);
-    widget
-        .onSubmit(jsonEncode({'selection': _localSelected.toList()}));
+    widget.onSubmit(jsonEncode({'selection': _localSelected.toList()}));
   }
 
   static Set<String> _parseSelection(String result) {
@@ -815,9 +828,7 @@ class _OptionChip extends StatelessWidget {
     final Color bg;
     final Color fg;
     if (!enabled) {
-      bg = selected
-          ? AppTheme.primary.withValues(alpha: 0.45)
-          : AppTheme.bg;
+      bg = selected ? AppTheme.primary.withValues(alpha: 0.45) : AppTheme.bg;
       fg = selected ? Colors.white : AppTheme.textSecondary;
     } else {
       bg = selected ? AppTheme.primary : AppTheme.surface;
@@ -827,9 +838,7 @@ class _OptionChip extends StatelessWidget {
       color: bg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: selected ? AppTheme.primary : AppTheme.border,
-        ),
+        side: BorderSide(color: selected ? AppTheme.primary : AppTheme.border),
       ),
       child: InkWell(
         onTap: enabled ? onTap : null,
@@ -848,8 +857,7 @@ class _OptionChip extends StatelessWidget {
                 style: TextStyle(
                   color: fg,
                   fontSize: 12,
-                  fontWeight:
-                      selected ? FontWeight.w600 : FontWeight.w500,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                 ),
               ),
             ],

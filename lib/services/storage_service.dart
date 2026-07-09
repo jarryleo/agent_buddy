@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/local_provider.dart';
 import '../models/message.dart';
 import '../models/provider.dart';
 import '../models/role.dart';
@@ -10,10 +11,13 @@ import '../models/tool.dart';
 
 class StorageService {
   static const _kProviders = 'providers';
+  static const _kLocalProviders = 'local_providers';
   static const _kRoles = 'roles';
   static const _kTools = 'tools';
   static const _kSkills = 'skills';
   static const _kActiveProviderId = 'active_provider_id';
+  static const _kActiveLocalProviderId = 'active_local_provider_id';
+  static const _kUseLocalModel = 'use_local_model';
   static const _kActiveRoleId = 'active_role_id';
   static const _kActiveSkillIds = 'active_skill_ids';
   static const _kActiveToolIds = 'active_tool_ids';
@@ -43,6 +47,32 @@ class StorageService {
     } else {
       await _prefs.setString(_kActiveProviderId, id);
     }
+  }
+
+  // Local Providers
+  List<LocalProvider> loadLocalProviders() {
+    final raw = _prefs.getStringList(_kLocalProviders) ?? const [];
+    return raw.map((e) => LocalProvider.fromRawJson(e)).toList();
+  }
+
+  Future<void> saveLocalProviders(List<LocalProvider> providers) async {
+    final raw = providers.map((e) => e.toRawJson()).toList();
+    await _prefs.setStringList(_kLocalProviders, raw);
+  }
+
+  String? get activeLocalProviderId =>
+      _prefs.getString(_kActiveLocalProviderId);
+  Future<void> setActiveLocalProviderId(String? id) async {
+    if (id == null) {
+      await _prefs.remove(_kActiveLocalProviderId);
+    } else {
+      await _prefs.setString(_kActiveLocalProviderId, id);
+    }
+  }
+
+  bool get useLocalModel => _prefs.getBool(_kUseLocalModel) ?? false;
+  Future<void> setUseLocalModel(bool value) async {
+    await _prefs.setBool(_kUseLocalModel, value);
   }
 
   // Roles
@@ -76,7 +106,8 @@ class StorageService {
     await _prefs.setStringList(_kTools, raw);
   }
 
-  List<String> get activeToolIds => _prefs.getStringList(_kActiveToolIds) ?? const [];
+  List<String> get activeToolIds =>
+      _prefs.getStringList(_kActiveToolIds) ?? const [];
   Future<void> setActiveToolIds(List<String> ids) async {
     await _prefs.setStringList(_kActiveToolIds, ids);
   }
@@ -92,7 +123,8 @@ class StorageService {
     await _prefs.setStringList(_kSkills, raw);
   }
 
-  List<String> get activeSkillIds => _prefs.getStringList(_kActiveSkillIds) ?? const [];
+  List<String> get activeSkillIds =>
+      _prefs.getStringList(_kActiveSkillIds) ?? const [];
   Future<void> setActiveSkillIds(List<String> ids) async {
     await _prefs.setStringList(_kActiveSkillIds, ids);
   }
@@ -103,7 +135,9 @@ class StorageService {
     if (raw == null || raw.isEmpty) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => ChatMessage.fromJson(e as Map<String, dynamic>)).toList();
+      return list
+          .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
+          .toList();
     } catch (_) {
       return [];
     }

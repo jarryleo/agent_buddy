@@ -44,28 +44,26 @@ class StreamEvent {
     required String id,
     required String name,
     required String arguments,
-  }) =>
-      StreamEvent(
-        type: 'toolStart',
-        toolId: id,
-        toolName: name,
-        toolArguments: arguments,
-      );
+  }) => StreamEvent(
+    type: 'toolStart',
+    toolId: id,
+    toolName: name,
+    toolArguments: arguments,
+  );
   factory StreamEvent.toolDone({
     required String id,
     required String name,
     required String result,
     required bool success,
     String? error,
-  }) =>
-      StreamEvent(
-        type: 'toolDone',
-        toolId: id,
-        toolName: name,
-        toolResult: result,
-        toolSuccess: success,
-        toolError: error,
-      );
+  }) => StreamEvent(
+    type: 'toolDone',
+    toolId: id,
+    toolName: name,
+    toolResult: result,
+    toolSuccess: success,
+    toolError: error,
+  );
 }
 
 class ChatRequestMessage {
@@ -78,11 +76,17 @@ class ChatRequestMessage {
   /// non-user roles.
   final List<String> imageDataUrls;
 
+  /// Local filesystem paths for any images attached to a user message.
+  /// Used by the local LLM service which can read images directly from
+  /// disk instead of decoding base64 data URLs.
+  final List<String> imagePaths;
+
   const ChatRequestMessage({
     required this.role,
     required this.content,
     this.thinking = '',
     this.imageDataUrls = const [],
+    this.imagePaths = const [],
   });
 }
 
@@ -112,7 +116,9 @@ class ApiService {
         : provider.baseUrl;
     final url = Uri.parse('$base/v1/models');
     final headers = _openAIHeaders(provider);
-    final resp = await _client.get(url, headers: headers).timeout(const Duration(seconds: 15));
+    final resp = await _client
+        .get(url, headers: headers)
+        .timeout(const Duration(seconds: 15));
     return resp.statusCode >= 200 && resp.statusCode < 300;
   }
 
@@ -122,7 +128,9 @@ class ApiService {
         : provider.baseUrl;
     final url = Uri.parse('$base/v1/models');
     final headers = _anthropicHeaders(provider);
-    final resp = await _client.get(url, headers: headers).timeout(const Duration(seconds: 15));
+    final resp = await _client
+        .get(url, headers: headers)
+        .timeout(const Duration(seconds: 15));
     return resp.statusCode >= 200 && resp.statusCode < 300;
   }
 
@@ -149,11 +157,14 @@ class ApiService {
     final headers = provider.protocol == ProviderProtocol.openai
         ? _openAIHeaders(provider)
         : _anthropicHeaders(provider);
-    final resp = await _client.get(url, headers: headers).timeout(const Duration(seconds: 20));
+    final resp = await _client
+        .get(url, headers: headers)
+        .timeout(const Duration(seconds: 20));
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
       throw Exception('HTTP ${resp.statusCode}: ${resp.body}');
     }
-    final data = jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+    final data =
+        jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
     final list = (data['data'] as List?) ?? const [];
     final models = <String>[];
     for (final item in list) {
@@ -241,9 +252,10 @@ class ApiService {
     String currentContent = '';
     String currentReasoning = '';
 
-    await for (final line in resp.stream
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())) {
+    await for (final line
+        in resp.stream
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())) {
       if (line.isEmpty) continue;
       if (!line.startsWith('data:')) continue;
       final data = line.substring(5).trim();
@@ -288,13 +300,17 @@ class ApiService {
             if (raw is! Map) continue;
             final map = raw;
             final index = (map['index'] as int?) ?? 0;
-            final acc = toolCalls.putIfAbsent(index, () => _OpenAIToolCallAccumulator());
+            final acc = toolCalls.putIfAbsent(
+              index,
+              () => _OpenAIToolCallAccumulator(),
+            );
             if (map['id'] is String) acc.id = map['id'] as String;
             final fn = map['function'];
             if (fn is Map) {
               if (fn['name'] is String) acc.name = (fn['name'] as String);
               if (fn['arguments'] is String) {
-                acc.arguments = (acc.arguments ?? '') + (fn['arguments'] as String);
+                acc.arguments =
+                    (acc.arguments ?? '') + (fn['arguments'] as String);
               }
             }
           }
@@ -393,9 +409,10 @@ class ApiService {
       // bubble after the tool card.
       String? followupFinishReason;
       var followupYieldedContent = false;
-      await for (final line in followupResp.stream
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())) {
+      await for (final line
+          in followupResp.stream
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())) {
         if (line.isEmpty) continue;
         if (!line.startsWith('data:')) continue;
         final data = line.substring(5).trim();
@@ -444,7 +461,9 @@ class ApiService {
       }
       if (followupFinishReason == 'content_filter') {
         yield StreamEvent(
-            type: 'error', error: 'Response was filtered by the API');
+          type: 'error',
+          error: 'Response was filtered by the API',
+        );
       }
     }
 
@@ -493,9 +512,10 @@ class ApiService {
     final toolUseBlocks = <Map<String, dynamic>>[];
     String currentStopReason = '';
 
-    await for (final line in resp.stream
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())) {
+    await for (final line
+        in resp.stream
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())) {
       if (line.isEmpty) continue;
       if (!line.startsWith('data:')) continue;
       final data = line.substring(5).trim();
@@ -531,7 +551,9 @@ class ApiService {
             } else if (deltaType == 'input_json_delta') {
               if (toolUseBlocks.isNotEmpty) {
                 final last = toolUseBlocks.last;
-                last['input'] = (last['input'] as String) + (delta['partial_json'] as String? ?? '');
+                last['input'] =
+                    (last['input'] as String) +
+                    (delta['partial_json'] as String? ?? '');
               }
             }
             break;
@@ -547,7 +569,9 @@ class ApiService {
       }
     }
 
-    if (currentStopReason == 'tool_use' && toolUseBlocks.isNotEmpty && onToolCall != null) {
+    if (currentStopReason == 'tool_use' &&
+        toolUseBlocks.isNotEmpty &&
+        onToolCall != null) {
       final toolResults = <Map<String, dynamic>>[];
       for (final tb in toolUseBlocks) {
         final name = tb['name'] as String? ?? '';
@@ -632,9 +656,10 @@ class ApiService {
       // and surface truncation / empty-response cases.
       String? followupStopReason;
       var followupYieldedContent = false;
-      await for (final line in followupResp.stream
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())) {
+      await for (final line
+          in followupResp.stream
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())) {
         if (line.isEmpty) continue;
         if (!line.startsWith('data:')) continue;
         final data = line.substring(5).trim();
@@ -682,7 +707,9 @@ class ApiService {
   }
 
   List<Map<String, dynamic>> _buildOpenAIMessages(
-      List<ChatRequestMessage> messages, String? systemPrompt) {
+    List<ChatRequestMessage> messages,
+    String? systemPrompt,
+  ) {
     final out = <Map<String, dynamic>>[];
     if (systemPrompt != null && systemPrompt.isNotEmpty) {
       out.add({'role': 'system', 'content': systemPrompt});
@@ -717,7 +744,9 @@ class ApiService {
     return out;
   }
 
-  List<Map<String, dynamic>> _buildAnthropicMessages(List<ChatRequestMessage> messages) {
+  List<Map<String, dynamic>> _buildAnthropicMessages(
+    List<ChatRequestMessage> messages,
+  ) {
     final out = <Map<String, dynamic>>[];
     for (final m in messages) {
       switch (m.role) {

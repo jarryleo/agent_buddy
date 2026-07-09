@@ -75,8 +75,11 @@ class SkillsTab extends StatelessWidget {
                               color: AppTheme.primary.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            child: const Icon(Icons.workspace_premium_outlined,
-                                color: AppTheme.primary, size: 18),
+                            child: const Icon(
+                              Icons.workspace_premium_outlined,
+                              color: AppTheme.primary,
+                              size: 18,
+                            ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -85,7 +88,10 @@ class SkillsTab extends StatelessWidget {
                               children: [
                                 Text(
                                   s.name,
-                                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                                 if (s.description.isNotEmpty) ...[
                                   const SizedBox(height: 2),
@@ -112,10 +118,13 @@ class SkillsTab extends StatelessWidget {
                                 context: context,
                                 builder: (ctx) => AlertDialog(
                                   title: Text(l10n.skillDeleteTitle),
-                                  content: Text(l10n.skillDeleteConfirm(s.name)),
+                                  content: Text(
+                                    l10n.skillDeleteConfirm(s.name),
+                                  ),
                                   actions: [
                                     TextButton(
-                                      onPressed: () => Navigator.pop(ctx, false),
+                                      onPressed: () =>
+                                          Navigator.pop(ctx, false),
                                       child: Text(l10n.commonCancel),
                                     ),
                                     TextButton(
@@ -129,8 +138,11 @@ class SkillsTab extends StatelessWidget {
                                 await settings.deleteSkill(s.id);
                               }
                             },
-                            icon: const Icon(Icons.delete_outline,
-                                size: 18, color: Colors.redAccent),
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              size: 18,
+                              color: Colors.redAccent,
+                            ),
                             visualDensity: VisualDensity.compact,
                           ),
                         ],
@@ -161,7 +173,9 @@ class _SkillEditPageState extends State<_SkillEditPage> {
   void initState() {
     super.initState();
     _name = TextEditingController(text: widget.initial?.name ?? '');
-    _description = TextEditingController(text: widget.initial?.description ?? '');
+    _description = TextEditingController(
+      text: widget.initial?.description ?? '',
+    );
     _content = TextEditingController(text: widget.initial?.content ?? '');
   }
 
@@ -176,9 +190,9 @@ class _SkillEditPageState extends State<_SkillEditPage> {
   void _save() {
     final l10n = AppLocalizations.of(context);
     if (_name.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.skillNameRequired)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.skillNameRequired)));
       return;
     }
     final skill = Skill(
@@ -196,16 +210,19 @@ class _SkillEditPageState extends State<_SkillEditPage> {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.initial == null ? l10n.skillAddTitle : l10n.skillEditTitle),
-        actions: [
-          TextButton(onPressed: _save, child: Text(l10n.commonSave)),
-        ],
+        title: Text(
+          widget.initial == null ? l10n.skillAddTitle : l10n.skillEditTitle,
+        ),
+        actions: [TextButton(onPressed: _save, child: Text(l10n.commonSave))],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _FieldLabel(text: l10n.skillName),
-          TextField(controller: _name, decoration: InputDecoration(hintText: l10n.skillNameHint)),
+          TextField(
+            controller: _name,
+            decoration: InputDecoration(hintText: l10n.skillNameHint),
+          ),
           const SizedBox(height: 14),
           _FieldLabel(text: l10n.skillDescription),
           TextField(

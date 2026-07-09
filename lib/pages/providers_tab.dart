@@ -9,16 +9,18 @@ import 'add_provider_page.dart';
 import 'settings_page.dart';
 
 class ProvidersTab extends StatelessWidget {
-  const ProvidersTab({super.key, required this.settings, required this.onChanged});
+  const ProvidersTab({
+    super.key,
+    required this.settings,
+    required this.onChanged,
+  });
 
   final SettingsProvider settings;
   final VoidCallback onChanged;
 
   Future<void> _openAdd(BuildContext context) async {
     await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => AddProviderPage(settings: settings),
-      ),
+      MaterialPageRoute(builder: (_) => AddProviderPage(settings: settings)),
     );
     onChanged();
   }
@@ -35,18 +37,22 @@ class ProvidersTab extends StatelessWidget {
   Future<void> _testConnection(BuildContext context, ModelProvider p) async {
     final l10n = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(SnackBar(
-      content: Text(l10n.providerTesting),
-      duration: const Duration(seconds: 1),
-    ));
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(l10n.providerTesting),
+        duration: const Duration(seconds: 1),
+      ),
+    );
     final api = ApiService();
     final ok = await api.testConnection(p);
     api.dispose();
     messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(SnackBar(
-      content: Text(ok ? l10n.providerTestSuccess : l10n.providerTestFailed),
-      behavior: SnackBarBehavior.floating,
-    ));
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(ok ? l10n.providerTestSuccess : l10n.providerTestFailed),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   Future<void> _fetchModels(BuildContext context, ModelProvider p) async {
@@ -54,24 +60,30 @@ class ProvidersTab extends StatelessWidget {
     final messenger = ScaffoldMessenger.of(context);
     final api = ApiService();
     try {
-      messenger.showSnackBar(SnackBar(
-        content: Text(l10n.providerFetching),
-        duration: const Duration(seconds: 1),
-      ));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(l10n.providerFetching),
+          duration: const Duration(seconds: 1),
+        ),
+      );
       final models = await api.fetchModels(p);
       final updated = p.copyWith(models: models);
       await settings.updateProvider(updated);
       messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(SnackBar(
-        content: Text(l10n.providerFetchSuccess(models.length)),
-        behavior: SnackBarBehavior.floating,
-      ));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(l10n.providerFetchSuccess(models.length)),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } catch (e) {
       messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(SnackBar(
-        content: Text(l10n.providerFetchFailed(e.toString())),
-        behavior: SnackBarBehavior.floating,
-      ));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(l10n.providerFetchFailed(e.toString())),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } finally {
       api.dispose();
     }
@@ -81,6 +93,7 @@ class ProvidersTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final providers = settings.providers;
+    final hasLocal = settings.localProviders.isNotEmpty;
     return Scaffold(
       backgroundColor: AppTheme.bg,
       floatingActionButton: FloatingActionButton.extended(
@@ -90,52 +103,108 @@ class ProvidersTab extends StatelessWidget {
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
       ),
-      body: providers.isEmpty
-          ? EmptyHint(
-              text: l10n.providerListEmpty,
-              icon: Icons.cloud_outlined,
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
-              itemCount: providers.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final p = providers[index];
-                return _ProviderCard(
-                  provider: p,
-                  isActive: settings.activeProviderId == p.id,
-                  l10n: l10n,
-                  onTap: () => _openEdit(context, p),
-                  onToggle: (v) => settings.toggleProvider(p.id, v),
-                  onSetActive: () => settings.setActiveProvider(p.id),
-                  onTest: () => _testConnection(context, p),
-                  onFetch: () => _fetchModels(context, p),
-                  onDelete: () async {
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: Text(l10n.providerDeleteTitle),
-                        content: Text(l10n.providerDeleteConfirm(p.name)),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: Text(l10n.commonCancel),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: Text(l10n.commonDelete),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (confirm == true) {
-                      await settings.deleteProvider(p.id);
-                      onChanged();
-                    }
-                  },
-                );
-              },
+      body: Column(
+        children: [
+          if (hasLocal)
+            _ModeSwitcher(
+              useLocal: settings.useLocalModel,
+              onChanged: (v) => settings.setUseLocalModel(v),
+              l10n: l10n,
             ),
+          Expanded(
+            child: providers.isEmpty
+                ? EmptyHint(
+                    text: l10n.providerListEmpty,
+                    icon: Icons.cloud_outlined,
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
+                    itemCount: providers.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      final p = providers[index];
+                      return _ProviderCard(
+                        provider: p,
+                        isActive:
+                            !settings.useLocalModel &&
+                            settings.activeProviderId == p.id,
+                        l10n: l10n,
+                        onTap: () => _openEdit(context, p),
+                        onToggle: (v) => settings.toggleProvider(p.id, v),
+                        onSetActive: () => settings.setActiveProvider(p.id),
+                        onTest: () => _testConnection(context, p),
+                        onFetch: () => _fetchModels(context, p),
+                        onDelete: () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: Text(l10n.providerDeleteTitle),
+                              content: Text(l10n.providerDeleteConfirm(p.name)),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: Text(l10n.commonCancel),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: Text(l10n.commonDelete),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) {
+                            await settings.deleteProvider(p.id);
+                            onChanged();
+                          }
+                        },
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModeSwitcher extends StatelessWidget {
+  const _ModeSwitcher({
+    required this.useLocal,
+    required this.onChanged,
+    required this.l10n,
+  });
+
+  final bool useLocal;
+  final ValueChanged<bool> onChanged;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.border, width: 0.6),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            useLocal ? Icons.memory : Icons.cloud_outlined,
+            size: 18,
+            color: AppTheme.primary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              l10n.providerUseLocalModel,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ),
+          Switch(value: useLocal, onChanged: onChanged),
+        ],
+      ),
     );
   }
 }
@@ -202,7 +271,11 @@ class _ProviderCard extends StatelessWidget {
                       color: AppTheme.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.cloud_outlined, color: AppTheme.primary, size: 20),
+                    child: const Icon(
+                      Icons.cloud_outlined,
+                      color: AppTheme.primary,
+                      size: 20,
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -223,7 +296,10 @@ class _ProviderCard extends StatelessWidget {
                             ),
                             if (isActive)
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
                                 decoration: BoxDecoration(
                                   color: AppTheme.primary,
                                   borderRadius: BorderRadius.circular(4),
@@ -256,15 +332,23 @@ class _ProviderCard extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 provider.baseUrl,
-                style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.textSecondary,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
               if (provider.models.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 Text(
-                  l10n.providerCurrentModel(provider.selectedModel ?? provider.models.first),
-                  style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                  l10n.providerCurrentModel(
+                    provider.selectedModel ?? provider.models.first,
+                  ),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textSecondary,
+                  ),
                 ),
               ],
               const SizedBox(height: 8),
@@ -305,9 +389,16 @@ class _ProviderCard extends StatelessWidget {
                   const Spacer(),
                   IconButton(
                     onPressed: onDelete,
-                    icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      size: 18,
+                      color: Colors.redAccent,
+                    ),
                     visualDensity: VisualDensity.compact,
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                     padding: EdgeInsets.zero,
                   ),
                 ],

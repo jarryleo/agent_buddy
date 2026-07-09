@@ -3,13 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 
-enum BuiltinTool {
-  fetchWeb,
-  currentTime,
-  askUser,
-  runCommand,
-  getEnvironment,
-}
+enum BuiltinTool { fetchWeb, currentTime, askUser, runCommand, getEnvironment }
 
 extension BuiltinToolX on BuiltinTool {
   String get id {
@@ -97,11 +91,11 @@ class AgentTool {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'description': description,
-        'enabled': enabled,
-      };
+    'id': id,
+    'name': name,
+    'description': description,
+    'enabled': enabled,
+  };
 
   factory AgentTool.fromJson(Map<String, dynamic> json) {
     return AgentTool(

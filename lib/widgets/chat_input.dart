@@ -129,7 +129,9 @@ class _ChatInputState extends State<ChatInput> {
                   height: 40,
                   child: IconButton(
                     padding: EdgeInsets.zero,
-                    onPressed: widget.enabled && !_pickingImage ? _pickImage : null,
+                    onPressed: widget.enabled && !_pickingImage
+                        ? _pickImage
+                        : null,
                     icon: const Icon(Icons.add_photo_alternate_outlined),
                     color: AppTheme.textSecondary,
                     tooltip: l10n.imageAttachTooltip,
@@ -155,31 +157,31 @@ class _ChatInputState extends State<ChatInput> {
                         hintText: widget.enabled
                             ? l10n.chatInputHint
                             : l10n.chatInputHintNoModel,
-                        hintStyle:
-                            const TextStyle(color: AppTheme.textSecondary),
+                        hintStyle: const TextStyle(
+                          color: AppTheme.textSecondary,
+                        ),
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12,
                           vertical: 10,
                         ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(20),
-                          borderSide:
-                              const BorderSide(color: AppTheme.border),
+                          borderSide: const BorderSide(color: AppTheme.border),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(20),
-                          borderSide:
-                              const BorderSide(color: AppTheme.border),
+                          borderSide: const BorderSide(color: AppTheme.border),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(20),
                           borderSide: const BorderSide(
-                              color: AppTheme.primary, width: 1.2),
+                            color: AppTheme.primary,
+                            width: 1.2,
+                          ),
                         ),
                         isDense: true,
                       ),
-                      onSubmitted:
-                          widget.enabled ? (_) => _send() : null,
+                      onSubmitted: widget.enabled ? (_) => _send() : null,
                     ),
                   ),
                 ),
@@ -190,8 +192,9 @@ class _ChatInputState extends State<ChatInput> {
                     onPressed: widget.enabled ? _send : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primary,
-                      disabledBackgroundColor:
-                          AppTheme.primary.withValues(alpha: 0.4),
+                      disabledBackgroundColor: AppTheme.primary.withValues(
+                        alpha: 0.4,
+                      ),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
@@ -266,8 +269,11 @@ class _ImageThumbnail extends StatelessWidget {
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stack) => Container(
                     color: AppTheme.bg,
-                    child: const Icon(Icons.broken_image_outlined,
-                        color: AppTheme.textSecondary, size: 20),
+                    child: const Icon(
+                      Icons.broken_image_outlined,
+                      color: AppTheme.textSecondary,
+                      size: 20,
+                    ),
                   ),
                 ),
               ),

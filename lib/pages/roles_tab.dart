@@ -41,10 +41,7 @@ class RolesTab extends StatelessWidget {
         foregroundColor: Colors.white,
       ),
       body: roles.isEmpty
-          ? EmptyHint(
-              text: l10n.roleListEmpty,
-              icon: Icons.person_outline,
-            )
+          ? EmptyHint(text: l10n.roleListEmpty, icon: Icons.person_outline)
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
               itemCount: roles.length,
@@ -71,7 +68,9 @@ class RolesTab extends StatelessWidget {
                         children: [
                           CircleAvatar(
                             radius: 22,
-                            backgroundColor: AppTheme.primary.withValues(alpha: 0.12),
+                            backgroundColor: AppTheme.primary.withValues(
+                              alpha: 0.12,
+                            ),
                             child: Text(
                               r.name.isNotEmpty ? r.name.characters.first : '?',
                               style: const TextStyle(
@@ -99,10 +98,15 @@ class RolesTab extends StatelessWidget {
                                     ),
                                     if (active)
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
                                         decoration: BoxDecoration(
                                           color: AppTheme.primary,
-                                          borderRadius: BorderRadius.circular(4),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
                                         ),
                                         child: Text(
                                           l10n.commonInUse,
@@ -131,13 +135,21 @@ class RolesTab extends StatelessWidget {
                                 Row(
                                   children: [
                                     TextButton(
-                                      onPressed: () => settings.setActiveRole(active ? null : r.id),
+                                      onPressed: () => settings.setActiveRole(
+                                        active ? null : r.id,
+                                      ),
                                       style: TextButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                        ),
                                         minimumSize: const Size(0, 28),
                                         visualDensity: VisualDensity.compact,
                                       ),
-                                      child: Text(active ? l10n.roleUnuseRole : l10n.roleUseRole),
+                                      child: Text(
+                                        active
+                                            ? l10n.roleUnuseRole
+                                            : l10n.roleUseRole,
+                                      ),
                                     ),
                                     const Spacer(),
                                     IconButton(
@@ -146,14 +158,18 @@ class RolesTab extends StatelessWidget {
                                           context: context,
                                           builder: (ctx) => AlertDialog(
                                             title: Text(l10n.roleDeleteTitle),
-                                            content: Text(l10n.roleDeleteConfirm(r.name)),
+                                            content: Text(
+                                              l10n.roleDeleteConfirm(r.name),
+                                            ),
                                             actions: [
                                               TextButton(
-                                                onPressed: () => Navigator.pop(ctx, false),
+                                                onPressed: () =>
+                                                    Navigator.pop(ctx, false),
                                                 child: Text(l10n.commonCancel),
                                               ),
                                               TextButton(
-                                                onPressed: () => Navigator.pop(ctx, true),
+                                                onPressed: () =>
+                                                    Navigator.pop(ctx, true),
                                                 child: Text(l10n.commonDelete),
                                               ),
                                             ],
@@ -163,8 +179,11 @@ class RolesTab extends StatelessWidget {
                                           await settings.deleteRole(r.id);
                                         }
                                       },
-                                      icon: const Icon(Icons.delete_outline,
-                                          size: 18, color: Colors.redAccent),
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        size: 18,
+                                        color: Colors.redAccent,
+                                      ),
                                       visualDensity: VisualDensity.compact,
                                     ),
                                   ],
@@ -200,8 +219,12 @@ class _RoleEditPageState extends State<_RoleEditPage> {
   void initState() {
     super.initState();
     _name = TextEditingController(text: widget.initial?.name ?? '');
-    _description = TextEditingController(text: widget.initial?.description ?? '');
-    _systemPrompt = TextEditingController(text: widget.initial?.systemPrompt ?? '');
+    _description = TextEditingController(
+      text: widget.initial?.description ?? '',
+    );
+    _systemPrompt = TextEditingController(
+      text: widget.initial?.systemPrompt ?? '',
+    );
   }
 
   @override
@@ -215,9 +238,9 @@ class _RoleEditPageState extends State<_RoleEditPage> {
   void _save() {
     final l10n = AppLocalizations.of(context);
     if (_name.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.roleNameRequired)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.roleNameRequired)));
       return;
     }
     final role = Role(
@@ -235,16 +258,19 @@ class _RoleEditPageState extends State<_RoleEditPage> {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.initial == null ? l10n.roleAddTitle : l10n.roleEditTitle),
-        actions: [
-          TextButton(onPressed: _save, child: Text(l10n.commonSave)),
-        ],
+        title: Text(
+          widget.initial == null ? l10n.roleAddTitle : l10n.roleEditTitle,
+        ),
+        actions: [TextButton(onPressed: _save, child: Text(l10n.commonSave))],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _FieldLabel(text: l10n.roleName),
-          TextField(controller: _name, decoration: InputDecoration(hintText: l10n.roleNameHint)),
+          TextField(
+            controller: _name,
+            decoration: InputDecoration(hintText: l10n.roleNameHint),
+          ),
           const SizedBox(height: 14),
           _FieldLabel(text: l10n.roleDescription),
           TextField(

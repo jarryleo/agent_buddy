@@ -7,11 +7,7 @@ import '../l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 
 class CodeBlock extends StatefulWidget {
-  const CodeBlock({
-    super.key,
-    required this.code,
-    required this.language,
-  });
+  const CodeBlock({super.key, required this.code, required this.language});
 
   final String code;
   final String language;
@@ -148,20 +144,27 @@ class _CodeBlockState extends State<CodeBlock> {
                   onTap: _copy,
                   borderRadius: BorderRadius.circular(4),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
+                    ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           _copied ? Icons.check_rounded : Icons.copy_rounded,
                           size: 12,
-                          color: _copied ? const Color(0xFF3FB950) : const Color(0xFF8B949E),
+                          color: _copied
+                              ? const Color(0xFF3FB950)
+                              : const Color(0xFF8B949E),
                         ),
                         const SizedBox(width: 4),
                         Text(
                           _copied ? l10n.codeCopied : l10n.codeCopy,
                           style: TextStyle(
-                            color: _copied ? const Color(0xFF3FB950) : const Color(0xFF8B949E),
+                            color: _copied
+                                ? const Color(0xFF3FB950)
+                                : const Color(0xFF8B949E),
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
                           ),

@@ -65,8 +65,11 @@ class ToolsTab extends StatelessWidget {
                       color: AppTheme.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.handyman_outlined,
-                        color: AppTheme.primary, size: 18),
+                    child: const Icon(
+                      Icons.handyman_outlined,
+                      color: AppTheme.primary,
+                      size: 18,
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -75,7 +78,10 @@ class ToolsTab extends StatelessWidget {
                       children: [
                         Text(
                           name,
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                         const SizedBox(height: 2),
                         Text(

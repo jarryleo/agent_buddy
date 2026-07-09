@@ -50,30 +50,48 @@ class _HomePageState extends State<HomePage> {
           icon: const Icon(Icons.settings_outlined),
           tooltip: l10n.homeSettingsTooltip,
           onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SettingsPage()),
-            );
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const SettingsPage()));
           },
         ),
         title: Consumer<SettingsProvider>(
           builder: (context, settings, _) {
-            final provider = settings.activeProvider;
             final role = settings.activeRole;
             final title = role?.name ?? l10n.appTitle;
-            final subtitle = provider == null
-                ? l10n.homeNoModel
-                : l10n.homeProviderModel(
-                    provider.name,
-                    provider.selectedModel ?? l10n.homeNoModelSelected,
-                  );
+            final String subtitle;
+            if (settings.useLocalModel) {
+              final lp = settings.activeLocalProvider;
+              subtitle = lp == null
+                  ? l10n.homeNoModel
+                  : l10n.homeProviderModel(lp.name, lp.displayModelName);
+            } else {
+              final provider = settings.activeProvider;
+              subtitle = provider == null
+                  ? l10n.homeNoModel
+                  : l10n.homeProviderModel(
+                      provider.name,
+                      provider.selectedModel ?? l10n.homeNoModelSelected,
+                    );
+            }
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 1),
                 Text(
                   subtitle,
-                  style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary, fontWeight: FontWeight.w400),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppTheme.textSecondary,
+                    fontWeight: FontWeight.w400,
+                  ),
                 ),
               ],
             );
@@ -116,7 +134,9 @@ class _HomePageState extends State<HomePage> {
       ),
       body: Consumer<ChatProvider>(
         builder: (context, chat, _) {
-          WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _scrollToBottom(),
+          );
           return Column(
             children: [
               Expanded(
@@ -131,12 +151,16 @@ class _HomePageState extends State<HomePage> {
                           return MessageBubble(
                             message: m,
                             onCopy: (text) async {
-                              await Clipboard.setData(ClipboardData(text: text));
+                              await Clipboard.setData(
+                                ClipboardData(text: text),
+                              );
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(l10n.homeCopied),
-                                    duration: const Duration(milliseconds: 1200),
+                                    duration: const Duration(
+                                      milliseconds: 1200,
+                                    ),
                                   ),
                                 );
                               }
@@ -147,11 +171,18 @@ class _HomePageState extends State<HomePage> {
               ),
               Consumer<SettingsProvider>(
                 builder: (context, settings, _) {
-                  final provider = settings.activeProvider;
-                  final hasModel = provider != null &&
-                      (provider.selectedModel != null || provider.models.isNotEmpty);
+                  final bool ready;
+                  if (settings.useLocalModel) {
+                    ready = settings.activeLocalProvider != null;
+                  } else {
+                    final provider = settings.activeProvider;
+                    ready =
+                        provider != null &&
+                        (provider.selectedModel != null ||
+                            provider.models.isNotEmpty);
+                  }
                   return ChatInput(
-                    enabled: provider != null && hasModel && !chat.sending,
+                    enabled: ready && !chat.sending,
                     imageService: context.read<ImageService>(),
                     onSend: (text, imagePaths) {
                       chat.sendMessage(context, text, imagePaths: imagePaths);
@@ -186,8 +217,11 @@ class _EmptyState extends StatelessWidget {
                 color: AppTheme.primary.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Icon(Icons.smart_toy_outlined,
-                  size: 36, color: AppTheme.primary),
+              child: const Icon(
+                Icons.smart_toy_outlined,
+                size: 36,
+                color: AppTheme.primary,
+              ),
             ),
             const SizedBox(height: 16),
             Text(
@@ -198,7 +232,11 @@ class _EmptyState extends StatelessWidget {
             Text(
               l10n.homeEmptySubtitle,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.5),
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppTheme.textSecondary,
+                height: 1.5,
+              ),
             ),
           ],
         ),

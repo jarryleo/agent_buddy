@@ -30,12 +30,15 @@ class ToolService {
     final http.Response resp;
     try {
       resp = await _client
-          .get(uri, headers: {
-            'User-Agent':
-                'Mozilla/5.0 (compatible; AgentBuddy/1.0; +https://agent.buddy)',
-            'Accept':
-                'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          })
+          .get(
+            uri,
+            headers: {
+              'User-Agent':
+                  'Mozilla/5.0 (compatible; AgentBuddy/1.0; +https://agent.buddy)',
+              'Accept':
+                  'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            },
+          )
           .timeout(const Duration(seconds: 20));
     } on ToolException {
       rethrow;
@@ -47,8 +50,9 @@ class ToolService {
     }
     final contentType = resp.headers['content-type'] ?? '';
     if (contentType.contains('application/json')) {
-      var text = const JsonEncoder.withIndent('  ')
-          .convert(jsonDecode(utf8.decode(resp.bodyBytes)));
+      var text = const JsonEncoder.withIndent(
+        '  ',
+      ).convert(jsonDecode(utf8.decode(resp.bodyBytes)));
       if (text.length > maxLength) {
         text = '${text.substring(0, maxLength)}\n...(truncated)';
       }
@@ -137,13 +141,13 @@ class ToolService {
     // `dart:io` already gives us a lot; the kernel string and arch
     // (on Unix) need a one-shot command. Cap each command at 5s so
     // a stuck shell doesn't hang the whole tool call.
-    Future<String> runShell(
-      String executable,
-      List<String> args,
-    ) async {
+    Future<String> runShell(String executable, List<String> args) async {
       try {
-        final result = await Process.run(executable, args, runInShell: true)
-            .timeout(const Duration(seconds: 5));
+        final result = await Process.run(
+          executable,
+          args,
+          runInShell: true,
+        ).timeout(const Duration(seconds: 5));
         return result.stdout.toString().trim();
       } catch (_) {
         return '';
@@ -162,7 +166,7 @@ class ToolService {
     // Arch: env var on Windows, `uname -m` on Unix.
     final arch = isWin
         ? (Platform.environment['PROCESSOR_ARCHITECTURE'] ??
-            (await runShell('cmd', ['/c', 'echo %PROCESSOR_ARCHITECTURE%'])))
+              (await runShell('cmd', ['/c', 'echo %PROCESSOR_ARCHITECTURE%'])))
         : (await runShell('uname', ['-m']));
 
     return jsonEncode({
@@ -170,13 +174,16 @@ class ToolService {
       'os_version': Platform.operatingSystemVersion,
       'arch': arch.isEmpty ? 'unknown' : arch,
       'hostname': Platform.localHostname,
-      'user': Platform.environment['USER'] ??
+      'user':
+          Platform.environment['USER'] ??
           Platform.environment['USERNAME'] ??
           'unknown',
-      'home': Platform.environment['HOME'] ??
+      'home':
+          Platform.environment['HOME'] ??
           Platform.environment['USERPROFILE'] ??
           '',
-      'shell': Platform.environment['SHELL'] ??
+      'shell':
+          Platform.environment['SHELL'] ??
           Platform.environment['COMSPEC'] ??
           '',
       'cwd': Directory.current.path,

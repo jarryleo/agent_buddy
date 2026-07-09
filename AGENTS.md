@@ -21,11 +21,11 @@ No CI, no pre-commit hooks, no `melos`/`fvm` — keep it simple.
 
 ## Architecture (one-liner per directory)
 
-- `lib/main.dart` — root + `MultiProvider` (Settings, Api, Tool, Chat)
-- `lib/models/` — plain Dart models with `toJson` / `fromJson` for SharedPreferences
-- `lib/services/` — `StorageService` (SharedPreferences), `ApiService` (OpenAI + Anthropic SSE, throws raw `Error:` strings on purpose for the AI), `ToolService` (HTML fetch for `fetch_web`)
+- `lib/main.dart` — root + `MultiProvider` (Settings, Api, Tool, Chat, LocalLlm)
+- `lib/models/` — plain Dart models with `toJson` / `fromJson` for SharedPreferences (incl. `LocalProvider` for on-device GGUF models)
+- `lib/services/` — `StorageService` (SharedPreferences), `ApiService` (OpenAI + Anthropic SSE, throws raw `Error:` strings on purpose for the AI), `ToolService` (HTML fetch for `fetch_web`), `LocalLlmService` (wraps `llamadart`'s `LlamaEngine` + `ChatSession` for GGUF, lazy-loaded on first chat, supports mmproj multimodal)
 - `lib/providers/` — `ChangeNotifier`s; `ChatProvider.sendMessage(BuildContext, String)` takes context on purpose to read l10n for user-facing errors
-- `lib/pages/` — top-level routes (`HomePage`, `SettingsPage` + 4 tab pages, `AddProviderPage`)
+- `lib/pages/` — top-level routes (`HomePage`, `SettingsPage` + 5 tab pages incl. `LocalProvidersTab`, `AddProviderPage`, `AddLocalProviderPage`)
 - `lib/widgets/` — reusable (`PhoneFrame`, `ChatInput`, `MessageBubble`, `MarkdownContent`, `CodeBlock`, `ImagePreviewPage`, `NoFocusIconButton`)
 - `lib/theme/app_theme.dart` — single light theme, iOS-leaning
 - `lib/l10n/` — ARB sources + **generated** `app_localizations*.dart` (checked in, do not hand-edit)
@@ -55,6 +55,12 @@ No CI, no pre-commit hooks, no `melos`/`fvm` — keep it simple.
 ### Tests
 - Only one smoke test exists (`ApiService` constructs). The bar is low.
 - `StorageService` requires `await init()` first; a bare `new StorageService()` will throw on first read. Don't try to test providers without mocking `SharedPreferences` (`SharedPreferences.setMockInitialValues({})`).
+
+### Local models (llamadart / GGUF)
+- `LocalLlmService` is a thin wrapper around `LlamaEngine` + `ChatSession`. The model is loaded **lazily on the first chat** after the user enables `useLocalModel` and has an active local provider — never at app startup, never on save.
+- The model path, mmproj path, context size, temperature, GPU layers and max-tokens are stored in `LocalProvider` (SharedPreferences). The first time the user actually sends a message, `ensureLoaded()` is called and the engine is held in memory for subsequent turns; it's disposed on app teardown.
+- Images attached to a chat message are passed through as `LlamaImageContent(path: ...)` pointing at the local file already cached by `ImageService`. Remote URLs / base64 data URLs are not used (the engine prefers file paths on native backends).
+- The llmamadart native-assets hook downloads runtime archives on first build per platform — first build after adding the dep is slow (similar to Gradle cold start). Don't be surprised by a multi-minute first compile.
 
 ## Scope / what "done" looks like
 
