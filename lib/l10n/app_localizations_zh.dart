@@ -100,16 +100,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsTitle => '设置';
 
   @override
-  String get settingsTabProvider => 'Provider';
+  String get settingsTabProvider => '模型提供商';
 
   @override
-  String get settingsTabRole => 'Role';
+  String get settingsTabRole => '角色';
 
   @override
-  String get settingsTabTools => 'Tools';
+  String get settingsTabTools => '工具';
 
   @override
-  String get settingsTabSkill => 'Skill';
+  String get settingsTabSkill => '技能';
 
   @override
   String get providerListEmpty => '还没有添加任何模型提供商\n点击右下角\"新增\"开始';
