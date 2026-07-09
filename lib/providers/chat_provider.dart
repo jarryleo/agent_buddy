@@ -507,6 +507,7 @@ class ChatProvider extends ChangeNotifier {
           ];
           controller.add(null);
         }
+        if (!completer.isCompleted) completer.complete();
       } else if (event.type == 'done') {
         completer.complete();
       }
