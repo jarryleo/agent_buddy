@@ -12,20 +12,30 @@ class LocalLlmService extends ChangeNotifier {
   ChatSession? _session;
   String? _loadedProviderId;
   bool _loading = false;
+  Object? _loadError;
   bool _supportsVision = false;
   bool _supportsAudio = false;
 
   bool get isReady => _engine != null && _session != null;
   bool get isLoading => _loading;
   String? get loadedProviderId => _loadedProviderId;
+  Object? get loadError => _loadError;
   bool get supportsVision => _supportsVision;
   bool get supportsAudio => _supportsAudio;
+
+  /// Clear the last load error. Call after showing it to the user.
+  void clearLoadError() {
+    if (_loadError == null) return;
+    _loadError = null;
+    notifyListeners();
+  }
 
   Future<void> ensureLoaded(LocalProvider provider) async {
     if (_loading) return;
     if (_loadedProviderId == provider.id && isReady) return;
     await _disposeEngine();
     _loading = true;
+    _loadError = null;
     notifyListeners();
     try {
       final engine = LlamaEngine(LlamaBackend());
@@ -52,6 +62,9 @@ class LocalLlmService extends ChangeNotifier {
       _engine = engine;
       _session = ChatSession(engine);
       _loadedProviderId = provider.id;
+    } catch (e) {
+      _loadError = e;
+      rethrow;
     } finally {
       _loading = false;
       notifyListeners();
@@ -207,6 +220,9 @@ class LocalLlmService extends ChangeNotifier {
   Future<void> releaseModel() async {
     if (_engine == null && _session == null) return;
     await _disposeEngine();
+    if (_loadError != null) {
+      _loadError = null;
+    }
     notifyListeners();
   }
 

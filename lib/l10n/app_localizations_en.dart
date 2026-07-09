@@ -88,6 +88,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeLocalModelReleased => 'Model released';
 
   @override
+  String homeLocalModelLoadFailed(String error) {
+    return 'Failed to load model: $error';
+  }
+
+  @override
+  String get homeLocalModelRetry => 'Retry';
+
+  @override
+  String get homeLocalModelDismiss => 'Dismiss';
+
+  @override
   String get settingsTitle => 'Settings';
 
   @override

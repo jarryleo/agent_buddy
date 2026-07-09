@@ -86,6 +86,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeLocalModelReleased => '模型已释放';
 
   @override
+  String homeLocalModelLoadFailed(String error) {
+    return '模型加载失败: $error';
+  }
+
+  @override
+  String get homeLocalModelRetry => '重试';
+
+  @override
+  String get homeLocalModelDismiss => '忽略';
+
+  @override
   String get settingsTitle => '设置';
 
   @override

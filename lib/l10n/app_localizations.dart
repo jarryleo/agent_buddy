@@ -248,6 +248,24 @@ abstract class AppLocalizations {
   /// **'Model released'**
   String get homeLocalModelReleased;
 
+  /// No description provided for @homeLocalModelLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load model: {error}'**
+  String homeLocalModelLoadFailed(String error);
+
+  /// No description provided for @homeLocalModelRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get homeLocalModelRetry;
+
+  /// No description provided for @homeLocalModelDismiss.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get homeLocalModelDismiss;
+
   /// No description provided for @settingsTitle.
   ///
   /// In en, this message translates to:

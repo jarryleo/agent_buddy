@@ -251,6 +251,8 @@ class _EmptyState extends StatelessWidget {
 ///
 /// - Hidden when the user isn't on a local model at all.
 /// - Indeterminate progress + label while the model is loading.
+/// - Red error bar with Retry / Dismiss when the last load attempt
+///   failed (so the user isn't left staring at an idle spinner).
 /// - "Release model" button once a model is loaded (so the user can
 ///   free RAM/memory-mapping before swapping providers).
 class _LocalModelStatusBar extends StatelessWidget {
@@ -283,6 +285,82 @@ class _LocalModelStatusBar extends StatelessWidget {
                   fontSize: 12,
                   color: AppTheme.textSecondary,
                 ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (local.loadError != null) {
+      return Container(
+        width: double.infinity,
+        color: Colors.red.withValues(alpha: 0.08),
+        padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.error_outline,
+              size: 16,
+              color: Colors.red,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                l10n.homeLocalModelLoadFailed(local.loadError.toString()),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.red,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                final svc = context.read<LocalLlmService>();
+                final lp = context.read<SettingsProvider>().activeLocalProvider;
+                svc.clearLoadError();
+                if (lp != null) {
+                  // Fire and forget; the status bar will flip to the
+                  // loading state via the ChangeNotifier notification.
+                  svc.ensureLoaded(lp).catchError((_) {
+                    // Error is captured into loadError by ensureLoaded.
+                    return null;
+                  });
+                }
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: Text(
+                l10n.homeLocalModelRetry,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+            TextButton(
+              onPressed: () =>
+                  context.read<LocalLlmService>().clearLoadError(),
+              style: TextButton.styleFrom(
+                foregroundColor: AppTheme.textSecondary,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: Text(
+                l10n.homeLocalModelDismiss,
+                style: const TextStyle(fontSize: 12),
               ),
             ),
           ],

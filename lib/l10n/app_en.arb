@@ -32,6 +32,14 @@
   "homeLocalModelRelease": "Release model",
   "homeLocalModelReleaseTooltip": "Free the local model from memory",
   "homeLocalModelReleased": "Model released",
+  "homeLocalModelLoadFailed": "Failed to load model: {error}",
+  "@homeLocalModelLoadFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "homeLocalModelRetry": "Retry",
+  "homeLocalModelDismiss": "Dismiss",
 
   "settingsTitle": "Settings",
   "settingsTabProvider": "Provider",
