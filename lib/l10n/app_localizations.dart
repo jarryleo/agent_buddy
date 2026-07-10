@@ -1405,6 +1405,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{n} d ago'**
   String memoryDaysAgo(int n);
+
+  /// No description provided for @locationPermissionDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Location permission denied. Please grant it in system settings.'**
+  String get locationPermissionDenied;
+
+  /// No description provided for @locationPermanentlyDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Location permission permanently denied. Open system settings to enable it.'**
+  String get locationPermanentlyDenied;
+
+  /// No description provided for @locationUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Location unavailable. Make sure location services are on and try again.'**
+  String get locationUnavailable;
+
+  /// No description provided for @locationTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'Location request timed out. Please try again.'**
+  String get locationTimeout;
 }
 
 class _AppLocalizationsDelegate

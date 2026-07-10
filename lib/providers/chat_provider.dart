@@ -278,6 +278,12 @@ class ChatProvider extends ChangeNotifier {
       '先调用 search 用关键词模糊查询一次;写入时 content 用简洁一句话。'
       '用户可以在设置页查看 / 编辑 / 删除所有记忆,因此你不承担"绝不遗忘"的责任。',
     );
+    buffer.writeln(
+      '【位置】你有一个 location 工具用于获取用户当前位置(经纬度、城市、省份、'
+      '国家、时区)。仅在用户问到天气、附近、本地时区、当地信息等明确需要位置的'
+      '场景时调用,不要主动询问。移动端用 GPS(需要授权),桌面/Web 用 IP 反查'
+      '(城市级精度,无授权)。结果里带 source 字段( gps / ip )表示来源。',
+    );
     return buffer.toString().trim();
   }
 
@@ -648,6 +654,33 @@ class ChatProvider extends ChangeNotifier {
             },
           });
           break;
+        case 'location':
+          list.add({
+            'type': 'function',
+            'function': {
+              'name': 'location',
+              'description': t.description,
+              'parameters': {
+                'type': 'object',
+                'properties': {
+                  'action': {
+                    'type': 'string',
+                    'enum': ['get'],
+                    'description': '操作类型,固定 get',
+                  },
+                  'timeout_ms': {
+                    'type': 'integer',
+                    'description': '超时毫秒,默认 10000',
+                    'default': 10000,
+                    'minimum': 1000,
+                    'maximum': 60000,
+                  },
+                },
+                'required': const <String>[],
+              },
+            },
+          });
+          break;
       }
     }
     return list;
@@ -795,6 +828,8 @@ class ChatProvider extends ChangeNotifier {
         return await _tools.runTasks(args);
       case 'memory':
         return await _tools.runMemory(args);
+      case 'location':
+        return await _tools.runLocation(args);
       default:
         throw ToolException('unknown tool: $name');
     }

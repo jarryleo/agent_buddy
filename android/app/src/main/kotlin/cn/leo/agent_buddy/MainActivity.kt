@@ -8,6 +8,7 @@ import io.flutter.embedding.engine.FlutterEngine
 class MainActivity : FlutterActivity() {
     private var calendarBridge: CalendarBridge? = null
     private var remindersBridge: RemindersBridge? = null
+    private var locationBridge: LocationBridge? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,6 +25,9 @@ class MainActivity : FlutterActivity() {
         remindersBridge = RemindersBridge(applicationContext, this).also {
             it.register(flutterEngine)
         }
+        locationBridge = LocationBridge(applicationContext, this).also {
+            it.register(flutterEngine)
+        }
     }
 
     override fun onRequestPermissionsResult(
@@ -34,5 +38,6 @@ class MainActivity : FlutterActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         calendarBridge?.onRequestPermissionsResult(requestCode, permissions, grantResults)
         remindersBridge?.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        locationBridge?.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 }

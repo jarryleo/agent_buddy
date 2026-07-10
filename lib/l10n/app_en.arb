@@ -360,5 +360,10 @@
     "placeholders": {
       "n": { "type": "int" }
     }
-  }
+  },
+
+  "locationPermissionDenied": "Location permission denied. Please grant it in system settings.",
+  "locationPermanentlyDenied": "Location permission permanently denied. Open system settings to enable it.",
+  "locationUnavailable": "Location unavailable. Make sure location services are on and try again.",
+  "locationTimeout": "Location request timed out. Please try again."
 }

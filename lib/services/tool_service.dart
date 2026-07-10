@@ -15,6 +15,8 @@ import '../models/task.dart';
 import 'memory_repository.dart';
 import 'platform/calendar_service.dart';
 import 'platform/calendar_service_factory.dart';
+import 'platform/location_service.dart';
+import 'platform/location_service_factory.dart' as location_factory;
 import 'platform/notes_service.dart';
 import 'platform/reminders_service.dart';
 import 'platform/reminders_service_factory.dart';
@@ -35,6 +37,7 @@ class ToolService {
     Box<Note>? notesBox,
     Box<Task>? tasksBox,
     Box<Memory>? memoriesBox,
+    LocationServiceBuilder? locationBuilder,
   }) {
     if (notesBox != null) {
       _notes = NotesService()..open(preopened: notesBox);
@@ -45,6 +48,7 @@ class ToolService {
     if (memoriesBox != null) {
       _memories = MemoryRepository()..open(preopened: memoriesBox);
     }
+    _locationBuilder = locationBuilder;
   }
 
   final http.Client _client = http.Client();
@@ -58,6 +62,8 @@ class ToolService {
   NotesService? _notes;
   TasksService? _tasks;
   MemoryRepository? _memories;
+  LocationServiceBuilder? _locationBuilder;
+  LocationService? _location;
 
   CalendarService get calendar {
     _calendar ??= createCalendarService();
@@ -82,6 +88,12 @@ class ToolService {
   MemoryRepository get memories {
     _memories ??= MemoryRepository()..open();
     return _memories!;
+  }
+
+  LocationService get location {
+    _location ??=
+        (_locationBuilder ?? location_factory.createLocationService)();
+    return _location!;
   }
 
   /// Fetches the content of [url] and returns it as plain text.
@@ -753,6 +765,86 @@ class ToolService {
         throw ToolException(
           'unknown action: $action (expected list/search/get/create/delete/delete_batch)',
         );
+    }
+  }
+
+  /// Dispatches the unified `location` tool. On mobile the native
+  /// bridge returns a GPS fix; on desktop / web it falls back to
+  /// IP-based geolocation. The single action is `get`, which
+  /// returns a JSON envelope of `{action, location}`.
+  ///
+  /// Permission flow: [LocationService.ensurePermission] is called
+  /// first. If it returns [PlatformPermissionStatus.denied] that
+  /// usually means the native side has just kicked off the system
+  /// permission dialog and is waiting for the user; we then call
+  /// [LocationService.getCurrentLocation] which itself will wait
+  /// for the dialog to resolve. Permanent denial is final and
+  /// surfaced immediately.
+  Future<String> runLocation(Map<String, dynamic> args) async {
+    final action = args['action'] as String? ?? 'get';
+    switch (action) {
+      case 'get':
+        final timeoutMs = (args['timeout_ms'] as num?)?.toInt() ?? 10000;
+        final timeout = Duration(milliseconds: timeoutMs);
+        try {
+          final status = await location.ensurePermission();
+          if (status == PlatformPermissionStatus.notSupported) {
+            throw ToolException(
+              'location tool is not available: native bridge not registered',
+            );
+          }
+          if (status == PlatformPermissionStatus.permanentlyDenied) {
+            throw ToolException(
+              'location permission permanently denied; open system settings to enable it',
+            );
+          }
+          // status == granted: native side already has permission.
+          // status == denied: native side just kicked off the OS
+          // dialog (or the user declined without "don't ask again").
+          // Either way, hand off to getCurrentLocation; the bridge
+          // handles the "ask, wait, fetch" loop.
+          final result = await location.getCurrentLocation(timeout: timeout);
+          return jsonEncode({'action': 'get', 'location': result.toJson()});
+        } on ToolException {
+          rethrow;
+        } on UnsupportedError catch (e) {
+          throw ToolException('${e.message} (location)');
+        } on MissingPluginException {
+          throw ToolException(
+            'location tool is not available: native bridge not registered',
+          );
+        } on PlatformException catch (e) {
+          switch (e.code) {
+            case 'PERMISSION_DENIED':
+              throw ToolException(
+                'location permission denied; please grant it in system settings',
+              );
+            case 'PERMANENTLY_DENIED':
+              throw ToolException(
+                'location permission permanently denied; open system settings to enable it',
+              );
+            case 'LOCATION_TIMEOUT':
+              throw ToolException(
+                'location request timed out; make sure GPS / network is available and try again',
+              );
+            case 'LOCATION_UNAVAILABLE':
+              throw ToolException(
+                'location unavailable; make sure location services are on and try again',
+              );
+            case 'NO_LOCATION':
+              throw ToolException('no location returned by the platform');
+            default:
+              throw ToolException('location error: ${e.code}: ${e.message}');
+          }
+        } on TimeoutException {
+          throw ToolException(
+            'location request timed out; make sure GPS / network is available and try again',
+          );
+        } on SocketException catch (e) {
+          throw ToolException('location error: ${e.message}');
+        }
+      default:
+        throw ToolException('unknown action: $action (expected get)');
     }
   }
 }

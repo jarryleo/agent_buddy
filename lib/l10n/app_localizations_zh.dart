@@ -719,4 +719,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String memoryDaysAgo(int n) {
     return '$n 天前';
   }
+
+  @override
+  String get locationPermissionDenied => '位置权限被拒绝,请在系统设置中授予权限。';
+
+  @override
+  String get locationPermanentlyDenied => '位置权限已被永久拒绝,请打开系统设置启用。';
+
+  @override
+  String get locationUnavailable => '无法获取位置,请确认定位服务已开启后重试。';
+
+  @override
+  String get locationTimeout => '位置请求超时,请重试。';
 }

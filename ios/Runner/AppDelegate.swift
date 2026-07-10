@@ -18,5 +18,8 @@ import UIKit
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "RemindersBridge") {
       RemindersBridge.register(with: registrar)
     }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "LocationBridge") {
+      LocationBridge.register(with: registrar)
+    }
   }
 }

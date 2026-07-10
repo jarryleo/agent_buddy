@@ -17,6 +17,8 @@
 	<string>Agent Buddy needs reminders access to let the AI read, create, update, complete, and delete your reminders and to-dos.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Agent Buddy needs full reminders access to let the AI read, create, update, complete, and delete your reminders and to-dos.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Agent Buddy uses your location to answer questions about local weather, time zone, and nearby places.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

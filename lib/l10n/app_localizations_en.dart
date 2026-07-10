@@ -742,4 +742,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String memoryDaysAgo(int n) {
     return '$n d ago';
   }
+
+  @override
+  String get locationPermissionDenied =>
+      'Location permission denied. Please grant it in system settings.';
+
+  @override
+  String get locationPermanentlyDenied =>
+      'Location permission permanently denied. Open system settings to enable it.';
+
+  @override
+  String get locationUnavailable =>
+      'Location unavailable. Make sure location services are on and try again.';
+
+  @override
+  String get locationTimeout => 'Location request timed out. Please try again.';
 }
