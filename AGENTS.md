@@ -53,7 +53,7 @@ No CI, no pre-commit hooks, no `melos`/`fvm` — keep it simple.
 - The assertion is debug-only — release builds are unaffected. Upgrading Flutter may eventually make `NoFocusIconButton` unnecessary.
 
 ### Tests
-- One smoke test exists (`ApiService` constructs) plus service-layer coverage for the new platform tools: `notes_service_test.dart`, `tasks_service_test.dart`, `platform_tools_test.dart` (end-to-end via `ToolService`, incl. memory tool), `platform_calendar_reminders_test.dart` (validation paths + stub-translation), `memory_repository_test.dart` (MemoryRepository: list / search / add / update / delete / deleteMany), `location_service_test.dart` (LocationServiceIp response parsing, error translation, runLocation envelope, plus the full permission state machine via a fake `LocationService` and MethodChannel mocks for `LocationServiceIo`). Total ~97 tests.
+- One smoke test exists (`ApiService` constructs) plus service-layer coverage for the new platform tools: `notes_service_test.dart`, `tasks_service_test.dart`, `platform_tools_test.dart` (end-to-end via `ToolService`, incl. memory tool), `platform_calendar_reminders_test.dart` (validation paths + stub-translation), `memory_repository_test.dart` (MemoryRepository: list / multi-keyword search / tag filter / add-with-tags / update / delete / deleteMany / AND-vs-OR semantics), `location_service_test.dart` (LocationServiceIp response parsing, error translation, runLocation envelope, plus the full permission state machine via a fake `LocationService` and MethodChannel mocks for `LocationServiceIo`). Total ~112 tests.
 - `StorageService` requires `await init()` first; a bare `new StorageService()` will throw on first read. Don't try to test providers without mocking `SharedPreferences` (`SharedPreferences.setMockInitialValues({})`).
 - Hive tests use `Directory.systemTemp.createTemp` + `Hive.init(tempDir.path)` + `setUpAll` to register hand-written adapters. The teardown must close the box and `Hive.deleteBoxFromDisk` between tests.
 
@@ -101,18 +101,24 @@ Coarse "where am I" lookup so the AI can answer weather / timezone / "near me" q
 ### Memory system (`memory` tool + Memory tab)
 Cross-session long-term memory for the AI. Backed by a `hive_ce` box (`memories`), persisted via `MemoryRepository` (`lib/services/memory_repository.dart`) and surfaced to the user in Settings → Memory.
 
-- **Data model** (`lib/models/memory.dart` + `memory_adapter.dart`): `Memory { id, content, source, createdAt }` with a hand-written `TypeAdapter<Memory>` (typeId = 4). `source` is `'ai'` (written by the model) or `'user'` (added by the user in Settings). `id` format: `m_<µs>_<boxLength>`, mirrors `Note` / `Task` conventions.
-- **Repository** (`MemoryRepository`): `list({String? keyword, int max = 50})` returns memories **sorted newest-first** by `createdAt`; `keyword` filter is a case-insensitive `contains` on `content`. Plus `get / add / update / delete / deleteMany / length / open / close / registerAdapters`.
-- **Tool** (`memory`) — 6 actions dispatched by `ToolService.runMemory`:
-  - `list` — `max` default 20
-  - `search` — required `keyword`, `max` default 20; same case-insensitive `contains`
+- **Data model** (`lib/models/memory.dart` + `memory_adapter.dart`): `Memory { id, content, source, createdAt, tags: List<String> }` with a hand-written `TypeAdapter<Memory>` (typeId = 4, version = 2). `source` is `'ai'` (written by the model) or `'user'` (added by the user in Settings). `tags` is a free-form list of keywords the model attaches to a memory at write time to make future fuzzy searches cheaper. The v1 wire layout (pre-tags, written by the previous app version) is still readable: `MemoryAdapter.read` detects `version=1` and returns a `Memory` with `tags=[]`. `id` format: `m_<µs>_<boxLength>`, mirrors `Note` / `Task` conventions.
+- **Repository** (`MemoryRepository`): `list({String? keyword, List<String>? keywords, List<String>? tags, int max = 50})` returns memories **sorted newest-first** by `createdAt`. Filtering uses **OR semantics** for high recall:
+  - `keyword` (legacy single-string): case-insensitive `contains` on `content`.
+  - `keywords` (preferred multi-keyword search): a memory matches if **any** keyword is contained in its `content` OR `tags`.
+  - `tags`: a memory matches if **any** of its tags intersects the filter.
+  - When both `keyword` and `keywords` are passed, `keywords` wins.
+  Plus `get / add / update / delete / deleteMany / length / open / close / registerAdapters`. `add` / `update` accept an optional `tags` list (whitespace-trimmed, de-duplicated, case-folded for matching).
+- **Tool** (`memory`) — 7 actions dispatched by `ToolService.runMemory`:
+  - `list` — optional `max` (default 20)
+  - `search` — preferred `keywords: string[]` (multi-keyword OR on content + tags) or legacy `keyword: string`; optional `tags: string[]` for narrowing; `max` default 20. At least one of `keywords` / `keyword` / `tags` must be non-empty.
   - `get` — required `id`
-  - `create` — required `content`; source is hard-coded to `'ai'` (model writes)
+  - `create` — required `content`; optional `tags: string[]` (3~6 keywords recommended for recall); source is hard-coded to `'ai'`
+  - `update` — required `id`; optional `content` and/or `tags`; missing `tags` keeps the existing list
   - `delete` — required `id`
   - `delete_batch` — required non-empty `ids: string[]`
   - All errors throw `ToolException` (envelope shape is consistent with the other personal-data tools).
 - **Schema** lives in `ChatProvider._buildToolsSchema()` under `case 'memory':`. Available on every platform (`BuiltinTool.memory.isSupportedOnCurrentPlatform == true`); auto-seeded by `SettingsProvider.load()`'s builtin loop, so existing users get it enabled on first launch after upgrade.
-- **AI judgment** — the model is *not* hard-gated. The system prompt (`ChatProvider._buildSystemPrompt()`, last block) includes a soft-rule paragraph: "use `memory` for long-term useful info, fuzzy-search when unsure, don't over-write throwaway context." All decisions are made by the model.
+- **AI guidance** — the system prompt (`ChatProvider._buildSystemPrompt()`, last block) tells the model to (a) attach a rich `tags: string[]` to every `create` / `update` so future `search` calls are cheap, and (b) prefer `keywords: string[]` (multiple related terms) over a single `keyword` when searching. The model still has full judgment — these are soft rules.
 - **Settings UI** — `lib/pages/memory_tab.dart` is the 6th tab in `SettingsPage` (length bumped 5 → 6). Features: keyword search box, multi-select batch delete (long-press to enter, like `SessionManagerSheet`), inline "..." menu for per-row edit / delete, FAB for adding a new memory. `MemoryProvider` (`lib/providers/memory_provider.dart`) is a `ChangeNotifier` wrapper around the repo and is the only thing the UI talks to.
 - **No notification on user edits** — when the user adds / edits / deletes a memory from Settings, the AI is *not* notified. The change is visible to the model only on the next turn that calls `memory` (search / list).
 

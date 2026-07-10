@@ -93,7 +93,7 @@ extension BuiltinToolX on BuiltinTool {
       case BuiltinTool.tasks:
         return '管理 Agent Buddy 内置任务清单(数据存于本机 Hive,无需系统权限)。Android 上作为"待办"的回退通路。';
       case BuiltinTool.memory:
-        return '管理 AI 长期记忆:list / search(关键词模糊查询) / create(写入一条记忆) / get / delete / delete_batch。由 AI 自主判断何时写入或查询,不要在单轮内过度写入。';
+        return '管理 AI 长期记忆:list / search(多关键词 OR 模糊查询,支持 keywords[] + tags 过滤) / create / get / update / delete / delete_batch。写入时尽量多列几个 tags 关键词,便于后续模糊查找;查询时尽量用 keywords[] 一次给多个相关词,以提高召回。';
       case BuiltinTool.location:
         return '获取用户当前的大致位置(经纬度 + 行政区划 + 时区)。移动端用 GPS 定位(需要授权),桌面/Web 用 IP 反查城市与时区。仅在用户问到天气、附近、本地时区等明确场景时调用,不要主动询问。';
     }

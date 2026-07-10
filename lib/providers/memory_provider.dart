@@ -8,12 +8,25 @@ class MemoryProvider extends ChangeNotifier {
 
   final MemoryRepository _repo;
 
-  List<Memory> list({String? keyword, int max = 200}) {
-    return _repo.list(keyword: keyword, max: max);
+  List<Memory> list({
+    String? keyword,
+    List<String>? keywords,
+    List<String>? tags,
+    int max = 200,
+  }) {
+    return _repo.list(
+      keyword: keyword,
+      keywords: keywords,
+      tags: tags,
+      max: max,
+    );
   }
 
-  Future<Memory> addUser({required String content}) async {
-    final m = await _repo.add(content: content, source: 'user');
+  Future<Memory> addUser({
+    required String content,
+    List<String> tags = const [],
+  }) async {
+    final m = await _repo.add(content: content, source: 'user', tags: tags);
     notifyListeners();
     return m;
   }
@@ -22,11 +35,13 @@ class MemoryProvider extends ChangeNotifier {
     required String id,
     String? content,
     String? source,
+    List<String>? tags,
   }) async {
     final updated = await _repo.update(
       id: id,
       content: content,
       source: source,
+      tags: tags,
     );
     if (updated != null) notifyListeners();
     return updated;

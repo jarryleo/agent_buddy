@@ -716,15 +716,40 @@ class ToolService {
           'memories': items.map((m) => m.toJson()).toList(),
         });
       case 'search':
-        final keyword = args['keyword'] as String? ?? '';
-        if (keyword.trim().isEmpty) {
-          throw ToolException('action=search requires "keyword"');
+        // Preferred: keywords[] (multi-keyword fuzzy OR-match on
+        // content + tags). Legacy: single `keyword` string for
+        // backward compat with older prompts / models. Tag-only
+        // searches (no keywords at all) are also allowed via the
+        // `tags` array.
+        final rawKeywords = args['keywords'];
+        final List<String> keywords;
+        if (rawKeywords is List) {
+          keywords = rawKeywords.map((e) => e.toString()).toList();
+        } else if (rawKeywords is String && rawKeywords.trim().isNotEmpty) {
+          keywords = [rawKeywords];
+        } else {
+          final legacy = args['keyword'] as String? ?? '';
+          if (legacy.trim().isNotEmpty) {
+            keywords = [legacy];
+          } else {
+            keywords = const [];
+          }
+        }
+        final tagsRaw = args['tags'];
+        final List<String>? tags = tagsRaw is List
+            ? tagsRaw.map((e) => e.toString()).toList()
+            : null;
+        if (keywords.isEmpty && (tags == null || tags.isEmpty)) {
+          throw ToolException(
+            'action=search requires non-empty "keywords" (array), "keyword" (string), or "tags" (array)',
+          );
         }
         final max = (args['max'] as num?)?.toInt() ?? 20;
-        final items = memories.list(keyword: keyword, max: max);
+        final items = memories.list(keywords: keywords, tags: tags, max: max);
         return jsonEncode({
           'action': 'search',
-          'keyword': keyword,
+          'keywords': keywords,
+          'tags': ?tags,
           'count': items.length,
           'memories': items.map((m) => m.toJson()).toList(),
         });
@@ -743,8 +768,30 @@ class ToolService {
         if (content.trim().isEmpty) {
           throw ToolException('action=create requires "content"');
         }
-        final m = await memories.add(content: content, source: 'ai');
+        final tagsRaw = args['tags'];
+        final tags = tagsRaw is List
+            ? tagsRaw.map((e) => e.toString()).toList()
+            : const <String>[];
+        final m = await memories.add(
+          content: content,
+          source: 'ai',
+          tags: tags,
+        );
         return jsonEncode({'action': 'create', 'memory': m.toJson()});
+      case 'update':
+        final id = args['id'] as String? ?? '';
+        if (id.isEmpty) throw ToolException('action=update requires "id"');
+        final tagsRaw = args['tags'];
+        final List<String>? tags = tagsRaw is List
+            ? tagsRaw.map((e) => e.toString()).toList()
+            : null;
+        final m = await memories.update(
+          id: id,
+          content: args['content'] as String?,
+          tags: tags,
+        );
+        if (m == null) return jsonEncode({'action': 'update', 'found': false});
+        return jsonEncode({'action': 'update', 'memory': m.toJson()});
       case _actionDelete:
         final id = args['id'] as String? ?? '';
         if (id.isEmpty) throw ToolException('action=delete requires "id"');
@@ -763,7 +810,7 @@ class ToolService {
         });
       default:
         throw ToolException(
-          'unknown action: $action (expected list/search/get/create/delete/delete_batch)',
+          'unknown action: $action (expected list/search/get/create/update/delete/delete_batch)',
         );
     }
   }

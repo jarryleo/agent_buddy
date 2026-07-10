@@ -242,6 +242,138 @@ void main() {
         throwsA(isA<ToolException>()),
       );
     });
+
+    test('create persists tags and they appear in the envelope', () async {
+      final raw = await tools.runMemory({
+        'action': 'create',
+        'content': 'Lives in Shanghai',
+        'tags': ['city', '上海', 'China', 'location'],
+      });
+      expect(raw, contains('"tags":'));
+      expect(raw, contains('city'));
+      expect(raw, contains('上海'));
+    });
+
+    test('search with keywords[] OR-matches content or tags', () async {
+      await tools.runMemory({
+        'action': 'create',
+        'content': 'Lives in Shanghai',
+        'tags': ['city', '上海'],
+      });
+      await tools.runMemory({
+        'action': 'create',
+        'content': 'Loves dark mode',
+        'tags': ['theme'],
+      });
+      final hits = await tools.runMemory({
+        'action': 'search',
+        'keywords': ['shanghai', 'theme'],
+      });
+      expect(hits, contains('"action":"search"'));
+      expect(hits, contains('"keywords":'));
+      expect(hits, contains('"count":2'));
+      expect(hits, contains('Lives in Shanghai'));
+      expect(hits, contains('Loves dark mode'));
+    });
+
+    test(
+      'search with keyword (singular) still works for backward compat',
+      () async {
+        await tools.runMemory({
+          'action': 'create',
+          'content': 'Lives in Shanghai',
+          'tags': ['city'],
+        });
+        final hits = await tools.runMemory({
+          'action': 'search',
+          'keyword': 'shanghai',
+        });
+        expect(hits, contains('"count":1'));
+      },
+    );
+
+    test('search with no keywords and no tags throws', () async {
+      expect(
+        () => tools.runMemory({'action': 'search'}),
+        throwsA(isA<ToolException>()),
+      );
+      expect(
+        () => tools.runMemory({'action': 'search', 'keywords': [], 'tags': []}),
+        throwsA(isA<ToolException>()),
+      );
+    });
+
+    test(
+      'search with tags[] alone (no keywords) works for tag-only lookup',
+      () async {
+        await tools.runMemory({
+          'action': 'create',
+          'content': 'prefers spicy food',
+          'tags': ['food', 'spicy'],
+        });
+        await tools.runMemory({
+          'action': 'create',
+          'content': 'likes classical music',
+          'tags': ['music'],
+        });
+        final hits = await tools.runMemory({
+          'action': 'search',
+          'tags': ['food'],
+        });
+        expect(hits, contains('"count":1'));
+        expect(hits, contains('prefers spicy food'));
+      },
+    );
+
+    test(
+      'search with tags[] filters to memories whose tags intersect',
+      () async {
+        await tools.runMemory({
+          'action': 'create',
+          'content': 'prefers spicy food',
+          'tags': ['food', 'spicy'],
+        });
+        await tools.runMemory({
+          'action': 'create',
+          'content': 'likes classical music',
+          'tags': ['music'],
+        });
+        final hits = await tools.runMemory({
+          'action': 'search',
+          'tags': ['food'],
+        });
+        expect(hits, contains('"count":1'));
+        expect(hits, contains('prefers spicy food'));
+      },
+    );
+
+    test('update replaces content and tags; null keeps existing', () async {
+      final created = await tools.runMemory({
+        'action': 'create',
+        'content': 'old content',
+        'tags': ['old'],
+      });
+      final id = _extractId(created);
+      final updated = await tools.runMemory({
+        'action': 'update',
+        'id': id,
+        'content': 'new content',
+        'tags': ['new1', 'new2'],
+      });
+      expect(updated, contains('"content":"new content"'));
+      expect(updated, contains('new1'));
+      expect(updated, contains('new2'));
+      expect(updated, isNot(contains('old')));
+    });
+
+    test('update on unknown id returns found:false', () async {
+      final raw = await tools.runMemory({
+        'action': 'update',
+        'id': 'missing',
+        'content': 'x',
+      });
+      expect(raw, contains('"found":false'));
+    });
   });
 }
 

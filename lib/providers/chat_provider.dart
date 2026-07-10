@@ -274,9 +274,15 @@ class ChatProvider extends ChangeNotifier {
       '判断标准是"这条信息对未来的对话是否仍有用":'
       '用户的长期偏好、明确表达的禁忌、个人背景、项目信息、用户主动要求记住的内容,'
       '适合写入(create);单次会话的临时指令、上下文噪音、明显是一次性需求的内容,'
-      '不要写入。当你拿不准、或用户话题可能与既有记忆相关时,'
-      '先调用 search 用关键词模糊查询一次;写入时 content 用简洁一句话。'
-      '用户可以在设置页查看 / 编辑 / 删除所有记忆,因此你不承担"绝不遗忘"的责任。',
+      '不要写入。\n'
+      '——【写入技巧】create / update 时除 content 外,务必额外给一个 tags: string[] 参数,'
+      '尽量多列 3~6 个相关关键词(中英文同义词、别名、上位词、可能用户后续会怎么搜),'
+      '这样未来用 search 模糊查询时召回率才高。tags 越丰富,search 越准。\n'
+      '——【查询技巧】search 时优先用 keywords: string[] 一次传多个相关词(OR 语义:'
+      '任一关键词命中 content 或 tags 即返回),不要只传一个关键词;'
+      '可以再叠加 tags: string[] 进一步收窄。如果你完全没线索,先用 list 看一眼。\n'
+      '——【其它】content 写成简洁一句话;用户可以在设置页查看 / 编辑 / 删除所有记忆,'
+      '因此你不承担"绝不遗忘"的责任。',
     );
     buffer.writeln(
       '【位置】你有一个 location 工具用于获取用户当前位置(经纬度、城市、省份、'
@@ -624,19 +630,36 @@ class ChatProvider extends ChangeNotifier {
                       'search',
                       'get',
                       'create',
+                      'update',
                       'delete',
                       'delete_batch',
                     ],
                     'description': '操作类型',
                   },
-                  'id': {'type': 'string', 'description': 'get/delete 时必填'},
+                  'id': {
+                    'type': 'string',
+                    'description': 'get/update/delete 时必填',
+                  },
+                  'keywords': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'description':
+                        'search 时首选字段。多个关键词任一命中 content 或 tags 即返回(OR 语义)。',
+                  },
                   'keyword': {
                     'type': 'string',
-                    'description': 'search 时必填,模糊查询 content',
+                    'description': 'search 时单关键词的兼容写法(等价于 keywords=["…"])',
+                  },
+                  'tags': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'description':
+                        'search 时附加过滤:只返回 tags 与此列表有任一交集的记忆;create/update 时是写入的关键词标签,便于后续模糊查找。',
                   },
                   'content': {
                     'type': 'string',
-                    'description': 'create 时必填,简洁一句话',
+                    'description':
+                        'create 时必填,尽量生成多个关键词,便于读取记忆模糊匹配;update 时可选(同时改 content 时填)',
                   },
                   'ids': {
                     'type': 'array',
