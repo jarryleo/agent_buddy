@@ -670,6 +670,7 @@ class _LocalProviderCard extends StatelessWidget {
                   _ParamChip(
                     label: 'kv ${provider.cacheTypeK}/${provider.cacheTypeV}',
                   ),
+                  _ParamChip(label: 'batch ${provider.batchSize}'),
                 ],
               ),
               const SizedBox(height: 8),

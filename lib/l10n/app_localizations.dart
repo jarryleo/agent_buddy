@@ -698,6 +698,18 @@ abstract class AppLocalizations {
   /// **'f16 = full quality, q8_0 ≈ 0.5× memory, q4_0 ≈ 0.25×. Non-f16 requires flash attention.'**
   String get localProviderKvCacheHint;
 
+  /// No description provided for @localProviderBatchSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Batch size (n_batch)'**
+  String get localProviderBatchSize;
+
+  /// No description provided for @localProviderBatchSizeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Per-step compute buffer. Default 512 (matches LM Studio / Ollama). Raising it speeds up prefill of long prompts but uses more memory.'**
+  String get localProviderBatchSizeHint;
+
   /// No description provided for @localProviderSetAsDefault.
   ///
   /// In en, this message translates to:

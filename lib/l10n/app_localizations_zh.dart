@@ -326,6 +326,13 @@ class AppLocalizationsZh extends AppLocalizations {
       'f16 = 全精度,q8_0 ≈ 内存减半,q4_0 ≈ 内存降至 1/4。非 f16 需要开启 flash attention。';
 
   @override
+  String get localProviderBatchSize => '批大小 (n_batch)';
+
+  @override
+  String get localProviderBatchSizeHint =>
+      '单次前向计算缓冲区大小。默认 512(对齐 LM Studio / Ollama)。调大可加速长 prompt 的预填充,但更占内存。';
+
+  @override
   String get localProviderSetAsDefault => '设为默认';
 
   @override

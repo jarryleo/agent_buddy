@@ -253,6 +253,7 @@ class SettingsProvider extends ChangeNotifier {
     int maxTokens = 1024,
     String cacheTypeK = 'f16',
     String cacheTypeV = 'f16',
+    int batchSize = LocalProvider.kDefaultBatchSize,
   }) async {
     final provider = LocalProvider(
       id: _uuid.v4(),
@@ -265,6 +266,7 @@ class SettingsProvider extends ChangeNotifier {
       maxTokens: maxTokens,
       cacheTypeK: cacheTypeK,
       cacheTypeV: cacheTypeV,
+      batchSize: batchSize,
     );
     _localProviders = [..._localProviders, provider];
     if (_activeLocalProviderId == null) {

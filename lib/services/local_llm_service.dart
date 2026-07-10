@@ -53,6 +53,16 @@ class LocalLlmService extends ChangeNotifier {
           flashAttention: FlashAttention.enabled,
           cacheTypeK: _parseCacheType(provider.cacheTypeK),
           cacheTypeV: _parseCacheType(provider.cacheTypeV),
+          // n_batch is the per-step compute buffer size. Leaving it
+          // unset lets llamadart default to n_ctx, which is fine for
+          // 4K context but blows up RAM/VRAM at 32K+ (logits buffer
+          // alone is n_batch × vocab_size × 4). The model's stored
+          // [LocalProvider.batchSize] is what the user tuned in
+          // Settings; falling back to the safe default keeps old
+          // configs from re-introducing the OOM.
+          batchSize: provider.batchSize > 0
+              ? provider.batchSize
+              : LocalProvider.kDefaultBatchSize,
         ),
       );
       if (provider.mmprojPath != null && provider.mmprojPath!.isNotEmpty) {

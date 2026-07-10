@@ -36,6 +36,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
   late int _maxTokens;
   late String _cacheTypeK;
   late String _cacheTypeV;
+  late int _batchSize;
   bool _busy = false;
 
   static const _contextPresets = <int>[
@@ -48,6 +49,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
     32768,
   ];
   static const _maxTokensPresets = <int>[128, 256, 512, 1024, 2048, 4096];
+  static const _batchSizePresets = <int>[256, 512, 1024, 2048, 4096];
 
   @override
   void initState() {
@@ -64,6 +66,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
     final defaultV = _defaultKvCacheTypeV();
     _cacheTypeK = p?.cacheTypeK ?? defaultK;
     _cacheTypeV = p?.cacheTypeV ?? defaultV;
+    _batchSize = p?.batchSize ?? LocalProvider.kDefaultBatchSize;
   }
 
   /// On mobile the RAM and VRAM budgets are usually much smaller than
@@ -248,6 +251,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
         maxTokens: _maxTokens,
         cacheTypeK: _cacheTypeK,
         cacheTypeV: _cacheTypeV,
+        batchSize: _batchSize,
       );
     } else {
       await widget.settings.updateLocalProvider(
@@ -261,6 +265,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
           maxTokens: _maxTokens,
           cacheTypeK: _cacheTypeK,
           cacheTypeV: _cacheTypeV,
+          batchSize: _batchSize,
         ),
       );
     }
@@ -410,6 +415,14 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
               hint: null,
               value: _cacheTypeV,
               onChanged: (v) => setState(() => _cacheTypeV = v),
+            ),
+            const SizedBox(height: 16),
+            _BatchSizeSlider(
+              value: _batchSize,
+              presets: _batchSizePresets,
+              onChanged: (v) => setState(() => _batchSize = v),
+              label: l10n.localProviderBatchSize,
+              hint: l10n.localProviderBatchSizeHint,
             ),
             const SizedBox(height: 24),
             SizedBox(
@@ -780,6 +793,76 @@ class _KvCacheTypeField extends StatelessWidget {
         ),
         if (hint != null) ...[
           const SizedBox(height: 2),
+          Text(
+            hint!,
+            style: TextStyle(fontSize: 10, color: context.textSecondary),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _BatchSizeSlider extends StatelessWidget {
+  const _BatchSizeSlider({
+    required this.value,
+    required this.presets,
+    required this.onChanged,
+    required this.label,
+    this.hint,
+  });
+
+  final int value;
+  final List<int> presets;
+  final ValueChanged<int> onChanged;
+  final String label;
+  final String? hint;
+
+  @override
+  Widget build(BuildContext context) {
+    final safeValue = presets.contains(value) ? value : LocalProvider.kDefaultBatchSize;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: context.textSecondary,
+                ),
+              ),
+            ),
+            Text(
+              '$value',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        Slider(
+          value: presets.indexOf(safeValue).toDouble(),
+          min: 0,
+          max: (presets.length - 1).toDouble(),
+          divisions: presets.length - 1,
+          label: '$value',
+          onChanged: (v) => onChanged(presets[v.round()]),
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: presets
+              .map(
+                (p) => Text(
+                  '$p',
+                  style: TextStyle(fontSize: 10, color: context.textSecondary),
+                ),
+              )
+              .toList(),
+        ),
+        if (hint != null) ...[
+          const SizedBox(height: 4),
           Text(
             hint!,
             style: TextStyle(fontSize: 10, color: context.textSecondary),

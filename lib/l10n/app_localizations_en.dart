@@ -336,6 +336,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'f16 = full quality, q8_0 ≈ 0.5× memory, q4_0 ≈ 0.25×. Non-f16 requires flash attention.';
 
   @override
+  String get localProviderBatchSize => 'Batch size (n_batch)';
+
+  @override
+  String get localProviderBatchSizeHint =>
+      'Per-step compute buffer. Default 512 (matches LM Studio / Ollama). Raising it speeds up prefill of long prompts but uses more memory.';
+
+  @override
   String get localProviderSetAsDefault => 'Set as default';
 
   @override
