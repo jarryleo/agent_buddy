@@ -42,7 +42,7 @@
   "homeLocalModelDismiss": "Dismiss",
 
   "settingsTitle": "Settings",
-  "settingsTabProvider": "Provider",
+  "settingsTabProvider": "Models",
   "settingsTabRole": "Role",
   "settingsTabTools": "Tools",
   "settingsTabSkill": "Skill",

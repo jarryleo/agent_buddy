@@ -102,7 +102,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsTitle => 'Settings';
 
   @override
-  String get settingsTabProvider => 'Provider';
+  String get settingsTabProvider => 'Models';
 
   @override
   String get settingsTabRole => 'Role';

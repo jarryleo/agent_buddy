@@ -100,7 +100,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsTitle => '设置';
 
   @override
-  String get settingsTabProvider => '模型提供商';
+  String get settingsTabProvider => '模型';
 
   @override
   String get settingsTabRole => '角色';

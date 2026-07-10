@@ -275,7 +275,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsTabProvider.
   ///
   /// In en, this message translates to:
-  /// **'Provider'**
+  /// **'Models'**
   String get settingsTabProvider;
 
   /// No description provided for @settingsTabRole.

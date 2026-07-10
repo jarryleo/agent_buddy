@@ -31,7 +31,7 @@
   "homeLocalModelDismiss": "忽略",
 
   "settingsTitle": "设置",
-  "settingsTabProvider": "模型提供商",
+  "settingsTabProvider": "模型",
   "settingsTabRole": "角色",
   "settingsTabTools": "工具",
   "settingsTabSkill": "技能",
