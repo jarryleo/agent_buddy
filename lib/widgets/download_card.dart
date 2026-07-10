@@ -289,70 +289,105 @@ class DownloadCard extends StatelessWidget {
     required bool expired,
   }) {
     final l10n = AppLocalizations.of(context);
+    // Keep this style minimal. We don't pass it to the buttons'
+    // `textStyle:` (that would force the same color on every
+    // button and make `FilledButton` text invisible against its
+    // own primary background) — we apply it only to the `Text`
+    // widgets, where the merge with the M3 default picks up the
+    // correct color per button type (blue for `TextButton`,
+    // onPrimary for `FilledButton`) while still using our
+    // smaller `fontSize`.
     final compact = TextStyle(fontSize: 11);
+    Widget textButton({
+      required VoidCallback onPressed,
+      required String label,
+    }) {
+      return TextButton(
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+          minimumSize: const Size(0, 28),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        child: Text(label, style: compact),
+      );
+    }
+
+    Widget filledIconButton({
+      required VoidCallback onPressed,
+      required String label,
+      required IconData icon,
+    }) {
+      return FilledButton.icon(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+          minimumSize: const Size(0, 28),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        icon: Icon(icon, size: 12),
+        label: Text(label, style: compact),
+      );
+    }
+
+    Widget textIconButton({
+      required VoidCallback onPressed,
+      required String label,
+      required IconData icon,
+    }) {
+      return TextButton.icon(
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+          minimumSize: const Size(0, 28),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        icon: Icon(icon, size: 12),
+        label: Text(label, style: compact),
+      );
+    }
+
     final buttons = <Widget>[];
     if (isRunning) {
       buttons.add(
-        TextButton(
+        textButton(
           onPressed: () => _onCancelTap(context),
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-            minimumSize: const Size(0, 28),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          child: Text(l10n.downloadActionCancel, style: compact),
+          label: l10n.downloadActionCancel,
         ),
       );
     } else if (isFailed || isCancelled) {
+      // The temp file is gone (the service deletes it on the
+      // failure path), so Save is meaningless here — just let
+      // the user dismiss the entry.
       buttons.add(
-        TextButton(
+        textButton(
           onPressed: () => _onDiscardTap(context),
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-            minimumSize: const Size(0, 28),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          child: Text(l10n.downloadActionDiscard, style: compact),
+          label: l10n.downloadActionDiscard,
         ),
       );
-    } else if (isCompleted && !expired) {
-      buttons.add(
-        FilledButton.icon(
-          onPressed: () => _onSaveTap(context),
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-            minimumSize: const Size(0, 28),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            textStyle: compact,
+    } else if (isCompleted) {
+      if (!expired) {
+        buttons.add(
+          filledIconButton(
+            onPressed: () => _onSaveTap(context),
+            label: l10n.downloadActionSave,
+            icon: Icons.save_alt_rounded,
           ),
-          icon: const Icon(Icons.save_alt_rounded, size: 12),
-          label: Text(l10n.downloadActionSave),
-        ),
-      );
-      buttons.add(const SizedBox(width: 4));
+        );
+        buttons.add(const SizedBox(width: 4));
+      }
       buttons.add(
-        TextButton(
+        textButton(
           onPressed: () => _onDiscardTap(context),
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-            minimumSize: const Size(0, 28),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          child: Text(l10n.downloadActionDiscard, style: compact),
+          label: l10n.downloadActionDiscard,
         ),
       );
     } else if (isSaved) {
       buttons.add(
-        TextButton.icon(
+        textIconButton(
           onPressed: () => _onRevealTap(context),
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-            minimumSize: const Size(0, 28),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            textStyle: compact,
-          ),
-          icon: const Icon(Icons.folder_open_rounded, size: 12),
-          label: Text(l10n.downloadActionReveal),
+          label: l10n.downloadActionReveal,
+          icon: Icons.folder_open_rounded,
         ),
       );
     }
@@ -402,10 +437,33 @@ class _ProgressLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final indeterminate = fraction == null;
-    final caption = indeterminate
-        ? indeterminateLabel
-        : '${format(bytesReceived)} / ${format(bytesTotal)}';
+    // The bar only animates (indeterminate) while the download
+    // is actively streaming. As soon as it lands in any terminal
+    // state (completed / failed / cancelled / saved) the bar must
+    // freeze — otherwise a failed download without a server-side
+    // Content-Length keeps rolling forever and the caption still
+    // says "下载中…", which contradicts the status row above.
+    final indeterminate = isRunning && fraction == null;
+    final value = indeterminate
+        ? null
+        : (fraction ?? 0).clamp(0.0, 1.0).toDouble();
+    final String caption;
+    if (isRunning) {
+      caption = indeterminate
+          ? indeterminateLabel
+          : '${format(bytesReceived)} / ${format(bytesTotal)}';
+    } else {
+      // Terminal: the top-row status label is now the single
+      // source of truth. Show a static byte count if we have
+      // one, otherwise drop the caption entirely.
+      if (bytesReceived > 0 && bytesTotal > 0) {
+        caption = '${format(bytesReceived)} / ${format(bytesTotal)}';
+      } else if (bytesReceived > 0) {
+        caption = format(bytesReceived);
+      } else {
+        caption = '';
+      }
+    }
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -414,16 +472,11 @@ class _ProgressLine extends StatelessWidget {
             borderRadius: BorderRadius.circular(3),
             child: SizedBox(
               height: 6,
-              child: indeterminate
-                  ? LinearProgressIndicator(
-                      color: color,
-                      backgroundColor: color.withValues(alpha: 0.15),
-                    )
-                  : LinearProgressIndicator(
-                      value: fraction,
-                      color: color,
-                      backgroundColor: color.withValues(alpha: 0.15),
-                    ),
+              child: LinearProgressIndicator(
+                value: value,
+                color: color,
+                backgroundColor: color.withValues(alpha: 0.15),
+              ),
             ),
           ),
         ),
