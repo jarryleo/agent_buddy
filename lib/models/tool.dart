@@ -13,6 +13,7 @@ enum BuiltinTool {
   reminders,
   notes,
   tasks,
+  memory,
 }
 
 extension BuiltinToolX on BuiltinTool {
@@ -36,6 +37,8 @@ extension BuiltinToolX on BuiltinTool {
         return 'notes';
       case BuiltinTool.tasks:
         return 'tasks';
+      case BuiltinTool.memory:
+        return 'memory';
     }
   }
 
@@ -59,6 +62,8 @@ extension BuiltinToolX on BuiltinTool {
         return 'Notes';
       case BuiltinTool.tasks:
         return 'Tasks';
+      case BuiltinTool.memory:
+        return 'Memory';
     }
   }
 
@@ -82,6 +87,8 @@ extension BuiltinToolX on BuiltinTool {
         return '管理 Agent Buddy 内置笔记(数据存于本机 Hive,无需系统权限)。';
       case BuiltinTool.tasks:
         return '管理 Agent Buddy 内置任务清单(数据存于本机 Hive,无需系统权限)。Android 上作为"待办"的回退通路。';
+      case BuiltinTool.memory:
+        return '管理 AI 长期记忆:list / search(关键词模糊查询) / create(写入一条记忆) / get / delete / delete_batch。由 AI 自主判断何时写入或查询,不要在单轮内过度写入。';
     }
   }
 
@@ -95,6 +102,7 @@ extension BuiltinToolX on BuiltinTool {
       case BuiltinTool.askUser:
       case BuiltinTool.notes:
       case BuiltinTool.tasks:
+      case BuiltinTool.memory:
         return true;
       case BuiltinTool.runCommand:
       case BuiltinTool.getEnvironment:

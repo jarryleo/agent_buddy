@@ -269,6 +269,15 @@ class ChatProvider extends ChangeNotifier {
       '在文本中描述"我现在要调用 X"而没有真正发出对应的工具调用,'
       '等同于协议错误,会导致回复被截断。',
     );
+    buffer.writeln(
+      '【长期记忆】你拥有一个 memory 工具,用于跨会话保留对用户有用的信息。'
+      '判断标准是"这条信息对未来的对话是否仍有用":'
+      '用户的长期偏好、明确表达的禁忌、个人背景、项目信息、用户主动要求记住的内容,'
+      '适合写入(create);单次会话的临时指令、上下文噪音、明显是一次性需求的内容,'
+      '不要写入。当你拿不准、或用户话题可能与既有记忆相关时,'
+      '先调用 search 用关键词模糊查询一次;写入时 content 用简洁一句话。'
+      '用户可以在设置页查看 / 编辑 / 删除所有记忆,因此你不承担"绝不遗忘"的责任。',
+    );
     return buffer.toString().trim();
   }
 
@@ -593,6 +602,52 @@ class ChatProvider extends ChangeNotifier {
             },
           });
           break;
+        case 'memory':
+          list.add({
+            'type': 'function',
+            'function': {
+              'name': 'memory',
+              'description': t.description,
+              'parameters': {
+                'type': 'object',
+                'properties': {
+                  'action': {
+                    'type': 'string',
+                    'enum': [
+                      'list',
+                      'search',
+                      'get',
+                      'create',
+                      'delete',
+                      'delete_batch',
+                    ],
+                    'description': '操作类型',
+                  },
+                  'id': {'type': 'string', 'description': 'get/delete 时必填'},
+                  'keyword': {
+                    'type': 'string',
+                    'description': 'search 时必填,模糊查询 content',
+                  },
+                  'content': {
+                    'type': 'string',
+                    'description': 'create 时必填,简洁一句话',
+                  },
+                  'ids': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'description': 'delete_batch 时必填,记忆 id 列表',
+                  },
+                  'max': {
+                    'type': 'integer',
+                    'description': 'list/search 时最多返回条数,默认 20',
+                    'default': 20,
+                  },
+                },
+                'required': ['action'],
+              },
+            },
+          });
+          break;
       }
     }
     return list;
@@ -738,6 +793,8 @@ class ChatProvider extends ChangeNotifier {
         return await _tools.runNotes(args);
       case 'tasks':
         return await _tools.runTasks(args);
+      case 'memory':
+        return await _tools.runMemory(args);
       default:
         throw ToolException('unknown tool: $name');
     }

@@ -9,8 +9,10 @@ import 'package:hive_ce/hive.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 
+import '../models/memory.dart';
 import '../models/note.dart';
 import '../models/task.dart';
+import 'memory_repository.dart';
 import 'platform/calendar_service.dart';
 import 'platform/calendar_service_factory.dart';
 import 'platform/notes_service.dart';
@@ -29,12 +31,19 @@ class ToolException implements Exception {
 }
 
 class ToolService {
-  ToolService({Box<Note>? notesBox, Box<Task>? tasksBox}) {
+  ToolService({
+    Box<Note>? notesBox,
+    Box<Task>? tasksBox,
+    Box<Memory>? memoriesBox,
+  }) {
     if (notesBox != null) {
       _notes = NotesService()..open(preopened: notesBox);
     }
     if (tasksBox != null) {
       _tasks = TasksService()..open(preopened: tasksBox);
+    }
+    if (memoriesBox != null) {
+      _memories = MemoryRepository()..open(preopened: memoriesBox);
     }
   }
 
@@ -48,6 +57,7 @@ class ToolService {
   RemindersService? _reminders;
   NotesService? _notes;
   TasksService? _tasks;
+  MemoryRepository? _memories;
 
   CalendarService get calendar {
     _calendar ??= createCalendarService();
@@ -67,6 +77,11 @@ class ToolService {
   TasksService get tasks {
     _tasks ??= TasksService()..open();
     return _tasks!;
+  }
+
+  MemoryRepository get memories {
+    _memories ??= MemoryRepository()..open();
+    return _memories!;
   }
 
   /// Fetches the content of [url] and returns it as plain text.
@@ -670,6 +685,73 @@ class ToolService {
       default:
         throw ToolException(
           'unknown action: $action (expected list/get/create/complete/update/delete)',
+        );
+    }
+  }
+
+  /// Dispatches the unified `memory` tool. Backed by an in-app Hive
+  /// box (`memories`). AI writes memories with `source='ai'`, the
+  /// user can also add / edit / delete memories from Settings.
+  Future<String> runMemory(Map<String, dynamic> args) async {
+    final action = args['action'] as String? ?? '';
+    switch (action) {
+      case _actionList:
+        final max = (args['max'] as num?)?.toInt() ?? 20;
+        final items = memories.list(max: max);
+        return jsonEncode({
+          'action': 'list',
+          'count': items.length,
+          'memories': items.map((m) => m.toJson()).toList(),
+        });
+      case 'search':
+        final keyword = args['keyword'] as String? ?? '';
+        if (keyword.trim().isEmpty) {
+          throw ToolException('action=search requires "keyword"');
+        }
+        final max = (args['max'] as num?)?.toInt() ?? 20;
+        final items = memories.list(keyword: keyword, max: max);
+        return jsonEncode({
+          'action': 'search',
+          'keyword': keyword,
+          'count': items.length,
+          'memories': items.map((m) => m.toJson()).toList(),
+        });
+      case _actionGet:
+        final id = args['id'] as String? ?? '';
+        if (id.isEmpty) throw ToolException('action=get requires "id"');
+        final m = memories.get(id);
+        if (m == null) return jsonEncode({'action': 'get', 'found': false});
+        return jsonEncode({
+          'action': 'get',
+          'found': true,
+          'memory': m.toJson(),
+        });
+      case _actionCreate:
+        final content = args['content'] as String? ?? '';
+        if (content.trim().isEmpty) {
+          throw ToolException('action=create requires "content"');
+        }
+        final m = await memories.add(content: content, source: 'ai');
+        return jsonEncode({'action': 'create', 'memory': m.toJson()});
+      case _actionDelete:
+        final id = args['id'] as String? ?? '';
+        if (id.isEmpty) throw ToolException('action=delete requires "id"');
+        final ok = await memories.delete(id);
+        return jsonEncode({'action': 'delete', 'id': id, 'ok': ok});
+      case 'delete_batch':
+        final ids = (args['ids'] as List?)?.cast<String>() ?? const [];
+        if (ids.isEmpty) {
+          throw ToolException('action=delete_batch requires non-empty "ids"');
+        }
+        await memories.deleteMany(ids);
+        return jsonEncode({
+          'action': 'delete_batch',
+          'count': ids.length,
+          'ok': true,
+        });
+      default:
+        throw ToolException(
+          'unknown action: $action (expected list/search/get/create/delete/delete_batch)',
         );
     }
   }

@@ -147,6 +147,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsTabSkill => '技能';
 
   @override
+  String get settingsTabMemory => '记忆';
+
+  @override
   String get providerListEmpty => '还没有添加任何模型提供商\n点击右下角\"新增\"开始';
 
   @override
@@ -639,5 +642,81 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String generalAboutVersion(String version) {
     return '版本 $version';
+  }
+
+  @override
+  String get memoryListEmpty => '暂无记忆\nAI 会在聊天过程中把有用信息写入这里';
+
+  @override
+  String memorySearchEmpty(String keyword) {
+    return '没有匹配 \"$keyword\" 的记忆';
+  }
+
+  @override
+  String get memoryAddTitle => '新增记忆';
+
+  @override
+  String get memoryEditTitle => '编辑记忆';
+
+  @override
+  String get memoryContent => '内容';
+
+  @override
+  String get memoryContentHint => '一段独立、简洁的事实,可在未来会话中被引用';
+
+  @override
+  String get memoryContentRequired => '请输入内容';
+
+  @override
+  String get memorySourceAi => 'AI';
+
+  @override
+  String get memorySourceUser => '用户';
+
+  @override
+  String get memoryDeleteTitle => '删除记忆';
+
+  @override
+  String get memoryDeleteConfirm => '确认删除这条记忆?';
+
+  @override
+  String memoryDeleteBatchConfirmTitle(int count) {
+    return '确认删除 $count 条记忆?';
+  }
+
+  @override
+  String get memoryDeleteBatchMessage => '所选记忆将被删除,且无法恢复。';
+
+  @override
+  String get memorySearch => '搜索';
+
+  @override
+  String get memorySearchClear => '清除';
+
+  @override
+  String get memorySelectAll => '全选';
+
+  @override
+  String get memoryDeselectAll => '取消全选';
+
+  @override
+  String get memoryEdit => '编辑';
+
+  @override
+  String get memoryJustNow => '刚刚';
+
+  @override
+  String memoryMinutesAgo(int n) {
+    return '$n 分钟前';
+  }
+
+  @override
+  String memoryHoursAgo(int n) {
+    return '$n 小时前';
+  }
+
+  @override
+  String memoryDaysAgo(int n) {
+    return '$n 天前';
   }
 }

@@ -52,6 +52,7 @@
   "settingsTabRole": "角色",
   "settingsTabTools": "工具",
   "settingsTabSkill": "技能",
+  "settingsTabMemory": "记忆",
 
   "providerListEmpty": "还没有添加任何模型提供商\n点击右下角\"新增\"开始",
   "providerAddTitle": "新增提供商",
@@ -225,5 +226,28 @@
     "placeholders": {
       "version": { "type": "String" }
     }
-  }
+  },
+
+  "memoryListEmpty": "暂无记忆\nAI 会在聊天过程中把有用信息写入这里",
+  "memorySearchEmpty": "没有匹配 \"{keyword}\" 的记忆",
+  "memoryAddTitle": "新增记忆",
+  "memoryEditTitle": "编辑记忆",
+  "memoryContent": "内容",
+  "memoryContentHint": "一段独立、简洁的事实,可在未来会话中被引用",
+  "memoryContentRequired": "请输入内容",
+  "memorySourceAi": "AI",
+  "memorySourceUser": "用户",
+  "memoryDeleteTitle": "删除记忆",
+  "memoryDeleteConfirm": "确认删除这条记忆?",
+  "memoryDeleteBatchConfirmTitle": "确认删除 {count} 条记忆?",
+  "memoryDeleteBatchMessage": "所选记忆将被删除,且无法恢复。",
+  "memorySearch": "搜索",
+  "memorySearchClear": "清除",
+  "memorySelectAll": "全选",
+  "memoryDeselectAll": "取消全选",
+  "memoryEdit": "编辑",
+  "memoryJustNow": "刚刚",
+  "memoryMinutesAgo": "{n} 分钟前",
+  "memoryHoursAgo": "{n} 小时前",
+  "memoryDaysAgo": "{n} 天前"
 }

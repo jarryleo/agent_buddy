@@ -1,9 +1,12 @@
 import 'dart:io';
 
+import 'package:agent_buddy/models/memory.dart';
+import 'package:agent_buddy/models/memory_adapter.dart';
 import 'package:agent_buddy/models/note.dart';
 import 'package:agent_buddy/models/note_adapter.dart';
 import 'package:agent_buddy/models/task.dart';
 import 'package:agent_buddy/models/task_adapter.dart';
+import 'package:agent_buddy/services/memory_repository.dart';
 import 'package:agent_buddy/services/tool_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
@@ -12,6 +15,7 @@ void main() {
   late Directory tempDir;
   late Box<Note> notesBox;
   late Box<Task> tasksBox;
+  late Box<Memory> memoriesBox;
   late ToolService tools;
 
   setUpAll(() {
@@ -21,6 +25,9 @@ void main() {
     if (!Hive.isAdapterRegistered(3)) {
       Hive.registerAdapter(TaskAdapter());
     }
+    if (!Hive.isAdapterRegistered(4)) {
+      Hive.registerAdapter(MemoryAdapter());
+    }
   });
 
   setUp(() async {
@@ -28,14 +35,21 @@ void main() {
     Hive.init(tempDir.path);
     notesBox = await Hive.openBox<Note>('notes');
     tasksBox = await Hive.openBox<Task>('tasks');
-    tools = ToolService(notesBox: notesBox, tasksBox: tasksBox);
+    memoriesBox = await Hive.openBox<Memory>(MemoryRepository.boxName);
+    tools = ToolService(
+      notesBox: notesBox,
+      tasksBox: tasksBox,
+      memoriesBox: memoriesBox,
+    );
   });
 
   tearDown(() async {
     await notesBox.close();
     await tasksBox.close();
+    await memoriesBox.close();
     await Hive.deleteBoxFromDisk('notes');
     await Hive.deleteBoxFromDisk('tasks');
+    await Hive.deleteBoxFromDisk(MemoryRepository.boxName);
     await tempDir.delete(recursive: true);
   });
 
@@ -140,6 +154,91 @@ void main() {
     test('unknown action throws ToolException', () async {
       expect(
         () => tools.runTasks({'action': 'nope'}),
+        throwsA(isA<ToolException>()),
+      );
+    });
+  });
+
+  group('runMemory', () {
+    test('create writes source=ai and list returns it', () async {
+      final created = await tools.runMemory({
+        'action': 'create',
+        'content': 'User prefers dark mode',
+      });
+      expect(created, contains('"action":"create"'));
+      expect(created, contains('"source":"ai"'));
+      final list = await tools.runMemory({'action': 'list'});
+      expect(list, contains('"count":1'));
+      expect(list, contains('dark mode'));
+    });
+
+    test('search with keyword does fuzzy match', () async {
+      await tools.runMemory({
+        'action': 'create',
+        'content': 'Lives in Shanghai',
+      });
+      await tools.runMemory({
+        'action': 'create',
+        'content': 'Dislikes cilantro',
+      });
+      final hits = await tools.runMemory({
+        'action': 'search',
+        'keyword': 'SHANG',
+      });
+      expect(hits, contains('"action":"search"'));
+      expect(hits, contains('"count":1'));
+      expect(hits, contains('Shanghai'));
+    });
+
+    test('search requires keyword', () async {
+      expect(
+        () => tools.runMemory({'action': 'search'}),
+        throwsA(isA<ToolException>()),
+      );
+      expect(
+        () => tools.runMemory({'action': 'search', 'keyword': '   '}),
+        throwsA(isA<ToolException>()),
+      );
+    });
+
+    test('create requires content', () async {
+      expect(
+        () => tools.runMemory({'action': 'create'}),
+        throwsA(isA<ToolException>()),
+      );
+      expect(
+        () => tools.runMemory({'action': 'create', 'content': '  '}),
+        throwsA(isA<ToolException>()),
+      );
+    });
+
+    test('get unknown id returns found:false', () async {
+      final raw = await tools.runMemory({'action': 'get', 'id': 'missing'});
+      expect(raw, contains('"found":false'));
+    });
+
+    test('delete_batch removes the listed ids', () async {
+      final a = await tools.runMemory({'action': 'create', 'content': 'a'});
+      final b = await tools.runMemory({'action': 'create', 'content': 'b'});
+      final c = await tools.runMemory({'action': 'create', 'content': 'c'});
+      final ids = [_extractId(a), _extractId(c), 'nope'];
+      final raw = await tools.runMemory({'action': 'delete_batch', 'ids': ids});
+      expect(raw, contains('"ok":true'));
+      final list = await tools.runMemory({'action': 'list'});
+      expect(list, contains('"count":1'));
+      expect(list, contains('"id":"${_extractId(b)}"'));
+    });
+
+    test('delete_batch with empty ids throws', () async {
+      expect(
+        () => tools.runMemory({'action': 'delete_batch', 'ids': []}),
+        throwsA(isA<ToolException>()),
+      );
+    });
+
+    test('unknown action throws ToolException', () async {
+      expect(
+        () => tools.runMemory({'action': 'explode'}),
         throwsA(isA<ToolException>()),
       );
     });

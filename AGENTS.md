@@ -23,9 +23,9 @@ No CI, no pre-commit hooks, no `melos`/`fvm` — keep it simple.
 
 - `lib/main.dart` — root + `MultiProvider` (Settings, Api, Tool, Chat, LocalLlm)
 - `lib/models/` — plain Dart models with `toJson` / `fromJson` for SharedPreferences (incl. `LocalProvider` for on-device GGUF models). `ChatSession` is the per-conversation model; persisted via a hand-written Hive `TypeAdapter` in `chat_session_adapter.dart`.
-- `lib/services/` — `StorageService` (SharedPreferences for settings + `ChatSessionRepository` for chat history), `ApiService` (OpenAI + Anthropic SSE, throws raw `Error:` strings on purpose for the AI), `ToolService` (HTML fetch for `fetch_web`, plus 4 unified personal-data tool dispatchers: `runCalendar` / `runReminders` / `runNotes` / `runTasks`), `LocalLlmService` (wraps `llamadart`'s `LlamaEngine` + `ChatSession` for GGUF, lazy-loaded on first chat, supports mmproj multimodal), `ToolOrchestrator` (multi-round tool-calling loop, transport-agnostic; both `ApiService` and `LocalLlmService` delegate to it so model turns can chain tool calls without manual follow-up bookkeeping), `ChatSessionRepository` (Hive-backed storage for `ChatSession` objects, cross-platform). `lib/services/platform/` holds the mobile-tool abstractions (`CalendarService` / `RemindersService` / `NotesService` / `TasksService`) plus per-platform `*_service_io.dart` MethodChannel impls and `*_service_stub.dart` fallbacks for web / desktop.
+- `lib/services/` — `StorageService` (SharedPreferences for settings + `ChatSessionRepository` for chat history), `ApiService` (OpenAI + Anthropic SSE, throws raw `Error:` strings on purpose for the AI), `ToolService` (HTML fetch for `fetch_web`, plus 5 unified personal-data tool dispatchers: `runCalendar` / `runReminders` / `runNotes` / `runTasks` / `runMemory`), `LocalLlmService` (wraps `llamadart`'s `LlamaEngine` + `ChatSession` for GGUF, lazy-loaded on first chat, supports mmproj multimodal), `ToolOrchestrator` (multi-round tool-calling loop, transport-agnostic; both `ApiService` and `LocalLlmService` delegate to it so model turns can chain tool calls without manual follow-up bookkeeping), `ChatSessionRepository` (Hive-backed storage for `ChatSession` objects, cross-platform), `MemoryRepository` (Hive-backed storage for AI long-term memories). `lib/services/platform/` holds the mobile-tool abstractions (`CalendarService` / `RemindersService` / `NotesService` / `TasksService`) plus per-platform `*_service_io.dart` MethodChannel impls and `*_service_stub.dart` fallbacks for web / desktop.
 - `lib/providers/` — `ChangeNotifier`s; `ChatProvider.sendMessage(BuildContext, String)` takes context on purpose to read l10n for user-facing errors
-- `lib/pages/` — top-level routes (`HomePage`, `SettingsPage` + 5 tab pages incl. `LocalProvidersTab`, `AddProviderPage`, `AddLocalProviderPage`)
+- `lib/pages/` — top-level routes (`HomePage`, `SettingsPage` + 6 tab pages incl. `LocalProvidersTab`, `AddProviderPage`, `AddLocalProviderPage`, `MemoryTab`)
 - `lib/widgets/` — reusable (`PhoneFrame`, `ChatInput`, `MessageBubble`, `MarkdownContent`, `CodeBlock`, `ImagePreviewPage`, `NoFocusIconButton`)
 - `lib/theme/app_theme.dart` — single light theme, iOS-leaning
 - `lib/l10n/` — ARB sources + **generated** `app_localizations*.dart` (checked in, do not hand-edit)
@@ -53,7 +53,7 @@ No CI, no pre-commit hooks, no `melos`/`fvm` — keep it simple.
 - The assertion is debug-only — release builds are unaffected. Upgrading Flutter may eventually make `NoFocusIconButton` unnecessary.
 
 ### Tests
-- One smoke test exists (`ApiService` constructs) plus service-layer coverage for the new platform tools: `notes_service_test.dart`, `tasks_service_test.dart`, `platform_tools_test.dart` (end-to-end via `ToolService`), `platform_calendar_reminders_test.dart` (validation paths + stub-translation). Total ~59 tests.
+- One smoke test exists (`ApiService` constructs) plus service-layer coverage for the new platform tools: `notes_service_test.dart`, `tasks_service_test.dart`, `platform_tools_test.dart` (end-to-end via `ToolService`, incl. memory tool), `platform_calendar_reminders_test.dart` (validation paths + stub-translation), `memory_repository_test.dart` (MemoryRepository: list / search / add / update / delete / deleteMany). Total ~70 tests.
 - `StorageService` requires `await init()` first; a bare `new StorageService()` will throw on first read. Don't try to test providers without mocking `SharedPreferences` (`SharedPreferences.setMockInitialValues({})`).
 - Hive tests use `Directory.systemTemp.createTemp` + `Hive.init(tempDir.path)` + `setUpAll` to register hand-written adapters. The teardown must close the box and `Hive.deleteBoxFromDisk` between tests.
 
@@ -87,6 +87,24 @@ Four unified tools that each take an `action` enum and dispatch to the right bac
 - `notes` / `tasks` — agent-buddy-internal, backed by `hive_ce` boxes (`notes`, `tasks`). No system permission. Open + adapter registration in `main.dart` (adapters in `lib/models/note_adapter.dart` / `task_adapter.dart`). Works on **every** platform including web / desktop. The `tasks` tool is the Android fallback for `reminders` if the user declines the calendar picker.
 - All four tools return JSON envelopes (`{action, count, items[]}` for list; `{action, item}` for get/create; `{action, found, item}` for missing; `{action, ok}` for delete). The model's view of the tool is in `_buildToolsSchema` (`lib/providers/chat_provider.dart`); the dispatcher is `ToolService.runCalendar` / `runReminders` / `runNotes` / `runTasks`. Errors from native bridges (permission denied, no todo calendar, OS not supported) are translated to `ToolException` so the model can react.
 - On non-mobile platforms the `*_service_io.dart` factory (`calendar_service_factory.dart` / `reminders_service_factory.dart`) returns a `*_service_stub.dart` that throws `UnsupportedError` → caught and rethrown as `ToolException('... not supported on this platform')`. The schema is gated on `ChatProvider._isMobilePlatform` so the model never even sees `calendar` / `reminders` on web / desktop.
+
+### Memory system (`memory` tool + Memory tab)
+Cross-session long-term memory for the AI. Backed by a `hive_ce` box (`memories`), persisted via `MemoryRepository` (`lib/services/memory_repository.dart`) and surfaced to the user in Settings → Memory.
+
+- **Data model** (`lib/models/memory.dart` + `memory_adapter.dart`): `Memory { id, content, source, createdAt }` with a hand-written `TypeAdapter<Memory>` (typeId = 4). `source` is `'ai'` (written by the model) or `'user'` (added by the user in Settings). `id` format: `m_<µs>_<boxLength>`, mirrors `Note` / `Task` conventions.
+- **Repository** (`MemoryRepository`): `list({String? keyword, int max = 50})` returns memories **sorted newest-first** by `createdAt`; `keyword` filter is a case-insensitive `contains` on `content`. Plus `get / add / update / delete / deleteMany / length / open / close / registerAdapters`.
+- **Tool** (`memory`) — 6 actions dispatched by `ToolService.runMemory`:
+  - `list` — `max` default 20
+  - `search` — required `keyword`, `max` default 20; same case-insensitive `contains`
+  - `get` — required `id`
+  - `create` — required `content`; source is hard-coded to `'ai'` (model writes)
+  - `delete` — required `id`
+  - `delete_batch` — required non-empty `ids: string[]`
+  - All errors throw `ToolException` (envelope shape is consistent with the other personal-data tools).
+- **Schema** lives in `ChatProvider._buildToolsSchema()` under `case 'memory':`. Available on every platform (`BuiltinTool.memory.isSupportedOnCurrentPlatform == true`); auto-seeded by `SettingsProvider.load()`'s builtin loop, so existing users get it enabled on first launch after upgrade.
+- **AI judgment** — the model is *not* hard-gated. The system prompt (`ChatProvider._buildSystemPrompt()`, last block) includes a soft-rule paragraph: "use `memory` for long-term useful info, fuzzy-search when unsure, don't over-write throwaway context." All decisions are made by the model.
+- **Settings UI** — `lib/pages/memory_tab.dart` is the 6th tab in `SettingsPage` (length bumped 5 → 6). Features: keyword search box, multi-select batch delete (long-press to enter, like `SessionManagerSheet`), inline "..." menu for per-row edit / delete, FAB for adding a new memory. `MemoryProvider` (`lib/providers/memory_provider.dart`) is a `ChangeNotifier` wrapper around the repo and is the only thing the UI talks to.
+- **No notification on user edits** — when the user adds / edits / deletes a memory from Settings, the AI is *not* notified. The change is visible to the model only on the next turn that calls `memory` (search / list).
 
 ## Scope / what "done" looks like
 

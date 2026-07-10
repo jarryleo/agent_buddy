@@ -150,6 +150,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsTabSkill => 'Skill';
 
   @override
+  String get settingsTabMemory => 'Memory';
+
+  @override
   String get providerListEmpty =>
       'No model providers added yet.\nTap \"Add\" in the bottom right to start.';
 
@@ -659,5 +662,84 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String generalAboutVersion(String version) {
     return 'Version $version';
+  }
+
+  @override
+  String get memoryListEmpty =>
+      'No memories yet.\nThe AI will write useful information here as you chat.';
+
+  @override
+  String memorySearchEmpty(String keyword) {
+    return 'No memories match \"$keyword\".';
+  }
+
+  @override
+  String get memoryAddTitle => 'Add Memory';
+
+  @override
+  String get memoryEditTitle => 'Edit Memory';
+
+  @override
+  String get memoryContent => 'Content';
+
+  @override
+  String get memoryContentHint =>
+      'A short, self-contained fact that will be remembered across sessions.';
+
+  @override
+  String get memoryContentRequired => 'Please enter the content';
+
+  @override
+  String get memorySourceAi => 'AI';
+
+  @override
+  String get memorySourceUser => 'User';
+
+  @override
+  String get memoryDeleteTitle => 'Delete Memory';
+
+  @override
+  String get memoryDeleteConfirm => 'Delete this memory?';
+
+  @override
+  String memoryDeleteBatchConfirmTitle(int count) {
+    return 'Delete $count memories?';
+  }
+
+  @override
+  String get memoryDeleteBatchMessage =>
+      'The selected memories will be removed. This action cannot be undone.';
+
+  @override
+  String get memorySearch => 'Search';
+
+  @override
+  String get memorySearchClear => 'Clear';
+
+  @override
+  String get memorySelectAll => 'Select all';
+
+  @override
+  String get memoryDeselectAll => 'Deselect all';
+
+  @override
+  String get memoryEdit => 'Edit';
+
+  @override
+  String get memoryJustNow => 'just now';
+
+  @override
+  String memoryMinutesAgo(int n) {
+    return '$n min ago';
+  }
+
+  @override
+  String memoryHoursAgo(int n) {
+    return '$n h ago';
+  }
+
+  @override
+  String memoryDaysAgo(int n) {
+    return '$n d ago';
   }
 }

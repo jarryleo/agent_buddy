@@ -362,6 +362,12 @@ abstract class AppLocalizations {
   /// **'Skill'**
   String get settingsTabSkill;
 
+  /// No description provided for @settingsTabMemory.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory'**
+  String get settingsTabMemory;
+
   /// No description provided for @providerListEmpty.
   ///
   /// In en, this message translates to:
@@ -1267,6 +1273,138 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Version {version}'**
   String generalAboutVersion(String version);
+
+  /// No description provided for @memoryListEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No memories yet.\nThe AI will write useful information here as you chat.'**
+  String get memoryListEmpty;
+
+  /// No description provided for @memorySearchEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No memories match \"{keyword}\".'**
+  String memorySearchEmpty(String keyword);
+
+  /// No description provided for @memoryAddTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Memory'**
+  String get memoryAddTitle;
+
+  /// No description provided for @memoryEditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit Memory'**
+  String get memoryEditTitle;
+
+  /// No description provided for @memoryContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Content'**
+  String get memoryContent;
+
+  /// No description provided for @memoryContentHint.
+  ///
+  /// In en, this message translates to:
+  /// **'A short, self-contained fact that will be remembered across sessions.'**
+  String get memoryContentHint;
+
+  /// No description provided for @memoryContentRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter the content'**
+  String get memoryContentRequired;
+
+  /// No description provided for @memorySourceAi.
+  ///
+  /// In en, this message translates to:
+  /// **'AI'**
+  String get memorySourceAi;
+
+  /// No description provided for @memorySourceUser.
+  ///
+  /// In en, this message translates to:
+  /// **'User'**
+  String get memorySourceUser;
+
+  /// No description provided for @memoryDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Memory'**
+  String get memoryDeleteTitle;
+
+  /// No description provided for @memoryDeleteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this memory?'**
+  String get memoryDeleteConfirm;
+
+  /// No description provided for @memoryDeleteBatchConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {count} memories?'**
+  String memoryDeleteBatchConfirmTitle(int count);
+
+  /// No description provided for @memoryDeleteBatchMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected memories will be removed. This action cannot be undone.'**
+  String get memoryDeleteBatchMessage;
+
+  /// No description provided for @memorySearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Search'**
+  String get memorySearch;
+
+  /// No description provided for @memorySearchClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get memorySearchClear;
+
+  /// No description provided for @memorySelectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Select all'**
+  String get memorySelectAll;
+
+  /// No description provided for @memoryDeselectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Deselect all'**
+  String get memoryDeselectAll;
+
+  /// No description provided for @memoryEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit'**
+  String get memoryEdit;
+
+  /// No description provided for @memoryJustNow.
+  ///
+  /// In en, this message translates to:
+  /// **'just now'**
+  String get memoryJustNow;
+
+  /// No description provided for @memoryMinutesAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{n} min ago'**
+  String memoryMinutesAgo(int n);
+
+  /// No description provided for @memoryHoursAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{n} h ago'**
+  String memoryHoursAgo(int n);
+
+  /// No description provided for @memoryDaysAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{n} d ago'**
+  String memoryDaysAgo(int n);
 }
 
 class _AppLocalizationsDelegate

@@ -5,17 +5,21 @@ import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 
 import 'l10n/app_localizations.dart';
+import 'models/memory.dart';
+import 'models/memory_adapter.dart';
 import 'models/note.dart';
 import 'models/note_adapter.dart';
 import 'models/task.dart';
 import 'models/task_adapter.dart';
 import 'pages/home_page.dart';
 import 'providers/chat_provider.dart';
+import 'providers/memory_provider.dart';
 import 'providers/settings_provider.dart';
 import 'services/api_service.dart';
 import 'services/chat_session_repository.dart';
 import 'services/image_service.dart';
 import 'services/local_llm_service.dart';
+import 'services/memory_repository.dart';
 import 'services/platform/notes_service.dart';
 import 'services/platform/tasks_service.dart';
 import 'services/storage_service.dart';
@@ -33,16 +37,27 @@ Future<void> main() async {
   if (!Hive.isAdapterRegistered(3)) {
     Hive.registerAdapter(TaskAdapter());
   }
-  // Built-in notes / tasks boxes. They are opened here so the
-  // ToolService can read / write to them on the first call without
-  // blocking on a Hive lazy-open. Hive is happy to open an empty
-  // box on first launch.
+  if (!Hive.isAdapterRegistered(4)) {
+    Hive.registerAdapter(MemoryAdapter());
+  }
+  // Built-in notes / tasks / memories boxes. They are opened here
+  // so the ToolService can read / write to them on the first call
+  // without blocking on a Hive lazy-open. Hive is happy to open an
+  // empty box on first launch.
   final notesBox = await Hive.openBox<Note>(NotesService.boxName);
   final tasksBox = await Hive.openBox<Task>(TasksService.boxName);
+  final memoriesBox = await Hive.openBox<Memory>(MemoryRepository.boxName);
+  final memoryRepo = MemoryRepository()..open(preopened: memoriesBox);
   final storage = StorageService();
   await storage.init();
   runApp(
-    AgentBuddyApp(storage: storage, notesBox: notesBox, tasksBox: tasksBox),
+    AgentBuddyApp(
+      storage: storage,
+      notesBox: notesBox,
+      tasksBox: tasksBox,
+      memoriesBox: memoriesBox,
+      memoryRepo: memoryRepo,
+    ),
   );
 }
 
@@ -52,10 +67,14 @@ class AgentBuddyApp extends StatelessWidget {
     required this.storage,
     required this.notesBox,
     required this.tasksBox,
+    required this.memoriesBox,
+    required this.memoryRepo,
   });
   final StorageService storage;
   final Box<Note> notesBox;
   final Box<Task> tasksBox;
+  final Box<Memory> memoriesBox;
+  final MemoryRepository memoryRepo;
 
   @override
   Widget build(BuildContext context) {
@@ -66,9 +85,16 @@ class AgentBuddyApp extends StatelessWidget {
         ),
         Provider<ApiService>(create: (_) => ApiService()),
         Provider<ToolService>(
-          create: (_) => ToolService(notesBox: notesBox, tasksBox: tasksBox),
+          create: (_) => ToolService(
+            notesBox: notesBox,
+            tasksBox: tasksBox,
+            memoriesBox: memoriesBox,
+          ),
         ),
         Provider<ImageService>(create: (_) => ImageService()),
+        ChangeNotifierProvider<MemoryProvider>(
+          create: (_) => MemoryProvider(memoryRepo),
+        ),
         ChangeNotifierProvider<LocalLlmService>(
           create: (_) => LocalLlmService(),
         ),

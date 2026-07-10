@@ -63,6 +63,7 @@
   "settingsTabRole": "Role",
   "settingsTabTools": "Tools",
   "settingsTabSkill": "Skill",
+  "settingsTabMemory": "Memory",
 
   "providerListEmpty": "No model providers added yet.\nTap \"Add\" in the bottom right to start.",
   "providerAddTitle": "Add Provider",
@@ -310,6 +311,54 @@
   "@generalAboutVersion": {
     "placeholders": {
       "version": { "type": "String" }
+    }
+  },
+
+  "memoryListEmpty": "No memories yet.\nThe AI will write useful information here as you chat.",
+  "memorySearchEmpty": "No memories match \"{keyword}\".",
+  "@memorySearchEmpty": {
+    "placeholders": {
+      "keyword": { "type": "String" }
+    }
+  },
+  "memoryAddTitle": "Add Memory",
+  "memoryEditTitle": "Edit Memory",
+  "memoryContent": "Content",
+  "memoryContentHint": "A short, self-contained fact that will be remembered across sessions.",
+  "memoryContentRequired": "Please enter the content",
+  "memorySourceAi": "AI",
+  "memorySourceUser": "User",
+  "memoryDeleteTitle": "Delete Memory",
+  "memoryDeleteConfirm": "Delete this memory?",
+  "memoryDeleteBatchConfirmTitle": "Delete {count} memories?",
+  "@memoryDeleteBatchConfirmTitle": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "memoryDeleteBatchMessage": "The selected memories will be removed. This action cannot be undone.",
+  "memorySearch": "Search",
+  "memorySearchClear": "Clear",
+  "memorySelectAll": "Select all",
+  "memoryDeselectAll": "Deselect all",
+  "memoryEdit": "Edit",
+  "memoryJustNow": "just now",
+  "memoryMinutesAgo": "{n} min ago",
+  "@memoryMinutesAgo": {
+    "placeholders": {
+      "n": { "type": "int" }
+    }
+  },
+  "memoryHoursAgo": "{n} h ago",
+  "@memoryHoursAgo": {
+    "placeholders": {
+      "n": { "type": "int" }
+    }
+  },
+  "memoryDaysAgo": "{n} d ago",
+  "@memoryDaysAgo": {
+    "placeholders": {
+      "n": { "type": "int" }
     }
   }
 }
