@@ -34,6 +34,14 @@ class _HomePageState extends State<HomePage> {
   ScrollController? _scrollController;
   String? _scrollControllerSessionId;
 
+  /// True when the user was at (or very near) the bottom of the
+  /// chat list at the start of the current frame. We only auto-
+  /// scroll on new content if the user is already parked at the
+  /// bottom — otherwise we'd yank the scroll out from under
+  /// someone who's reading older history.
+  bool _userAtBottom = true;
+  bool _autoScrollScheduled = false;
+
   /// Returns a [ScrollController] tied to [activeSessionId].
   /// When the active session changes we dispose the previous
   /// controller (after the old ListView detaches) and mint a
@@ -47,10 +55,22 @@ class _HomePageState extends State<HomePage> {
       // because its `key` was different from the current one;
       // disposing on the build path is therefore safe.
       _scrollController?.dispose();
-      _scrollController = ScrollController();
+      _scrollController = ScrollController()..addListener(_onScrollChanged);
       _scrollControllerSessionId = activeSessionId;
+      _userAtBottom = true; // a fresh view starts at the top, but
+      // for a chat list the top is the bottom (list grows down).
     }
     return _scrollController!;
+  }
+
+  void _onScrollChanged() {
+    final controller = _scrollController;
+    if (controller == null || !controller.hasClients) return;
+    final pos = controller.position;
+    // 32px slack so micro-jitter from typing-into-the-input-box
+    // doesn't reset the flag every frame.
+    final atBottom = pos.pixels >= pos.maxScrollExtent - 32;
+    _userAtBottom = atBottom;
   }
 
   @override
@@ -61,21 +81,27 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  void _scrollToBottom(ScrollController controller) {
-    if (!controller.hasClients) return;
-    // Capture the position at scheduling time. If the underlying
-    // ListView detaches between now and the post-frame callback
-    // (e.g. the user switches sessions again), the captured
-    // position is no longer live and we bail.
-    final position = controller.position;
+  /// Schedules an auto-scroll to the bottom of the list, but only
+  /// if the user is already parked there. Multiple calls in the
+  /// same frame collapse into a single post-frame callback so we
+  /// don't fight the gesture system when streaming ticks.
+  void _scheduleAutoScroll(ScrollController controller) {
+    if (!_userAtBottom) return;
+    if (_autoScrollScheduled) return;
+    _autoScrollScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoScrollScheduled = false;
       if (!controller.hasClients) return;
-      if (controller.position != position) return;
-      controller.animateTo(
-        position.maxScrollExtent,
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOut,
-      );
+      // The user might have scrolled away between the build and
+      // the post-frame; re-check.
+      final pos = controller.position;
+      if (pos.pixels < pos.maxScrollExtent - 32) return;
+      // jumpTo (not animateTo) so a stream of small deltas in the
+      // same frame don't each kick off a tween that animates the
+      // scroll position by a few pixels. The end result is the
+      // same as the last one, but we save a layout + paint pass
+      // per token.
+      controller.jumpTo(pos.maxScrollExtent);
     });
   }
 
@@ -152,6 +178,7 @@ class _HomePageState extends State<HomePage> {
         builder: (context, chat, _) {
           final activeSessionId = chat.activeSessionId;
           final messages = chat.messages;
+          final sending = chat.sending;
           // Build a controller bound to the current session. When
           // `activeSessionId` changes the ListView (below) is
           // rebuilt from scratch with a new key, so a brand-new
@@ -161,9 +188,7 @@ class _HomePageState extends State<HomePage> {
               ? null
               : _buildScrollController(activeSessionId);
           if (scrollController != null) {
-            WidgetsBinding.instance.addPostFrameCallback(
-              (_) => _scrollToBottom(scrollController),
-            );
+            _scheduleAutoScroll(scrollController);
           }
           return Column(
             children: [
@@ -184,6 +209,20 @@ class _HomePageState extends State<HomePage> {
                         key: ValueKey('chat_list_$activeSessionId'),
                         controller: scrollController,
                         padding: const EdgeInsets.symmetric(vertical: 8),
+                        // addRepaintBoundaries: each item is its
+                        // own paint layer; the ListView's
+                        // recycling cache won't repaint a message
+                        // that didn't change, even when neighbors
+                        // are streaming.
+                        addRepaintBoundaries: true,
+                        // addAutomaticKeepAlives defaults to true,
+                        // which keeps every message mounted even
+                        // when it scrolls off-screen. With long
+                        // histories that's wasteful (one
+                        // AnimationController per off-screen
+                        // bubble). Disable it; we don't rely on
+                        // out-of-view widgets staying alive.
+                        addAutomaticKeepAlives: false,
                         itemCount: messages.length,
                         itemBuilder: (context, index) {
                           final m = messages[index];
@@ -220,27 +259,14 @@ class _HomePageState extends State<HomePage> {
                         },
                       ),
               ),
-              Consumer<SettingsProvider>(
-                builder: (context, settings, _) {
-                  final bool ready;
-                  if (settings.useLocalModel) {
-                    ready = settings.activeLocalProvider != null;
-                  } else {
-                    final provider = settings.activeProvider;
-                    ready =
-                        provider != null &&
-                        (provider.selectedModel != null ||
-                            provider.models.isNotEmpty);
-                  }
-                  return ChatInput(
-                    enabled: ready && !chat.sending,
-                    sending: chat.sending,
-                    imageService: context.read<ImageService>(),
-                    onSend: (text, imagePaths) {
-                      chat.sendMessage(context, text, imagePaths: imagePaths);
-                    },
-                  );
-                },
+              // We read the SettingsProvider for the `ready` flag
+              // (and the ChatProvider for `sending`); a separate
+              // Selector-style wrapper isn't worth the boilerplate
+              // here, but we DO use `read` (not `watch`) so the
+              // input widget doesn't rebuild on settings changes.
+              _ChatInputArea(
+                chat: chat,
+                sending: sending,
               ),
             ],
           );
@@ -305,6 +331,42 @@ class _EmptyState extends StatelessWidget {
 ///   failed (so the user isn't left staring at an idle spinner).
 /// - "Release model" button once a model is loaded (so the user can
 ///   free RAM/memory-mapping before swapping providers).
+/// Wraps the input + bottom-of-screen controls. Reads its
+/// dependencies via `Provider.read` (not `watch`) so changes to
+/// the SettingsProvider don't rebuild the input every time the
+/// user toggles a setting; the consumer above already rebuilds
+/// the input whenever `chat.sending` flips, which is the only
+/// input-related signal we care about.
+class _ChatInputArea extends StatelessWidget {
+  const _ChatInputArea({required this.chat, required this.sending});
+
+  final ChatProvider chat;
+  final bool sending;
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = context.read<SettingsProvider>();
+    final bool ready;
+    if (settings.useLocalModel) {
+      ready = settings.activeLocalProvider != null;
+    } else {
+      final provider = settings.activeProvider;
+      ready =
+          provider != null &&
+          (provider.selectedModel != null ||
+              provider.models.isNotEmpty);
+    }
+    return ChatInput(
+      enabled: ready && !sending,
+      sending: sending,
+      imageService: context.read<ImageService>(),
+      onSend: (text, imagePaths) {
+        chat.sendMessage(context, text, imagePaths: imagePaths);
+      },
+    );
+  }
+}
+
 class _LocalModelStatusBar extends StatelessWidget {
   const _LocalModelStatusBar();
 

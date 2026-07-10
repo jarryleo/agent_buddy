@@ -76,26 +76,35 @@ class _MessageBubbleState extends State<MessageBubble> {
   @override
   Widget build(BuildContext context) {
     final m = widget.message;
-    if (m.role == MessageRole.user) {
-      return _buildUser(context, m);
+    final body = m.role == MessageRole.user
+        ? _buildUser(context, m)
+        : _buildAssistant(context, m);
+    if (m.role == MessageRole.assistant) {
+      final maxLines = _thinkingExpanded
+          ? _thinkingExpandedLines
+          : _thinkingCollapsedLines;
+      final thinkingChanged = m.thinking != _lastThinking;
+      final expandedChanged = maxLines != _lastExpandedLines;
+      if (thinkingChanged || expandedChanged) {
+        // Snapshot the bottom state BEFORE updating _lastThinking,
+        // so a listener that fires during layout (and may flip
+        // _thinkingAtBottom to false because the old position is no
+        // longer at the new bottom) cannot retroactively cancel the
+        // auto-scroll we want to do for the next frame's worth of
+        // thinking tokens.
+        final wasAtBottom = _thinkingAtBottom;
+        _lastThinking = m.thinking;
+        _lastExpandedLines = maxLines;
+        _scheduleAutoScrollThinking(wasAtBottom);
+      }
     }
-    final maxLines = _thinkingExpanded
-        ? _thinkingExpandedLines
-        : _thinkingCollapsedLines;
-    final thinkingChanged = m.thinking != _lastThinking;
-    final expandedChanged = maxLines != _lastExpandedLines;
-    if (thinkingChanged || expandedChanged) {
-      // Snapshot the bottom state BEFORE updating _lastThinking, so a
-      // listener that fires during layout (and may flip _thinkingAtBottom
-      // to false because the old position is no longer at the new
-      // bottom) cannot retroactively cancel the auto-scroll we want to
-      // do for the next frame's worth of thinking tokens.
-      final wasAtBottom = _thinkingAtBottom;
-      _lastThinking = m.thinking;
-      _lastExpandedLines = maxLines;
-      _scheduleAutoScrollThinking(wasAtBottom);
-    }
-    return _buildAssistant(context, m);
+    // RepaintBoundary isolates each message's layer so a streaming
+    // re-render of the latest assistant message doesn't trigger a
+    // repaint of the entire chat list (which is exactly what
+    // ListView.builder already does for free — but the explicit
+    // RepaintBoundary also stops a Paint pass from re-rasterizing
+    // sibling messages when the streaming layer grows).
+    return RepaintBoundary(child: body);
   }
 
   Widget _buildUser(BuildContext context, ChatMessage m) {
@@ -148,6 +157,14 @@ class _MessageBubbleState extends State<MessageBubble> {
   Widget _buildUserImages(BuildContext context, List<String> paths) {
     final maxWidth = MediaQuery.of(context).size.width * 0.65;
     final thumbSize = paths.length == 1 ? 160.0 : 88.0;
+    // Match the device pixel ratio so we don't upload a 4x larger
+    // image than the thumbnail actually needs. The Image.file
+    // engine will downscale to these cache dimensions once at
+    // decode time, then keep the scaled pixels in the image
+    // cache. Without this, every chat-list rebuild re-decodes
+    // the full-resolution photo and re-uploads it to the GPU.
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final cacheSize = (thumbSize * dpr).round();
     final crossAxisCount = paths.length == 1
         ? 1
         : (paths.length >= 3 ? 2 : paths.length);
@@ -169,17 +186,24 @@ class _MessageBubbleState extends State<MessageBubble> {
             onTap: () => ImagePreviewPage.showLocal(context, path),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: Image.file(
-                File(path),
-                width: thumbSize,
-                height: thumbSize,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stack) => Container(
-                  color: context.bg,
-                  alignment: Alignment.center,
-                  child: Icon(
-                    Icons.broken_image_outlined,
-                    color: context.textSecondary,
+              child: RepaintBoundary(
+                // Each thumbnail is its own repaint layer so the
+                // rest of the chat list doesn't repaint when one
+                // image finishes decoding.
+                child: Image.file(
+                  File(path),
+                  width: thumbSize,
+                  height: thumbSize,
+                  fit: BoxFit.cover,
+                  cacheWidth: cacheSize,
+                  cacheHeight: cacheSize,
+                  errorBuilder: (context, error, stack) => Container(
+                    color: context.bg,
+                    alignment: Alignment.center,
+                    child: Icon(
+                      Icons.broken_image_outlined,
+                      color: context.textSecondary,
+                    ),
                   ),
                 ),
               ),
@@ -753,10 +777,19 @@ class _StreamingMarkdownState extends State<_StreamingMarkdown>
   Widget build(BuildContext context) {
     final visible = _rendered.substring(0, _visibleLength);
     final text = visible.isEmpty ? ' ' : visible;
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 80),
-      curve: Curves.easeOut,
-      alignment: Alignment.topLeft,
+    // The streaming typewriter advances `_visibleLength` only
+    // every ~33ms (driven by the AnimationController). Wrapping
+    // the markdown in `AnimatedSize` would re-run a layout
+    // animation on every advance — that animation drives a
+    // global relayout of the parent ListView, which is one of
+    // the main causes of scroll jank during streaming. We drop
+    // the AnimatedSize entirely: each tick the parent gets a
+    // new `_visibleLength`, the column grows by one line, and
+    // ListView's intrinsic size update is a single tick, not an
+    // interpolated animation.
+    return RepaintBoundary(
+      // Keep the streaming widget's repaints from rippling into
+      // the parent Column.
       child: MarkdownContent(data: text),
     );
   }
