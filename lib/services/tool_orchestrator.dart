@@ -187,7 +187,7 @@ class ToolOrchestrator {
   /// bound a runaway loop.
   final int maxToolRounds;
 
-  ToolOrchestrator({this.maxToolRounds = 6});
+  ToolOrchestrator({this.maxToolRounds = 30});
 
   /// Drives the loop. The callback [runOneTurn] receives the current
   /// message history (including any prior assistant turns and tool
