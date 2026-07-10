@@ -68,14 +68,7 @@ class AgentBuddyApp extends StatelessWidget {
       ],
       child: Consumer<SettingsProvider>(
         builder: (context, settings, _) {
-          SystemChrome.setSystemUIOverlayStyle(
-            SystemUiOverlayStyle(
-              statusBarColor: Colors.transparent,
-              statusBarIconBrightness: settings.themeMode == 'dark'
-                  ? Brightness.light
-                  : Brightness.dark,
-            ),
-          );
+          final isDark = settings.themeMode == 'dark';
           return MaterialApp(
             onGenerateTitle: (ctx) => AppLocalizations.of(ctx).appTitle,
             debugShowCheckedModeBanner: false,
@@ -90,6 +83,22 @@ class AgentBuddyApp extends StatelessWidget {
               GlobalWidgetsLocalizations.delegate,
             ],
             supportedLocales: const [Locale('en'), Locale('zh')],
+            builder: (ctx, child) {
+              return AnnotatedRegion<SystemUiOverlayStyle>(
+                value: SystemUiOverlayStyle(
+                  statusBarColor: Colors.transparent,
+                  statusBarIconBrightness:
+                      isDark ? Brightness.light : Brightness.dark,
+                  systemNavigationBarColor: isDark
+                      ? const Color(0xFF0F1115)
+                      : const Color(0xFFF6F7F9),
+                  systemNavigationBarIconBrightness:
+                      isDark ? Brightness.light : Brightness.dark,
+                  systemNavigationBarDividerColor: Colors.transparent,
+                ),
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
             home: PhoneFrame(child: HomePage()),
           );
         },
