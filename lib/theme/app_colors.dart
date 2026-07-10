@@ -168,6 +168,7 @@ extension AppColorsContext on BuildContext {
   Color get thinkingBorder => appColors.thinkingBorder;
   Color get thinkingText => appColors.thinkingText;
   Color get toolCallBg => appColors.toolCallBg;
+  Color get toolCallBorder => appColors.toolCallBorder;
   Color get codeBlockBg => appColors.codeBlockBg;
   Color get codeBlockBorder => appColors.codeBlockBorder;
   Color get errorBg => appColors.errorBg;

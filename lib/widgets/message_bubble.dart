@@ -446,9 +446,9 @@ class _ToolCallCardState extends State<_ToolCallCard> {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFF6F8FA),
+        color: context.toolCallBg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
+        border: Border.all(color: context.toolCallBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -573,9 +573,9 @@ class _ToolCallCardState extends State<_ToolCallCard> {
             width: double.infinity,
             constraints: const BoxConstraints(maxHeight: _detailsMaxHeight),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: context.codeBlockBg,
               borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: context.appBorder),
+              border: Border.all(color: context.codeBlockBorder),
             ),
             child: Scrollbar(
               thumbVisibility: false,
@@ -602,9 +602,7 @@ class _ToolCallCardState extends State<_ToolCallCard> {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: tc.isFailed
-                    ? const Color(0xFFD1242F)
-                    : context.textSecondary,
+                color: tc.isFailed ? context.errorText : context.textSecondary,
               ),
             ),
             SizedBox(height: 4),
@@ -612,12 +610,12 @@ class _ToolCallCardState extends State<_ToolCallCard> {
               width: double.infinity,
               constraints: const BoxConstraints(maxHeight: _detailsMaxHeight),
               decoration: BoxDecoration(
-                color: tc.isFailed ? const Color(0xFFFFF5F5) : Colors.white,
+                color: tc.isFailed ? context.errorBg : context.codeBlockBg,
                 borderRadius: BorderRadius.circular(4),
                 border: Border.all(
                   color: tc.isFailed
-                      ? const Color(0xFFFFC1C1)
-                      : context.appBorder,
+                      ? context.errorBorder
+                      : context.codeBlockBorder,
                 ),
               ),
               child: Scrollbar(
@@ -632,7 +630,7 @@ class _ToolCallCardState extends State<_ToolCallCard> {
                       fontSize: 11,
                       fontFamily: 'monospace',
                       color: tc.isFailed
-                          ? Color(0xFF8B0000)
+                          ? context.errorText
                           : context.textPrimary,
                       height: 1.4,
                     ),

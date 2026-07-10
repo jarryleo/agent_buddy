@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/image_service.dart';
@@ -25,12 +27,13 @@ class ChatInput extends StatefulWidget {
   State<ChatInput> createState() => _ChatInputState();
 }
 
+const int _kMaxLinesCollapsed = 1;
+const int _kMaxLinesExpanded = 10;
+
 class _ChatInputState extends State<ChatInput> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final List<String> _imagePaths = [];
-  static const int _maxLinesCollapsed = 1;
-  static const int _maxLinesExpanded = 10;
   bool _pickingImage = false;
 
   @override
@@ -144,46 +147,13 @@ class _ChatInputState extends State<ChatInput> {
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(
                       minHeight: 40,
-                      maxHeight: 40 * _maxLinesExpanded + 24,
+                      maxHeight: 40 * _kMaxLinesExpanded + 24,
                     ),
-                    child: TextField(
+                    child: _InputField(
                       controller: _controller,
                       focusNode: _focusNode,
                       enabled: widget.enabled,
-                      minLines: _maxLinesCollapsed,
-                      maxLines: _maxLinesExpanded,
-                      textInputAction: TextInputAction.newline,
-                      keyboardType: TextInputType.multiline,
-                      style: const TextStyle(fontSize: 15, height: 1.4),
-                      decoration: InputDecoration(
-                        hintText: widget.enabled
-                            ? l10n.chatInputHint
-                            : widget.sending
-                            ? l10n.chatInputHintReplying
-                            : l10n.chatInputHintNoModel,
-                        hintStyle: TextStyle(color: context.textSecondary),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(20),
-                          borderSide: BorderSide(color: context.appBorder),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(20),
-                          borderSide: BorderSide(color: context.appBorder),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(20),
-                          borderSide: BorderSide(
-                            color: AppTheme.primary,
-                            width: 1.2,
-                          ),
-                        ),
-                        isDense: true,
-                      ),
-                      onSubmitted: widget.enabled ? (_) => _send() : null,
+                      onSubmit: _send,
                     ),
                   ),
                 ),
@@ -240,6 +210,98 @@ class _ChatInputState extends State<ChatInput> {
 }
 
 enum ImageSourceChoice { gallery, camera }
+
+/// Multi-line chat input with platform-aware Enter behavior:
+///
+///   - **Desktop** (macOS / Windows / Linux): plain Enter sends.
+///     Ctrl+Enter / Cmd+Enter / Alt+Enter insert a newline. We
+///     detect the modifier key in a [Focus.onKeyEvent] handler
+///     and intercept Enter only when no modifier is pressed.
+///   - **Mobile / web**: plain Enter inserts a newline (the OS
+///     keyboard never sends a "submit" keystroke here, so the
+///     Focus handler is a no-op and Enter naturally falls through
+///     to the IME's newline behavior). The user has to tap the
+///     send button.
+class _InputField extends StatelessWidget {
+  const _InputField({
+    required this.controller,
+    required this.focusNode,
+    required this.enabled,
+    required this.onSubmit,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool enabled;
+  final VoidCallback onSubmit;
+
+  bool get _isDesktop {
+    if (kIsWeb) return true;
+    return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (!_isDesktop) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key != LogicalKeyboardKey.enter &&
+        key != LogicalKeyboardKey.numpadEnter) {
+      return KeyEventResult.ignored;
+    }
+    final isModifierPressed =
+        HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isAltPressed;
+    if (isModifierPressed) {
+      // Let the modifier+Enter combo fall through to the default
+      // newline behavior.
+      return KeyEventResult.ignored;
+    }
+    if (!enabled) return KeyEventResult.ignored;
+    onSubmit();
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      onKeyEvent: _onKey,
+      child: TextField(
+        controller: controller,
+        focusNode: focusNode,
+        enabled: enabled,
+        minLines: _kMaxLinesCollapsed,
+        maxLines: _kMaxLinesExpanded,
+        textInputAction: TextInputAction.newline,
+        keyboardType: TextInputType.multiline,
+        style: const TextStyle(fontSize: 15, height: 1.4),
+        decoration: InputDecoration(
+          hintText: enabled
+              ? AppLocalizations.of(context).chatInputHint
+              : AppLocalizations.of(context).chatInputHintNoModel,
+          hintStyle: TextStyle(color: context.textSecondary),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 10,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: BorderSide(color: context.appBorder),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: BorderSide(color: context.appBorder),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: const BorderSide(color: AppTheme.primary, width: 1.2),
+          ),
+          isDense: true,
+        ),
+      ),
+    );
+  }
+}
 
 class _ImageThumbnail extends StatelessWidget {
   const _ImageThumbnail({
