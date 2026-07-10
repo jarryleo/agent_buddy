@@ -15,6 +15,7 @@ enum BuiltinTool {
   tasks,
   memory,
   location,
+  download,
 }
 
 extension BuiltinToolX on BuiltinTool {
@@ -42,6 +43,8 @@ extension BuiltinToolX on BuiltinTool {
         return 'memory';
       case BuiltinTool.location:
         return 'location';
+      case BuiltinTool.download:
+        return 'download';
     }
   }
 
@@ -69,6 +72,8 @@ extension BuiltinToolX on BuiltinTool {
         return 'Memory';
       case BuiltinTool.location:
         return 'Location';
+      case BuiltinTool.download:
+        return 'Download';
     }
   }
 
@@ -98,6 +103,8 @@ extension BuiltinToolX on BuiltinTool {
         return '管理 AI 长期记忆:list / search(多关键词 OR 模糊查询,支持 keywords[] + tags 过滤) / create / get / update / delete / delete_batch。写入时尽量多列几个 tags 关键词,便于后续模糊查找;查询时尽量用 keywords[] 一次给多个相关词,以提高召回。';
       case BuiltinTool.location:
         return '获取用户当前的大致位置(经纬度 + 行政区划 + 时区)。移动端用 GPS 定位(需要授权),桌面/Web 用 IP 反查城市与时区。仅在用户问到天气、附近、本地时区等明确场景时调用,不要主动询问。';
+      case BuiltinTool.download:
+        return '从指定 URL 下载文件到 APP 临时目录(用户须在气泡上点"保存"才能把文件真正落到磁盘上,文件类型 / 格式由 URL 决定)。返回 JSON 信封包含 action / id / url / filename / size_bytes。每次调用下载一个文件,需要下载多个文件就连续调用多次。移动端 / 桌面端可用,Web 不可用(没有文件系统)。';
     }
   }
 
@@ -118,6 +125,12 @@ extension BuiltinToolX on BuiltinTool {
       case BuiltinTool.getEnvironment:
         if (kIsWeb) return false;
         return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+      case BuiltinTool.download:
+        // Web has no real filesystem and no temp dir, so
+        // path_provider's getTemporaryDirectory throws
+        // UnsupportedError. Hide the tool there.
+        if (kIsWeb) return false;
+        return true;
       case BuiltinTool.calendar:
       case BuiltinTool.reminders:
         if (kIsWeb) return false;

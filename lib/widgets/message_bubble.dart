@@ -11,6 +11,7 @@ import '../models/message.dart';
 import '../providers/chat_provider.dart';
 import '../theme/app_theme.dart';
 import 'image_preview.dart';
+import 'download_card.dart';
 import 'markdown_content.dart';
 
 class MessageBubble extends StatefulWidget {
@@ -364,6 +365,7 @@ class _MessageBubbleState extends State<MessageBubble> {
           _ToolCallCard(
             key: ValueKey('tool_${tc.id}'),
             toolCall: tc,
+            assistantId: assistantId,
             onRetry: tc.isFailed
                 ? () => chat.retryToolCall(context, assistantId, tc.id)
                 : null,
@@ -386,9 +388,20 @@ class _MessageBubbleState extends State<MessageBubble> {
 }
 
 class _ToolCallCard extends StatefulWidget {
-  const _ToolCallCard({super.key, required this.toolCall, this.onRetry});
+  const _ToolCallCard({
+    super.key,
+    required this.toolCall,
+    required this.assistantId,
+    this.onRetry,
+  });
 
   final ToolCall toolCall;
+  // id of the assistant [ChatMessage] that owns this tool call.
+  // The download card needs it so the chat provider can route
+  // "save" / "discard" / "cancel" actions back to the right
+  // tool call. Captured here (not read via Provider) so the
+  // download card is testable in isolation.
+  final String assistantId;
   final VoidCallback? onRetry;
 
   @override
@@ -533,7 +546,8 @@ class _ToolCallCardState extends State<_ToolCallCard> {
               ),
             ),
           ),
-          if (_expanded) _buildDetails(context, tc, l10n),
+          if (_expanded || tc.downloads.isNotEmpty)
+            _buildDetails(context, tc, l10n),
         ],
       ),
     );
@@ -552,92 +566,110 @@ class _ToolCallCardState extends State<_ToolCallCard> {
     AppLocalizations l10n,
   ) {
     final hasArgs = tc.arguments.trim().isNotEmpty;
+    final hasDownloads = tc.downloads.isNotEmpty;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Divider(height: 1, color: context.appBorder),
-          SizedBox(height: 6),
-          Text(
-            l10n.toolCallArguments,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: context.textSecondary,
-            ),
-          ),
-          SizedBox(height: 4),
-          Container(
-            width: double.infinity,
-            constraints: const BoxConstraints(maxHeight: _detailsMaxHeight),
-            decoration: BoxDecoration(
-              color: context.codeBlockBg,
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: context.codeBlockBorder),
-            ),
-            child: Scrollbar(
-              thumbVisibility: false,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(6),
-                child: Text(
-                  hasArgs
-                      ? _prettyJson(tc.arguments)
-                      : l10n.toolCallNoArguments,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontFamily: 'monospace',
-                    color: context.textPrimary,
-                    height: 1.4,
-                  ),
+          if (hasDownloads) ...[
+            Divider(height: 1, color: context.appBorder),
+            const SizedBox(height: 6),
+            for (final d in tc.downloads)
+              DownloadCard(
+                key: ValueKey('download_${d.id}'),
+                item: d,
+                assistantId: widget.assistantId,
+                toolId: tc.id,
+              ),
+          ],
+          if (_expanded) ...[
+            if (hasArgs) ...[
+              Divider(height: 1, color: context.appBorder),
+              SizedBox(height: 6),
+              Text(
+                l10n.toolCallArguments,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: context.textSecondary,
                 ),
               ),
-            ),
-          ),
-          if (tc.isDone) ...[
-            SizedBox(height: 8),
-            Text(
-              l10n.toolCallResult,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: tc.isFailed ? context.errorText : context.textSecondary,
-              ),
-            ),
-            SizedBox(height: 4),
-            Container(
-              width: double.infinity,
-              constraints: const BoxConstraints(maxHeight: _detailsMaxHeight),
-              decoration: BoxDecoration(
-                color: tc.isFailed ? context.errorBg : context.codeBlockBg,
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(
-                  color: tc.isFailed
-                      ? context.errorBorder
-                      : context.codeBlockBorder,
+              SizedBox(height: 4),
+              Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(maxHeight: _detailsMaxHeight),
+                decoration: BoxDecoration(
+                  color: context.codeBlockBg,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: context.codeBlockBorder),
                 ),
-              ),
-              child: Scrollbar(
-                thumbVisibility: false,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(6),
-                  child: Text(
-                    (tc.result ?? '').isEmpty
-                        ? l10n.toolCallNoResult
-                        : tc.result!,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontFamily: 'monospace',
-                      color: tc.isFailed
-                          ? context.errorText
-                          : context.textPrimary,
-                      height: 1.4,
+                child: Scrollbar(
+                  thumbVisibility: false,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(6),
+                    child: Text(
+                      hasArgs
+                          ? _prettyJson(tc.arguments)
+                          : l10n.toolCallNoArguments,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                        color: context.textPrimary,
+                        height: 1.4,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
+            ],
+            if (tc.isDone) ...[
+              SizedBox(height: 8),
+              Text(
+                l10n.toolCallResult,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: tc.isFailed
+                      ? context.errorText
+                      : context.textSecondary,
+                ),
+              ),
+              SizedBox(height: 4),
+              Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(maxHeight: _detailsMaxHeight),
+                decoration: BoxDecoration(
+                  color: tc.isFailed ? context.errorBg : context.codeBlockBg,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: tc.isFailed
+                        ? context.errorBorder
+                        : context.codeBlockBorder,
+                  ),
+                ),
+                child: Scrollbar(
+                  thumbVisibility: false,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(6),
+                    child: Text(
+                      (tc.result ?? '').isEmpty
+                          ? l10n.toolCallNoResult
+                          : tc.result!,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                        color: tc.isFailed
+                            ? context.errorText
+                            : context.textPrimary,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ],
       ),

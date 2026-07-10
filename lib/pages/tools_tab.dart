@@ -42,6 +42,7 @@ class ToolsTab extends StatelessWidget {
             'reminders' => l10n.toolRemindersName,
             'notes' => l10n.toolNotesName,
             'tasks' => l10n.toolTasksName,
+            'download' => l10n.toolDownloadName,
             _ => t.name,
           };
           final description = switch (t.id) {
@@ -54,6 +55,7 @@ class ToolsTab extends StatelessWidget {
             'reminders' => l10n.toolRemindersDescription,
             'notes' => l10n.toolNotesDescription,
             'tasks' => l10n.toolTasksDescription,
+            'download' => l10n.toolDownloadDescription,
             _ => t.description,
           };
           return Material(

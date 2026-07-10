@@ -505,6 +505,66 @@ class AppLocalizationsEn extends AppLocalizations {
       'Manage Agent Buddy\'s built-in task list (stored locally in Hive, no system permission required). On Android, this also acts as the fallback for the Reminders tool.';
 
   @override
+  String get toolDownloadName => 'Download';
+
+  @override
+  String get toolDownloadDescription =>
+      'Download a file from a URL to the app\'s temp directory. The file shows up in the chat bubble with progress; the user picks the destination folder and saves it there.';
+
+  @override
+  String get downloadStatusPending => 'Waiting…';
+
+  @override
+  String get downloadStatusRunning => 'Downloading…';
+
+  @override
+  String get downloadStatusCompleted => 'Downloaded';
+
+  @override
+  String get downloadStatusFailed => 'Download failed';
+
+  @override
+  String get downloadStatusCancelled => 'Cancelled';
+
+  @override
+  String get downloadStatusSaved => 'Saved';
+
+  @override
+  String get downloadProgressIndeterminate => 'Downloading…';
+
+  @override
+  String get downloadActionSave => 'Save';
+
+  @override
+  String get downloadActionReveal => 'Open folder';
+
+  @override
+  String get downloadActionCancel => 'Cancel';
+
+  @override
+  String get downloadActionDiscard => 'Discard';
+
+  @override
+  String get downloadPickFolderTitle => 'Choose a folder to save the file in';
+
+  @override
+  String downloadSavedSnackbar(String path) {
+    return 'Saved to $path';
+  }
+
+  @override
+  String downloadSaveFailedSnackbar(String error) {
+    return 'Save failed: $error';
+  }
+
+  @override
+  String get downloadDiscardedSnackbar => 'Discarded';
+
+  @override
+  String get downloadExpiredHint =>
+      'This file is no longer in the app\'s temp directory. Ask the AI to re-download.';
+
+  @override
   String get remindersPickerTitle => 'Choose a todo calendar';
 
   @override

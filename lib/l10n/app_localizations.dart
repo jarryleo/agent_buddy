@@ -992,6 +992,114 @@ abstract class AppLocalizations {
   /// **'Manage Agent Buddy\'s built-in task list (stored locally in Hive, no system permission required). On Android, this also acts as the fallback for the Reminders tool.'**
   String get toolTasksDescription;
 
+  /// No description provided for @toolDownloadName.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get toolDownloadName;
+
+  /// No description provided for @toolDownloadDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Download a file from a URL to the app\'s temp directory. The file shows up in the chat bubble with progress; the user picks the destination folder and saves it there.'**
+  String get toolDownloadDescription;
+
+  /// No description provided for @downloadStatusPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting…'**
+  String get downloadStatusPending;
+
+  /// No description provided for @downloadStatusRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading…'**
+  String get downloadStatusRunning;
+
+  /// No description provided for @downloadStatusCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded'**
+  String get downloadStatusCompleted;
+
+  /// No description provided for @downloadStatusFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Download failed'**
+  String get downloadStatusFailed;
+
+  /// No description provided for @downloadStatusCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get downloadStatusCancelled;
+
+  /// No description provided for @downloadStatusSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved'**
+  String get downloadStatusSaved;
+
+  /// No description provided for @downloadProgressIndeterminate.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading…'**
+  String get downloadProgressIndeterminate;
+
+  /// No description provided for @downloadActionSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get downloadActionSave;
+
+  /// No description provided for @downloadActionReveal.
+  ///
+  /// In en, this message translates to:
+  /// **'Open folder'**
+  String get downloadActionReveal;
+
+  /// No description provided for @downloadActionCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get downloadActionCancel;
+
+  /// No description provided for @downloadActionDiscard.
+  ///
+  /// In en, this message translates to:
+  /// **'Discard'**
+  String get downloadActionDiscard;
+
+  /// No description provided for @downloadPickFolderTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a folder to save the file in'**
+  String get downloadPickFolderTitle;
+
+  /// No description provided for @downloadSavedSnackbar.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved to {path}'**
+  String downloadSavedSnackbar(String path);
+
+  /// No description provided for @downloadSaveFailedSnackbar.
+  ///
+  /// In en, this message translates to:
+  /// **'Save failed: {error}'**
+  String downloadSaveFailedSnackbar(String error);
+
+  /// No description provided for @downloadDiscardedSnackbar.
+  ///
+  /// In en, this message translates to:
+  /// **'Discarded'**
+  String get downloadDiscardedSnackbar;
+
+  /// No description provided for @downloadExpiredHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This file is no longer in the app\'s temp directory. Ask the AI to re-download.'**
+  String get downloadExpiredHint;
+
   /// No description provided for @remindersPickerTitle.
   ///
   /// In en, this message translates to:

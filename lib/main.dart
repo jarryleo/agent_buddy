@@ -17,6 +17,7 @@ import 'providers/memory_provider.dart';
 import 'providers/settings_provider.dart';
 import 'services/api_service.dart';
 import 'services/chat_session_repository.dart';
+import 'services/download_service.dart';
 import 'services/image_service.dart';
 import 'services/local_llm_service.dart';
 import 'services/memory_repository.dart';
@@ -92,17 +93,19 @@ class AgentBuddyApp extends StatelessWidget {
           ),
         ),
         Provider<ImageService>(create: (_) => ImageService()),
+        Provider<DownloadService>(create: (_) => DownloadService()),
         ChangeNotifierProvider<MemoryProvider>(
           create: (_) => MemoryProvider(memoryRepo),
         ),
         ChangeNotifierProvider<LocalLlmService>(
           create: (_) => LocalLlmService(),
         ),
-        ChangeNotifierProxyProvider4<
+        ChangeNotifierProxyProvider5<
           SettingsProvider,
           ApiService,
           ToolService,
           ImageService,
+          DownloadService,
           ChatProvider
         >(
           create: (ctx) => ChatProvider(
@@ -112,8 +115,9 @@ class AgentBuddyApp extends StatelessWidget {
             ctx.read<ImageService>(),
             ctx.read<LocalLlmService>(),
             ctx.read<SettingsProvider>(),
+            ctx.read<DownloadService>(),
           ),
-          update: (ctx, settings, api, tools, images, prev) =>
+          update: (ctx, settings, api, tools, images, downloads, prev) =>
               prev ??
               ChatProvider(
                 storage,
@@ -122,6 +126,7 @@ class AgentBuddyApp extends StatelessWidget {
                 images,
                 ctx.read<LocalLlmService>(),
                 settings,
+                downloads,
               ),
         ),
       ],

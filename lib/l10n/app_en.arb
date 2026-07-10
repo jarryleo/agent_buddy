@@ -217,6 +217,31 @@
   "toolNotesDescription": "Manage Agent Buddy's built-in notes (stored locally in Hive, no system permission required).",
   "toolTasksName": "Tasks",
   "toolTasksDescription": "Manage Agent Buddy's built-in task list (stored locally in Hive, no system permission required). On Android, this also acts as the fallback for the Reminders tool.",
+  "toolDownloadName": "Download",
+  "toolDownloadDescription": "Download a file from a URL to the app's temp directory. The file shows up in the chat bubble with progress; the user picks the destination folder and saves it there.",
+
+  "downloadStatusPending": "Waiting…",
+  "downloadStatusRunning": "Downloading…",
+  "downloadStatusCompleted": "Downloaded",
+  "downloadStatusFailed": "Download failed",
+  "downloadStatusCancelled": "Cancelled",
+  "downloadStatusSaved": "Saved",
+  "downloadProgressIndeterminate": "Downloading…",
+  "downloadActionSave": "Save",
+  "downloadActionReveal": "Open folder",
+  "downloadActionCancel": "Cancel",
+  "downloadActionDiscard": "Discard",
+  "downloadPickFolderTitle": "Choose a folder to save the file in",
+  "downloadSavedSnackbar": "Saved to {path}",
+  "downloadSaveFailedSnackbar": "Save failed: {error}",
+  "downloadDiscardedSnackbar": "Discarded",
+  "downloadExpiredHint": "This file is no longer in the app's temp directory. Ask the AI to re-download.",
+  "@downloadSavedSnackbar": {
+    "placeholders": { "path": { "type": "String" } }
+  },
+  "@downloadSaveFailedSnackbar": {
+    "placeholders": { "error": { "type": "String" } }
+  },
 
   "remindersPickerTitle": "Choose a todo calendar",
   "remindersPickerDescription": "Android stores reminders as all-day events in one of your calendars. Pick the calendar Agent Buddy should use to save your reminders and to-dos.",

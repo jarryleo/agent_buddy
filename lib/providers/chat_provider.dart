@@ -8,8 +8,10 @@ import 'package:uuid/uuid.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/chat_session.dart';
+import '../models/download.dart';
 import '../models/message.dart';
 import '../services/api_service.dart';
+import '../services/download_service.dart';
 import '../services/image_service.dart';
 import '../services/local_llm_service.dart';
 import '../services/storage_service.dart';
@@ -25,6 +27,7 @@ class ChatProvider extends ChangeNotifier {
     this._images,
     this._localLlm,
     this._settings,
+    this._downloads,
   ) {
     _restoreActiveSession();
   }
@@ -35,6 +38,7 @@ class ChatProvider extends ChangeNotifier {
   final ImageService _images;
   final LocalLlmService _localLlm;
   final SettingsProvider _settings;
+  final DownloadService _downloads;
   final _uuid = const Uuid();
 
   /// Owns the multi-round tool-calling loop. Stateless from the
@@ -758,6 +762,30 @@ class ChatProvider extends ChangeNotifier {
             },
           });
           break;
+        case 'download':
+          list.add({
+            'type': 'function',
+            'function': {
+              'name': 'download',
+              'description': t.description,
+              'parameters': {
+                'type': 'object',
+                'properties': {
+                  'url': {
+                    'type': 'string',
+                    'description': '要下载的文件的 URL,必须包含协议 (http:// 或 https://)。',
+                  },
+                  'filename': {
+                    'type': 'string',
+                    'description':
+                        '可选。保存时使用的文件名。若不传,工具会从 URL 路径或 Content-Disposition 头推断。',
+                  },
+                },
+                'required': ['url'],
+              },
+            },
+          });
+          break;
       }
     }
     return list;
@@ -911,9 +939,155 @@ class ChatProvider extends ChangeNotifier {
         return await _tools.runMemory(args);
       case 'location':
         return await _tools.runLocation(args);
+      case 'download':
+        return await _runDownload(context, toolCall, assistantId, args);
       default:
         throw ToolException('unknown tool: $name');
     }
+  }
+
+  /// Backs the `download` tool. Spawns a [DownloadItem] on the
+  /// in-flight tool call, streams the URL to the app's temp
+  /// directory, surfaces byte-level progress so the chat bubble's
+  /// progress bar can repaint live, and returns a JSON envelope
+  /// summarizing the result once the file is in temp storage. The
+  /// user then taps "Save" in the bubble to pick a destination
+  /// directory and copy the file out of temp.
+  Future<String> _runDownload(
+    BuildContext context,
+    Map<String, dynamic> toolCall,
+    String assistantId,
+    Map<String, dynamic> args,
+  ) async {
+    final url = args['url'] as String? ?? '';
+    if (url.isEmpty) {
+      throw ToolException('url is required');
+    }
+    final filename = args['filename'] as String?;
+    final toolId = toolCall['id'] as String? ?? '';
+    if (toolId.isEmpty) {
+      throw ToolException('tool call id is missing');
+    }
+
+    final downloadId = _downloads.newDownloadId();
+    // Create a placeholder DownloadItem on the tool call so the
+    // bubble can render the progress row from the very first
+    // frame, even before any bytes arrive.
+    final placeholder = DownloadItem(
+      id: downloadId,
+      url: url,
+      filename: filename ?? 'download',
+      status: DownloadStatus.pending,
+    );
+    _mutateToolCall(assistantId, toolId, (tc) {
+      return tc.copyWith(downloads: [...tc.downloads, placeholder]);
+    });
+
+    var lastBytesReceived = 0;
+    DownloadItem? last;
+    try {
+      await for (final item in _downloads.download(
+        url: url,
+        filename: filename,
+        downloadId: downloadId,
+      )) {
+        last = item;
+        // Skip pure duplicate snapshots — the model's card and the
+        // bubble both only care about byte-count changes and
+        // status transitions.
+        final bytesChanged = item.bytesReceived != lastBytesReceived;
+        final isTerminal =
+            item.isCompleted ||
+            item.isFailed ||
+            item.isCancelled ||
+            item.isSaved;
+        if (!bytesChanged && !isTerminal) continue;
+        lastBytesReceived = item.bytesReceived;
+        _mutateToolCall(assistantId, toolId, (tc) {
+          return tc.copyWith(
+            downloads: [
+              for (final d in tc.downloads)
+                if (d.id == item.id) item else d,
+            ],
+          );
+        });
+        // notifyListeners is throttled at the streaming layer
+        // (the chat-listening stream already drives it on every
+        // toolStart / toolDone), so a manual call here is
+        // mostly for the in-between progress frames. We still
+        // emit it so the progress bar can repaint without
+        // waiting for the next token.
+        notifyListeners();
+      }
+    } catch (e) {
+      // _downloads.download only re-throws on hard validation
+      // errors (bad URL); per-download HTTP errors are already
+      // surfaced as a `failed` snapshot via the stream. So this
+      // branch is for the truly catastrophic case (path_provider
+      // blew up, etc.).
+      _mutateToolCall(assistantId, toolId, (tc) {
+        return tc.copyWith(
+          downloads: [
+            for (final d in tc.downloads)
+              if (d.id == downloadId)
+                d.copyWith(status: DownloadStatus.failed, error: e.toString())
+              else
+                d,
+          ],
+        );
+      });
+      notifyListeners();
+      rethrow;
+    }
+
+    final terminal = last;
+    if (terminal == null) {
+      throw ToolException('download stream closed without a final state');
+    }
+    if (terminal.isFailed) {
+      throw ToolException(terminal.error ?? 'download failed');
+    }
+    if (terminal.isCancelled) {
+      throw ToolException('download cancelled');
+    }
+    // The model only needs a small envelope — the file is on
+    // disk, the user can see the card, the assistant's job is
+    // done. The bubble handles the actual save flow.
+    return jsonEncode({
+      'action': 'download',
+      'status': 'completed',
+      'id': downloadId,
+      'url': url,
+      'filename': terminal.filename,
+      'size_bytes': terminal.bytesReceived,
+    });
+  }
+
+  /// In-place mutation of one [ToolCall] on the active session's
+  /// assistant message. [transform] receives the current tool
+  /// call and returns the replacement. Used by the download
+  /// progress callback and the retry path. No-op when the
+  /// session / message / tool call can't be found (which can
+  /// happen mid-restart).
+  void _mutateToolCall(
+    String assistantId,
+    String toolId,
+    ToolCall Function(ToolCall tc) transform,
+  ) {
+    final s = _activeSession;
+    if (s == null) return;
+    _replaceMessages([
+      for (final m in s.messages)
+        if (m.id == assistantId)
+          m.copyWith(
+            toolCalls: [
+              for (final tc in m.toolCalls)
+                if (tc.id == toolId) transform(tc) else tc,
+            ],
+          )
+        else
+          m,
+    ]);
   }
 
   /// Re-runs a single failed tool call from a finished assistant
@@ -1344,6 +1518,106 @@ class ChatProvider extends ChangeNotifier {
   /// No-op if [sessionId] matches the current binding.
   void setLocalSessionId(String? sessionId) {
     _localSessionId = sessionId;
+  }
+
+  // -------- Download affordances (called from the message bubble) --------
+
+  /// Cancels an in-flight download by id. Idempotent / safe to
+  /// call on a finished download (no-op).
+  void cancelDownload(String assistantId, String toolId, String downloadId) {
+    _downloads.cancel(downloadId);
+  }
+
+  /// Copies a completed download's temp file to the user-picked
+  /// [destDir] and updates the in-place [DownloadItem] with the
+  /// final `savedPath`. The temp file is deleted as a side-effect
+  /// (see [DownloadService.saveTo]). Throws [ToolException] if
+  /// the temp file is gone (e.g. the app was restarted between
+  /// download and save).
+  Future<void> saveDownload({
+    required String assistantId,
+    required String toolId,
+    required String downloadId,
+    required String destDir,
+  }) async {
+    final s = _activeSession;
+    if (s == null) return;
+    final assistant = s.messages.firstWhere(
+      (m) => m.id == assistantId,
+      orElse: () =>
+          ChatMessage(id: '', role: MessageRole.assistant, content: ''),
+    );
+    if (assistant.id.isEmpty) return;
+    final tc = assistant.toolCalls.firstWhere(
+      (t) => t.id == toolId,
+      orElse: () => ToolCall(id: '', name: '', arguments: ''),
+    );
+    if (tc.id.isEmpty) return;
+    final item = tc.downloads.firstWhere(
+      (d) => d.id == downloadId,
+      orElse: () => DownloadItem(
+        id: '',
+        url: '',
+        filename: '',
+        status: DownloadStatus.failed,
+      ),
+    );
+    if (item.id.isEmpty) return;
+    final savedPath = await _downloads.saveTo(item: item, destDir: destDir);
+    _mutateToolCall(assistantId, toolId, (tc) {
+      return tc.copyWith(
+        downloads: [
+          for (final d in tc.downloads)
+            if (d.id == downloadId)
+              d.copyWith(
+                status: DownloadStatus.saved,
+                localPath: null,
+                savedPath: savedPath,
+              )
+            else
+              d,
+        ],
+      );
+    });
+    notifyListeners();
+  }
+
+  /// Removes the temp file behind a download (e.g. when the
+  /// user dismisses a completed-but-not-saved card). Idempotent.
+  Future<void> discardDownload({
+    required String assistantId,
+    required String toolId,
+    required String downloadId,
+  }) async {
+    final s = _activeSession;
+    if (s == null) return;
+    final assistant = s.messages.firstWhere(
+      (m) => m.id == assistantId,
+      orElse: () =>
+          ChatMessage(id: '', role: MessageRole.assistant, content: ''),
+    );
+    if (assistant.id.isEmpty) return;
+    final tc = assistant.toolCalls.firstWhere(
+      (t) => t.id == toolId,
+      orElse: () => ToolCall(id: '', name: '', arguments: ''),
+    );
+    if (tc.id.isEmpty) return;
+    final item = tc.downloads.firstWhere(
+      (d) => d.id == downloadId,
+      orElse: () => DownloadItem(
+        id: '',
+        url: '',
+        filename: '',
+        status: DownloadStatus.failed,
+      ),
+    );
+    if (item.id.isEmpty) return;
+    await _downloads.cleanup(item);
+    // No state change needed on the tool call — the temp file
+    // was the only thing we owned. The UI may still want to
+    // re-render to show the file as gone (e.g. on app restart,
+    // `localPath` is set but the file no longer exists).
+    notifyListeners();
   }
 
   @override

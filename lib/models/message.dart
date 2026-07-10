@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'download.dart';
+
 enum MessageRole { user, assistant, system, tool }
 
 extension MessageRoleX on MessageRole {
@@ -37,6 +39,14 @@ class ToolCall {
   final List<String>? options;
   final bool? multiSelect;
 
+  // Populated for the `download` tool: a live list of
+  // [DownloadItem]s in flight under this tool call. The chat
+  // provider mutates this list in place as bytes arrive so the
+  // message bubble's progress bar can repaint without a full
+  // chat-list rebuild. Persisted to disk so the user can come
+  // back to a finished download later.
+  final List<DownloadItem> downloads;
+
   ToolCall({
     required this.id,
     required this.name,
@@ -47,6 +57,7 @@ class ToolCall {
     this.question,
     this.options,
     this.multiSelect,
+    this.downloads = const [],
     DateTime? startedAt,
     this.finishedAt,
   }) : startedAt = startedAt ?? DateTime.now();
@@ -67,6 +78,7 @@ class ToolCall {
     String? question,
     List<String>? options,
     bool? multiSelect,
+    List<DownloadItem>? downloads,
   }) {
     return ToolCall(
       id: id,
@@ -78,6 +90,7 @@ class ToolCall {
       question: question ?? this.question,
       options: options ?? this.options,
       multiSelect: multiSelect ?? this.multiSelect,
+      downloads: downloads ?? this.downloads,
       startedAt: startedAt,
       finishedAt: finishedAt ?? this.finishedAt,
     );
@@ -95,9 +108,11 @@ class ToolCall {
     if (question != null) 'question': question,
     if (options != null) 'options': options,
     if (multiSelect != null) 'multiSelect': multiSelect,
+    'downloads': downloads.map((d) => d.toJson()).toList(),
   };
 
   factory ToolCall.fromJson(Map<String, dynamic> json) {
+    final rawDownloads = json['downloads'] as List?;
     return ToolCall(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -111,6 +126,11 @@ class ToolCall {
       question: json['question'] as String?,
       options: (json['options'] as List?)?.cast<String>(),
       multiSelect: json['multiSelect'] as bool?,
+      downloads: rawDownloads == null
+          ? const []
+          : rawDownloads
+                .map((e) => DownloadItem.fromJson(e as Map<String, dynamic>))
+                .toList(),
       startedAt:
           DateTime.tryParse(json['startedAt'] as String? ?? '') ??
           DateTime.now(),

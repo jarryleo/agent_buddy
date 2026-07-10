@@ -489,6 +489,65 @@ class AppLocalizationsZh extends AppLocalizations {
       '管理 Agent Buddy 内置任务清单(数据存于本机 Hive,无需系统权限)。在 Android 上同时作为提醒事项工具的回退通路。';
 
   @override
+  String get toolDownloadName => '下载文件';
+
+  @override
+  String get toolDownloadDescription =>
+      '从 URL 下载文件到 APP 临时目录,文件以进度条形式在气泡中展示,用户自行选择保存目录。';
+
+  @override
+  String get downloadStatusPending => '等待中…';
+
+  @override
+  String get downloadStatusRunning => '下载中…';
+
+  @override
+  String get downloadStatusCompleted => '已下载';
+
+  @override
+  String get downloadStatusFailed => '下载失败';
+
+  @override
+  String get downloadStatusCancelled => '已取消';
+
+  @override
+  String get downloadStatusSaved => '已保存';
+
+  @override
+  String get downloadProgressIndeterminate => '下载中…';
+
+  @override
+  String get downloadActionSave => '保存';
+
+  @override
+  String get downloadActionReveal => '打开目录';
+
+  @override
+  String get downloadActionCancel => '取消';
+
+  @override
+  String get downloadActionDiscard => '丢弃';
+
+  @override
+  String get downloadPickFolderTitle => '选择保存目录';
+
+  @override
+  String downloadSavedSnackbar(String path) {
+    return '已保存到 $path';
+  }
+
+  @override
+  String downloadSaveFailedSnackbar(String error) {
+    return '保存失败:$error';
+  }
+
+  @override
+  String get downloadDiscardedSnackbar => '已丢弃';
+
+  @override
+  String get downloadExpiredHint => '文件已不在 APP 临时目录中,请让 AI 重新下载。';
+
+  @override
   String get remindersPickerTitle => '选择待办日历';
 
   @override
