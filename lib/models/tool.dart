@@ -75,7 +75,9 @@ extension BuiltinToolX on BuiltinTool {
   String get description {
     switch (this) {
       case BuiltinTool.fetchWeb:
-        return '获取指定网址的内容,返回网页的纯文本。';
+        return '获取指定网址的内容,返回网页的纯文本。要进入下一级页面,'
+            '用 link_text 参数把页面上看到的链接文字传进去即可取到对应 URL,'
+            '不必把整个页面的链接列表都拉回来。';
       case BuiltinTool.currentTime:
         return '获取当前日期与时间,返回本地时间、ISO 8601 与 Unix 时间戳。';
       case BuiltinTool.askUser:

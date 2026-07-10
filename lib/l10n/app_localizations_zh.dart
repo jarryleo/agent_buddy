@@ -431,7 +431,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolFetchWebName => 'Fetch Web';
 
   @override
-  String get toolFetchWebDescription => '获取指定网址的内容,返回网页的纯文本。';
+  String get toolFetchWebDescription =>
+      '获取指定网址的内容,返回网页的纯文本。点击页面上的链接进入下一级时,用 link_text 参数把看到的链接文字传进去,工具会返回对应 URL,不必把整页链接列表都拉回来。include_links=true 仅在确实需要时使用(最多 50 条)。';
 
   @override
   String get toolCurrentTimeName => '当前时间';

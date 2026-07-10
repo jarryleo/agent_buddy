@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart'
     show MissingPluginException, PlatformException;
 import 'package:hive_ce/hive.dart';
+import 'package:html/dom.dart' as html_dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 
@@ -38,6 +39,7 @@ class ToolService {
     Box<Task>? tasksBox,
     Box<Memory>? memoriesBox,
     LocationServiceBuilder? locationBuilder,
+    http.Client? httpClient,
   }) {
     if (notesBox != null) {
       _notes = NotesService()..open(preopened: notesBox);
@@ -49,9 +51,27 @@ class ToolService {
       _memories = MemoryRepository()..open(preopened: memoriesBox);
     }
     _locationBuilder = locationBuilder;
+    // If the caller injected a client (tests), we own it; otherwise
+    // we own the one we create. dispose() closes only the one we own.
+    if (httpClient != null) {
+      _client = httpClient;
+      _ownsClient = false;
+    } else {
+      _client = http.Client();
+      _ownsClient = true;
+    }
   }
 
-  final http.Client _client = http.Client();
+  // HTTP client used by [fetchWeb]. Late + final so it can be
+  // assigned exactly once in the constructor (including the
+  // injected-client path used by tests).
+  late final http.Client _client;
+  // True iff [dispose] should close [_client] — false when the
+  // client was injected by the caller (e.g. a test mock). Also
+  // `late final` because we assign it inside a conditional in the
+  // constructor body (assigning a plain `final` field in the
+  // body is only allowed via initializers / initializing formals).
+  late final bool _ownsClient;
 
   /// Lazily resolved on first calendar tool call. On non-mobile
   /// platforms [createCalendarService] returns a stub that throws
@@ -96,67 +116,279 @@ class ToolService {
     return _location!;
   }
 
-  /// Fetches the content of [url] and returns it as plain text.
+  /// Per-URL page cache so that calling [fetchWeb] multiple times for
+  /// the same URL — e.g. once to read the page and then again with
+  /// different `linkText` values to follow links — does not re-fetch
+  /// and re-parse the page each time. Bounded; the oldest entry is
+  /// evicted when the cache exceeds [_fetchCacheMaxEntries].
+  static const int _fetchCacheMaxEntries = 16;
+  final Map<String, _FetchedPage> _fetchCache = <String, _FetchedPage>{};
+
+  /// Fetches the content of [url] and returns a JSON envelope string.
+  ///
+  /// Default behavior: returns the page's title, plain text, and the
+  /// number of links on the page. Link URLs are NOT included in the
+  /// response (saves tokens). To navigate to a sub-page, pass
+  /// [linkText] with the visible text of the link you want to follow
+  /// — the tool resolves it against the page's `<a>` tags and adds
+  /// the resolved URL to the response so the model can call
+  /// `fetch_web(that_url)` to follow it.
+  ///
+  /// Parameters:
+  ///   [url]          absolute URL to fetch
+  ///   [linkText]     optional. If set, the tool looks up the first
+  ///                  `<a>` on the page whose visible text matches
+  ///                  (case-insensitive, normalized whitespace,
+  ///                  exact match first, then substring) and adds
+  ///                  `link_url` + `link_text_matched` to the
+  ///                  response. Use this for multi-level navigation:
+  ///                  `fetch_web(A)` → read text → `fetch_web(A,
+  ///                  link_text='X')` → get URL for link X →
+  ///                  `fetch_web(that_url)` → read sub-page.
+  ///   [includeLinks] optional, default false. If true, an
+  ///                  additional `links[]` array of `{text, url}`
+  ///                  pairs is included (capped at 50). Use
+  ///                  sparingly — it inflates the response.
+  ///   [maxLength]    max characters of page text to include in the
+  ///                  response. Default 8000.
+  ///
   /// Throws [ToolException] on any failure (bad URL, network error,
   /// non-2xx HTTP, empty body).
-  Future<String> fetchWeb(String url, {int maxLength = 8000}) async {
-    final uri = Uri.tryParse(url.trim());
+  Future<String> fetchWeb(
+    String url, {
+    String? linkText,
+    bool includeLinks = false,
+    int maxLength = 8000,
+  }) async {
+    final trimmed = url.trim();
+    final uri = Uri.tryParse(trimmed);
     if (uri == null || !uri.hasScheme) {
       throw ToolException('invalid URL: $url');
     }
-    final http.Response resp;
-    try {
-      resp = await _client
-          .get(
-            uri,
-            headers: {
-              'User-Agent':
-                  'Mozilla/5.0 (compatible; AgentBuddy/1.0; +https://agent.buddy)',
-              'Accept':
-                  'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            },
-          )
-          .timeout(const Duration(seconds: 20));
-    } on ToolException {
-      rethrow;
-    } catch (e) {
-      throw ToolException(e.toString());
+    if (linkText != null && linkText.trim().isEmpty) {
+      linkText = null;
     }
-    if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      throw ToolException('HTTP ${resp.statusCode}');
-    }
-    final contentType = resp.headers['content-type'] ?? '';
-    if (contentType.contains('application/json')) {
-      var text = const JsonEncoder.withIndent(
-        '  ',
-      ).convert(jsonDecode(utf8.decode(resp.bodyBytes)));
-      if (text.length > maxLength) {
-        text = '${text.substring(0, maxLength)}\n...(truncated)';
+    final normalizedKey = uri.toString();
+    final cacheKey = '$normalizedKey|$maxLength';
+
+    // Try the cache first. A page is reusable across calls as long
+    // as maxLength matches (the truncated text length depends on
+    // it) and the page parsed as HTML. JSON responses are
+    // non-cached because they're typically not navigable.
+    _FetchedPage? page = _fetchCache[cacheKey];
+    if (page == null) {
+      final http.Response resp;
+      try {
+        resp = await _client
+            .get(
+              uri,
+              headers: {
+                'User-Agent':
+                    'Mozilla/5.0 (compatible; AgentBuddy/1.0; +https://agent.buddy)',
+                'Accept':
+                    'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              },
+            )
+            .timeout(const Duration(seconds: 20));
+      } on ToolException {
+        rethrow;
+      } catch (e) {
+        throw ToolException(e.toString());
       }
-      return text;
+      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+        throw ToolException('HTTP ${resp.statusCode}');
+      }
+      final contentType = resp.headers['content-type'] ?? '';
+      if (contentType.contains('application/json')) {
+        var text = const JsonEncoder.withIndent(
+          '  ',
+        ).convert(jsonDecode(utf8.decode(resp.bodyBytes)));
+        if (text.length > maxLength) {
+          text = '${text.substring(0, maxLength)}\n...(truncated)';
+        }
+        // JSON responses are not cached: a model that wants to
+        // navigate from a JSON blob doesn't have HTML links to
+        // follow.
+        return jsonEncode({
+          'url': uri.toString(),
+          'title': null,
+          'text': text,
+          'link_count': 0,
+        });
+      }
+      final body = utf8.decode(resp.bodyBytes, allowMalformed: true);
+      final doc = html_parser.parse(body);
+      for (final el in doc.querySelectorAll('script, style, noscript, svg')) {
+        el.remove();
+      }
+      final title =
+          doc
+              .querySelector('title')
+              ?.text
+              .trim()
+              .replaceAll(RegExp(r'\s+'), ' ') ??
+          '';
+      final rawText = doc.body?.text ?? doc.documentElement?.text ?? '';
+      final cleanedText = _cleanWhitespace(rawText);
+      final links = _extractLinks(doc, baseUri: uri);
+      page = _FetchedPage(
+        url: uri.toString(),
+        title: title,
+        cleanedText: cleanedText,
+        links: links,
+      );
+      _fetchCache[cacheKey] = page;
+      // Bound the cache; the oldest insertion is dropped first.
+      if (_fetchCache.length > _fetchCacheMaxEntries) {
+        final oldestKey = _fetchCache.keys.first;
+        _fetchCache.remove(oldestKey);
+      }
     }
-    final body = utf8.decode(resp.bodyBytes, allowMalformed: true);
-    final doc = html_parser.parse(body);
-    for (final el in doc.querySelectorAll('script, style, noscript, svg')) {
-      el.remove();
-    }
-    String text = doc.body?.text ?? doc.documentElement?.text ?? '';
-    text = text
-        .replaceAll(RegExp(r'\s+\n'), '\n')
-        .replaceAll(RegExp(r'\n{3,}'), '\n\n');
-    text = text.replaceAll(RegExp(r'[ \t]{2,}'), ' ').trim();
-    if (text.length > maxLength) {
+
+    // Build the response envelope. Text is truncated per maxLength
+    // (caching the full text lets us re-truncate at a different
+    // length on a later call without re-fetching).
+    var text = page.cleanedText;
+    final truncated = text.length > maxLength;
+    if (truncated) {
       text =
-          '${text.substring(0, maxLength)}\n...(truncated, total ${text.length} chars)';
+          '${text.substring(0, maxLength)}\n...(truncated, total ${page.cleanedText.length} chars)';
     }
     if (text.isEmpty) {
       throw ToolException('empty page content');
     }
-    return text;
+
+    final payload = <String, dynamic>{
+      'url': page.url,
+      'title': page.title.isEmpty ? null : page.title,
+      'text': text,
+      'link_count': page.links.length,
+    };
+
+    if (linkText != null) {
+      final match = _findLinkByText(page.links, linkText);
+      if (match != null) {
+        payload['link_url'] = match.url;
+        payload['link_text_matched'] = match.text;
+      } else {
+        payload['link_error'] =
+            'no link with text matching "$linkText" was found on this page';
+      }
+    }
+
+    if (includeLinks) {
+      const cap = 50;
+      final slice = page.links.length > cap
+          ? page.links.take(cap).toList()
+          : page.links;
+      payload['links'] = [
+        for (final l in slice) {'text': l.text, 'url': l.url},
+      ];
+      if (page.links.length > cap) {
+        payload['links_truncated'] = page.links.length - cap;
+      }
+    }
+
+    return jsonEncode(payload);
+  }
+
+  static String _cleanWhitespace(String input) {
+    return input
+        .replaceAll(RegExp(r'\s+\n'), '\n')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .replaceAll(RegExp(r'[ \t]{2,}'), ' ')
+        .trim();
+  }
+
+  /// Walks the parsed document and returns a deduplicated list of
+  /// anchor (`<a href=...>text</a>`) pairs, in document order.
+  /// Empty / non-href anchors, javascript: / mailto: / tel:
+  /// schemes, and anchors with no visible text are skipped.
+  static List<_LinkEntry> _extractLinks(
+    html_dom.Document doc, {
+    required Uri baseUri,
+  }) {
+    final seen = <String>{};
+    final out = <_LinkEntry>[];
+    for (final a in doc.querySelectorAll('a')) {
+      final href = a.attributes['href']?.trim() ?? '';
+      if (href.isEmpty) continue;
+      Uri? resolved;
+      try {
+        resolved = baseUri.resolve(href);
+      } catch (_) {
+        continue;
+      }
+      if (!resolved.hasScheme) continue;
+      final scheme = resolved.scheme.toLowerCase();
+      if (scheme != 'http' && scheme != 'https') continue;
+      // Normalize the visible text of the link: collapse internal
+      // whitespace (anchors frequently break "About Us" into
+      // "About\n  Us") and trim. Empty text is skipped — an anchor
+      // with no visible text is not useful to the model.
+      final rawText = a.text;
+      final text = rawText.replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (text.isEmpty) continue;
+      final resolvedStr = _stripFragment(resolved);
+      if (!seen.add(resolvedStr)) continue;
+      out.add(_LinkEntry(text: text, url: resolvedStr));
+    }
+    return out;
+  }
+
+  /// Drops the URL fragment so the same page section under
+  /// different anchors (`/docs#a` vs `/docs#b`) collapses into a
+  /// single canonical URL for dedup / caching.
+  ///
+  /// Note: `Uri.replace(fragment: '')` is not enough — it sets the
+  /// fragment to empty but the toString() of the resulting Uri
+  /// still ends in `#` (the separator is kept even when the
+  /// fragment is empty). We rebuild the string from the remaining
+  /// components instead.
+  static String _stripFragment(Uri u) {
+    if (u.fragment.isEmpty) return u.toString();
+    final out = StringBuffer();
+    if (u.scheme.isNotEmpty) {
+      out
+        ..write(u.scheme)
+        ..write(':');
+    }
+    if (u.hasAuthority) {
+      // `u.authority` is just `host[:port]` — the `//` separator
+      // is part of the URI syntax, not the authority component,
+      // so we have to add it ourselves.
+      out
+        ..write('//')
+        ..write(u.authority);
+    }
+    out.write(u.path);
+    if (u.hasQuery) {
+      out
+        ..write('?')
+        ..write(u.query);
+    }
+    return out.toString();
+  }
+
+  /// Finds the first link whose visible text matches [query].
+  /// Strategy: case-insensitive, whitespace-normalized.
+  ///   1. exact match (after normalization)
+  ///   2. substring match (query is contained in link text)
+  /// Returns `null` if no link matches.
+  static _LinkEntry? _findLinkByText(List<_LinkEntry> links, String query) {
+    final q = query.replaceAll(RegExp(r'\s+'), ' ').trim().toLowerCase();
+    if (q.isEmpty) return null;
+    for (final l in links) {
+      if (l.text.toLowerCase() == q) return l;
+    }
+    for (final l in links) {
+      if (l.text.toLowerCase().contains(q)) return l;
+    }
+    return null;
   }
 
   void dispose() {
-    _client.close();
+    if (_ownsClient) _client.close();
   }
 
   /// Returns the current local date/time as a JSON string with multiple
@@ -894,4 +1126,29 @@ class ToolService {
         throw ToolException('unknown action: $action (expected get)');
     }
   }
+}
+
+/// One fetched page, kept in the in-memory [_fetchCache] so that
+/// subsequent [ToolService.fetchWeb] calls for the same URL (e.g.
+/// with different `linkText` lookups) can skip the network round
+/// trip and the HTML re-parse.
+class _FetchedPage {
+  _FetchedPage({
+    required this.url,
+    required this.title,
+    required this.cleanedText,
+    required this.links,
+  });
+  final String url;
+  final String title;
+  final String cleanedText;
+  final List<_LinkEntry> links;
+}
+
+/// One anchor on a fetched page: its visible text and the
+/// (fragment-stripped, absolute) URL it points at.
+class _LinkEntry {
+  _LinkEntry({required this.text, required this.url});
+  final String text;
+  final String url;
 }

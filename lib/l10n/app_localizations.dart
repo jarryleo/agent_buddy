@@ -893,7 +893,7 @@ abstract class AppLocalizations {
   /// No description provided for @toolFetchWebDescription.
   ///
   /// In en, this message translates to:
-  /// **'Fetch the content of a URL and return the plain text of the page.'**
+  /// **'Fetch the content of a URL and return the page as plain text. Pass link_text with the visible text of a link on the page to get back that link\'s URL — use it to follow links and walk into sub-pages without dumping the full link list. Pass include_links=true only as a last resort (capped at 50).'**
   String get toolFetchWebDescription;
 
   /// No description provided for @toolCurrentTimeName.

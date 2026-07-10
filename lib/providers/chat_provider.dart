@@ -290,6 +290,23 @@ class ChatProvider extends ChangeNotifier {
       '场景时调用,不要主动询问。移动端用 GPS(需要授权),桌面/Web 用 IP 反查'
       '(城市级精度,无授权)。结果里带 source 字段( gps / ip )表示来源。',
     );
+    buffer.writeln(
+      '【网页抓取与多级跳转】fetch_web 返回一个 JSON 信封,字段为 url / '
+      'title / text(页面正文) / link_count(页面上的链接数)。默认不返回链接'
+      '列表,以节约 token。要进入下一级页面,不要盲目把 include_links 设成 '
+      'true 把所有链接都拉回来——而是用 link_text 把你看到的链接文字传进去,'
+      '工具会从页面里查出对应 URL 并以 link_url 字段返回,你再用那个 URL 调'
+      '一次 fetch_web 即可。这样可以多级跳转,每一级都只看到自己关心的链接,'
+      '不会把无关链接也喂给上下文。典型流程:\n'
+      '  1) fetch_web("https://example.com") → 看到正文里提到"文档"链接;\n'
+      '  2) fetch_web("https://example.com", link_text="文档") → 拿到 '
+      'link_url = "https://example.com/docs";\n'
+      '  3) fetch_web("https://example.com/docs") → 进入下一级。\n'
+      'link_text 是大小写不敏感、空白已归一化的匹配:先按完整文字精确匹配,'
+      '找不到再退回到子串匹配;匹配不到时返回 link_error,这时再考虑换成 '
+      'include_links=true 看一眼所有链接(尽量少用)。同一 URL 多次调用不会'
+      '重复抓取,内部会缓存。',
+    );
     return buffer.toString().trim();
   }
 
@@ -320,13 +337,50 @@ class ChatProvider extends ChangeNotifier {
             'type': 'function',
             'function': {
               'name': 'fetch_web',
-              'description': t.description,
+              // Hardcoded description (overrides `t.description` from
+              // storage) so the model always sees the navigation
+              // contract, even for installs whose AgentTool was
+              // backfilled with an older description. Keep it
+              // bilingual-aware: models in either locale should be
+              // able to use the tool.
+              'description':
+                  'Fetch the content of a URL and return a JSON envelope '
+                  'with the page title, plain text, and a link_count. '
+                  'To follow a link on the page without dumping the full '
+                  'link list to the model, pass link_text with the '
+                  'visible text of the link (e.g. "Documentation"); the '
+                  'tool returns link_url so the model can call '
+                  'fetch_web(link_url) for multi-level navigation. Use '
+                  'include_links=true only as a last resort (it adds '
+                  'every anchor to the response and is capped at 50).',
               'parameters': {
                 'type': 'object',
                 'properties': {
                   'url': {
                     'type': 'string',
-                    'description': '要获取的网址,必须包含协议 (http:// 或 https://)',
+                    'description':
+                        'The URL to fetch. Must include the scheme (http:// or https://).',
+                  },
+                  'link_text': {
+                    'type': 'string',
+                    'description':
+                        'Optional. If set, the tool looks for an anchor '
+                        '(<a>) on the page whose visible text matches '
+                        'this string (case-insensitive, whitespace-'
+                        'normalized, exact match preferred, then '
+                        'substring) and adds the resolved URL as '
+                        'link_url in the response. Use this to follow '
+                        'a specific link without enumerating every '
+                        'link on the page.',
+                  },
+                  'include_links': {
+                    'type': 'boolean',
+                    'description':
+                        'Optional, default false. If true, the response '
+                        'includes a links[] array of {text, url} pairs '
+                        '(capped at 50) for every anchor on the page. '
+                        'Off by default to save tokens — prefer '
+                        'link_text for navigation.',
                   },
                 },
                 'required': ['url'],
@@ -780,7 +834,11 @@ class ChatProvider extends ChangeNotifier {
         if (url.isEmpty) {
           throw ToolException('url is required');
         }
-        return await _tools.fetchWeb(url);
+        return await _tools.fetchWeb(
+          url,
+          linkText: args['link_text'] as String?,
+          includeLinks: args['include_links'] as bool? ?? false,
+        );
       case 'current_time':
         return await _tools.currentTime();
       case 'ask_user':

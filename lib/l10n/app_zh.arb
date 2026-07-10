@@ -144,7 +144,7 @@
 
   "toolsListEmpty": "暂无内置工具",
   "toolFetchWebName": "Fetch Web",
-  "toolFetchWebDescription": "获取指定网址的内容,返回网页的纯文本。",
+  "toolFetchWebDescription": "获取指定网址的内容,返回网页的纯文本。点击页面上的链接进入下一级时,用 link_text 参数把看到的链接文字传进去,工具会返回对应 URL,不必把整页链接列表都拉回来。include_links=true 仅在确实需要时使用(最多 50 条)。",
   "toolCurrentTimeName": "当前时间",
   "toolCurrentTimeDescription": "获取当前日期与时间,返回本地时间、ISO 8601 与 Unix 时间戳。",
   "toolAskUserName": "询问用户",
