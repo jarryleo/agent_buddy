@@ -12,6 +12,7 @@ import '../widgets/chat_input.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/no_focus_icon_button.dart';
 import '../widgets/session_manager_sheet.dart';
+import 'auto_scroll_policy.dart';
 import 'settings_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -34,13 +35,10 @@ class _HomePageState extends State<HomePage> {
   ScrollController? _scrollController;
   String? _scrollControllerSessionId;
 
-  /// True when the user was at (or very near) the bottom of the
-  /// chat list at the start of the current frame. We only auto-
-  /// scroll on new content if the user is already parked at the
-  /// bottom — otherwise we'd yank the scroll out from under
-  /// someone who's reading older history.
-  bool _userAtBottom = true;
-  bool _autoScrollScheduled = false;
+  /// Pure-Dart policy that decides whether to auto-scroll on
+  /// each frame. Lives in its own file so it can be unit-tested
+  /// without spinning up the widget tree.
+  final AutoScrollPolicy _autoScroll = AutoScrollPolicy();
 
   /// Returns a [ScrollController] tied to [activeSessionId].
   /// When the active session changes we dispose the previous
@@ -57,8 +55,8 @@ class _HomePageState extends State<HomePage> {
       _scrollController?.dispose();
       _scrollController = ScrollController()..addListener(_onScrollChanged);
       _scrollControllerSessionId = activeSessionId;
-      _userAtBottom = true; // a fresh view starts at the top, but
-      // for a chat list the top is the bottom (list grows down).
+      // A fresh conversation always opens at the bottom.
+      _autoScroll.reset();
     }
     return _scrollController!;
   }
@@ -70,7 +68,11 @@ class _HomePageState extends State<HomePage> {
     // 32px slack so micro-jitter from typing-into-the-input-box
     // doesn't reset the flag every frame.
     final atBottom = pos.pixels >= pos.maxScrollExtent - 32;
-    _userAtBottom = atBottom;
+    if (atBottom) {
+      _autoScroll.markUserAtBottom();
+    } else {
+      _autoScroll.markUserNotAtBottom();
+    }
   }
 
   @override
@@ -81,27 +83,37 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  /// Schedules an auto-scroll to the bottom of the list, but only
-  /// if the user is already parked there. Multiple calls in the
-  /// same frame collapse into a single post-frame callback so we
-  /// don't fight the gesture system when streaming ticks.
+  /// Public hook for the chat input. The user explicitly asked
+  /// to send a message; the next auto-scroll MUST land at the
+  /// bottom even if the user was reading older history.
+  void requestForceScrollToBottom() {
+    _autoScroll.requestForceScrollToBottom();
+  }
+
+  /// Schedules an auto-scroll to the bottom of the list, then
+  /// runs the decision in the post-frame callback (so the
+  /// `maxScrollExtent` reflects the latest laid-out content).
   void _scheduleAutoScroll(ScrollController controller) {
-    if (!_userAtBottom) return;
-    if (_autoScrollScheduled) return;
-    _autoScrollScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _autoScrollScheduled = false;
-      if (!controller.hasClients) return;
-      // The user might have scrolled away between the build and
-      // the post-frame; re-check.
-      final pos = controller.position;
-      if (pos.pixels < pos.maxScrollExtent - 32) return;
-      // jumpTo (not animateTo) so a stream of small deltas in the
-      // same frame don't each kick off a tween that animates the
-      // scroll position by a few pixels. The end result is the
-      // same as the last one, but we save a layout + paint pass
-      // per token.
-      controller.jumpTo(pos.maxScrollExtent);
+      // Recapture the controller from the field. The
+      // `controller` reference captured at schedule time may
+      // be stale if the active session changed in the
+      // meantime; the field has already been replaced.
+      final live = _scrollController;
+      if (live == null || !live.hasClients) return;
+      final pos = live.position;
+      final target = _autoScroll.schedule(
+        pixels: pos.pixels,
+        maxScrollExtent: pos.maxScrollExtent,
+      );
+      if (target == null) {
+        // schedule() may have decided to skip (already at
+        // bottom, user scrolled up between frames, etc.) —
+        // either way nothing to do.
+        return;
+      }
+      live.jumpTo(target);
+      _autoScroll.markJumped();
     });
   }
 
@@ -267,6 +279,7 @@ class _HomePageState extends State<HomePage> {
               _ChatInputArea(
                 chat: chat,
                 sending: sending,
+                onBeforeSend: requestForceScrollToBottom,
               ),
             ],
           );
@@ -338,10 +351,15 @@ class _EmptyState extends StatelessWidget {
 /// the input whenever `chat.sending` flips, which is the only
 /// input-related signal we care about.
 class _ChatInputArea extends StatelessWidget {
-  const _ChatInputArea({required this.chat, required this.sending});
+  const _ChatInputArea({
+    required this.chat,
+    required this.sending,
+    required this.onBeforeSend,
+  });
 
   final ChatProvider chat;
   final bool sending;
+  final VoidCallback onBeforeSend;
 
   @override
   Widget build(BuildContext context) {
@@ -361,6 +379,13 @@ class _ChatInputArea extends StatelessWidget {
       sending: sending,
       imageService: context.read<ImageService>(),
       onSend: (text, imagePaths) {
+        // Mark the next auto-scroll as "force" so the latest
+        // message comes into view even if the user had
+        // scrolled up. Must run before sendMessage so the
+        // post-frame callback (scheduled inside the rebuild
+        // triggered by sendMessage's first notifyListeners)
+        // sees the flag.
+        onBeforeSend();
         chat.sendMessage(context, text, imagePaths: imagePaths);
       },
     );
