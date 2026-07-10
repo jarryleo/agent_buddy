@@ -6,7 +6,6 @@ import '../providers/chat_provider.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/no_focus_icon_button.dart';
-import 'local_providers_tab.dart';
 import 'providers_tab.dart';
 import 'roles_tab.dart';
 import 'skills_tab.dart';
@@ -19,7 +18,7 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return DefaultTabController(
-      length: 5,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: Text(l10n.settingsTitle),
@@ -32,7 +31,6 @@ class SettingsPage extends StatelessWidget {
             tabAlignment: TabAlignment.start,
             tabs: [
               Tab(text: l10n.settingsTabProvider),
-              Tab(text: l10n.settingsTabLocal),
               Tab(text: l10n.settingsTabRole),
               Tab(text: l10n.settingsTabTools),
               Tab(text: l10n.settingsTabSkill),
@@ -44,12 +42,6 @@ class SettingsPage extends StatelessWidget {
             return TabBarView(
               children: [
                 ProvidersTab(
-                  settings: settings,
-                  onChanged: () {
-                    context.read<ChatProvider>().clearMessages();
-                  },
-                ),
-                LocalProvidersTab(
                   settings: settings,
                   onChanged: () {
                     context.read<ChatProvider>().clearMessages();
