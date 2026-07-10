@@ -169,6 +169,17 @@ class SettingsProvider extends ChangeNotifier {
       }
     }
 
+    var skillsChanged = false;
+    for (final s in _skills) {
+      if (s.enabled && !_activeSkillIds.contains(s.id)) {
+        _activeSkillIds.add(s.id);
+        skillsChanged = true;
+      }
+    }
+    if (skillsChanged) {
+      await _storage.setActiveSkillIds(_activeSkillIds.toList());
+    }
+
     notifyListeners();
   }
 
@@ -397,7 +408,9 @@ class SettingsProvider extends ChangeNotifier {
       content: content,
     );
     _skills = [..._skills, skill];
+    _activeSkillIds.add(skill.id);
     await _storage.saveSkills(_skills);
+    await _storage.setActiveSkillIds(_activeSkillIds.toList());
     notifyListeners();
     return skill;
   }
