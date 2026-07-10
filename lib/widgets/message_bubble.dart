@@ -655,10 +655,17 @@ class _StreamingMarkdownState extends State<_StreamingMarkdown>
     with SingleTickerProviderStateMixin {
   String _rendered = '';
   Timer? _throttle;
-  late final AnimationController _typewriter = AnimationController(
-    vsync: this,
-    duration: Duration(milliseconds: 16),
-  )..addListener(_onTypewriterTick);
+  // Eagerly initialized in [initState] rather than as a `late final`
+  // field. The late-initializer form would only run on first access
+  // — and if the widget is disposed before any tick fires (e.g. the
+  // assistant message stops streaming immediately, so
+  // [_animateTo] is never called, and the message bubble is then
+  // unmounted by a session switch), the first access lands in
+  // [dispose] while the element is already inactive. That trips
+  // `AnimationController`'s `TickerMode` lookup against a
+  // deactivated element, which throws "Looking up a deactivated
+  // widget's ancestor is unsafe".
+  late final AnimationController _typewriter;
   int _visibleLength = 0;
 
   static const Duration _smallDeltaDelay = Duration(milliseconds: 120);
@@ -670,6 +677,10 @@ class _StreamingMarkdownState extends State<_StreamingMarkdown>
     super.initState();
     _rendered = widget.data;
     _visibleLength = _rendered.length;
+    _typewriter = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 16),
+    )..addListener(_onTypewriterTick);
   }
 
   @override
@@ -760,10 +771,22 @@ class _TypingIndicator extends StatefulWidget {
 
 class _TypingIndicatorState extends State<_TypingIndicator>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 900),
-  )..repeat();
+  // Eagerly initialized in [initState] (not `late final` with an
+  // initializer) so the AnimationController is created while the
+  // element is still active. See [_StreamingMarkdownState] for the
+  // full reason; in short: this widget's field is never read
+  // before [dispose] runs, which would otherwise let the late
+  // initializer fire inside an inactive context.
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
 
   @override
   void dispose() {

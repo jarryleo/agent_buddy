@@ -22,20 +22,57 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final ScrollController _scrollController = ScrollController();
+  /// Scroll controller for the chat list. Recreated on every
+  /// session switch (see [_buildScrollController]) so a brand-new
+  /// ListView gets a brand-new controller. The previous
+  /// implementation reused one controller across sessions; when
+  /// the user switched sessions the ListView was rebuilt in-place
+  /// (same widget type + same position) and Flutter briefly
+  /// attached the controller to two different ScrollPositions,
+  /// which trips the `ScrollController` "_positions.length == 1"
+  /// assertion during the auto-scroll post-frame callback.
+  ScrollController? _scrollController;
+  String? _scrollControllerSessionId;
+
+  /// Returns a [ScrollController] tied to [activeSessionId].
+  /// When the active session changes we dispose the previous
+  /// controller (after the old ListView detaches) and mint a
+  /// fresh one. Same-session rebuilds reuse the same controller
+  /// and Flutter reuses the ListView element.
+  ScrollController _buildScrollController(String activeSessionId) {
+    if (_scrollController == null ||
+        _scrollControllerSessionId != activeSessionId) {
+      // Dispose the previous controller. The previous ListView
+      // (if any) has already detached by the time we land here,
+      // because its `key` was different from the current one;
+      // disposing on the build path is therefore safe.
+      _scrollController?.dispose();
+      _scrollController = ScrollController();
+      _scrollControllerSessionId = activeSessionId;
+    }
+    return _scrollController!;
+  }
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    _scrollController?.dispose();
+    _scrollController = null;
+    _scrollControllerSessionId = null;
     super.dispose();
   }
 
-  void _scrollToBottom() {
-    if (!_scrollController.hasClients) return;
+  void _scrollToBottom(ScrollController controller) {
+    if (!controller.hasClients) return;
+    // Capture the position at scheduling time. If the underlying
+    // ListView detaches between now and the post-frame callback
+    // (e.g. the user switches sessions again), the captured
+    // position is no longer live and we bail.
+    final position = controller.position;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
+      if (!controller.hasClients) return;
+      if (controller.position != position) return;
+      controller.animateTo(
+        position.maxScrollExtent,
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeOut,
       );
@@ -113,30 +150,53 @@ class _HomePageState extends State<HomePage> {
       ),
       body: Consumer<ChatProvider>(
         builder: (context, chat, _) {
-          WidgetsBinding.instance.addPostFrameCallback(
-            (_) => _scrollToBottom(),
-          );
+          final activeSessionId = chat.activeSessionId;
+          final messages = chat.messages;
+          // Build a controller bound to the current session. When
+          // `activeSessionId` changes the ListView (below) is
+          // rebuilt from scratch with a new key, so a brand-new
+          // controller is created and the old one is disposed by
+          // Flutter when the old ListView is deactivated.
+          final scrollController = activeSessionId.isEmpty
+              ? null
+              : _buildScrollController(activeSessionId);
+          if (scrollController != null) {
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => _scrollToBottom(scrollController),
+            );
+          }
           return Column(
             children: [
               const _LocalModelStatusBar(),
               Expanded(
-                child: chat.messages.isEmpty
+                child: messages.isEmpty
                     ? _EmptyState(l10n: l10n)
                     : ListView.builder(
-                        controller: _scrollController,
+                        // Keyed to the session id so a session
+                        // switch forces a fresh ListView (and
+                        // therefore a fresh ScrollController
+                        // binding). This is the primary fix for
+                        // the "ScrollController attached to
+                        // multiple scroll views" assertion that
+                        // fired during the post-frame
+                        // auto-scroll callback after a session
+                        // change.
+                        key: ValueKey('chat_list_$activeSessionId'),
+                        controller: scrollController,
                         padding: const EdgeInsets.symmetric(vertical: 8),
-                        itemCount: chat.messages.length,
+                        itemCount: messages.length,
                         itemBuilder: (context, index) {
-                          final m = chat.messages[index];
+                          final m = messages[index];
                           return MessageBubble(
                             // Stable key: the State (and its
-                            // ScrollController) must be tied to the
-                            // message's identity, not its position in
-                            // the list. Without this, Flutter reuses
-                            // the State across messages when the
-                            // list reorders / grows, and the
-                            // controller gets attached to two
-                            // different SingleChildScrollViews
+                            // ScrollController) must be tied to
+                            // the message's identity, not its
+                            // position in the list. Without this,
+                            // Flutter reuses the State across
+                            // messages when the list reorders /
+                            // grows, and the controller gets
+                            // attached to two different
+                            // SingleChildScrollViews
                             // simultaneously — which throws
                             // "_positions.length == 1".
                             key: ValueKey('msg_${m.id}'),
