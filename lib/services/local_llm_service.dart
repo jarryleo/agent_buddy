@@ -51,6 +51,8 @@ class LocalLlmService extends ChangeNotifier {
           contextSize: provider.contextSize,
           gpuLayers: provider.gpuLayers,
           flashAttention: FlashAttention.enabled,
+          cacheTypeK: _parseCacheType(provider.cacheTypeK),
+          cacheTypeV: _parseCacheType(provider.cacheTypeV),
         ),
       );
       if (provider.mmprojPath != null && provider.mmprojPath!.isNotEmpty) {
@@ -439,6 +441,18 @@ class LocalLlmService extends ChangeNotifier {
       }
     }
     return out;
+  }
+
+  static KvCacheType _parseCacheType(String raw) {
+    switch (raw) {
+      case 'q8_0':
+        return KvCacheType.q8_0;
+      case 'q4_0':
+        return KvCacheType.q4_0;
+      case 'f16':
+      default:
+        return KvCacheType.f16;
+    }
   }
 
   List<ToolDefinition> _buildTools(List<Map<String, dynamic>> openAiTools) {

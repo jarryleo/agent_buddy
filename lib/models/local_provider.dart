@@ -12,6 +12,13 @@ class LocalProvider {
   final bool enabled;
   final DateTime createdAt;
 
+  /// Quantization for the K half of the KV cache. `q8_0` ≈ 0.5× the memory
+  /// of `f16`; `q4_0` ≈ 0.25×. Non-f16 requires flash attention.
+  final String cacheTypeK;
+
+  /// Quantization for the V half of the KV cache.
+  final String cacheTypeV;
+
   LocalProvider({
     required this.id,
     required this.name,
@@ -22,6 +29,8 @@ class LocalProvider {
     this.gpuLayers = 0,
     this.maxTokens = 1024,
     this.enabled = true,
+    this.cacheTypeK = 'f16',
+    this.cacheTypeV = 'f16',
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -34,6 +43,8 @@ class LocalProvider {
     int? gpuLayers,
     int? maxTokens,
     bool? enabled,
+    String? cacheTypeK,
+    String? cacheTypeV,
   }) {
     return LocalProvider(
       id: id,
@@ -45,6 +56,8 @@ class LocalProvider {
       gpuLayers: gpuLayers ?? this.gpuLayers,
       maxTokens: maxTokens ?? this.maxTokens,
       enabled: enabled ?? this.enabled,
+      cacheTypeK: cacheTypeK ?? this.cacheTypeK,
+      cacheTypeV: cacheTypeV ?? this.cacheTypeV,
       createdAt: createdAt,
     );
   }
@@ -64,6 +77,8 @@ class LocalProvider {
     'gpuLayers': gpuLayers,
     'maxTokens': maxTokens,
     'enabled': enabled,
+    'cacheTypeK': cacheTypeK,
+    'cacheTypeV': cacheTypeV,
     'createdAt': createdAt.toIso8601String(),
   };
 
@@ -78,10 +93,24 @@ class LocalProvider {
       gpuLayers: (json['gpuLayers'] as num?)?.toInt() ?? 0,
       maxTokens: (json['maxTokens'] as num?)?.toInt() ?? 1024,
       enabled: json['enabled'] as bool? ?? true,
+      cacheTypeK: _normalizeCacheType(json['cacheTypeK']) ?? 'f16',
+      cacheTypeV: _normalizeCacheType(json['cacheTypeV']) ?? 'f16',
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.now(),
     );
+  }
+
+  static String? _normalizeCacheType(Object? raw) {
+    if (raw is! String) return null;
+    switch (raw) {
+      case 'f16':
+      case 'q8_0':
+      case 'q4_0':
+        return raw;
+      default:
+        return null;
+    }
   }
 
   String toRawJson() => jsonEncode(toJson());

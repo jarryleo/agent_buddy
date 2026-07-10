@@ -667,6 +667,9 @@ class _LocalProviderCard extends StatelessWidget {
                   ),
                   _ParamChip(label: 'gpu ${provider.gpuLayers}'),
                   _ParamChip(label: 'max ${provider.maxTokens}'),
+                  _ParamChip(
+                    label: 'kv ${provider.cacheTypeK}/${provider.cacheTypeV}',
+                  ),
                 ],
               ),
               const SizedBox(height: 8),

@@ -251,6 +251,8 @@ class SettingsProvider extends ChangeNotifier {
     double temperature = 0.7,
     int gpuLayers = 0,
     int maxTokens = 1024,
+    String cacheTypeK = 'f16',
+    String cacheTypeV = 'f16',
   }) async {
     final provider = LocalProvider(
       id: _uuid.v4(),
@@ -261,6 +263,8 @@ class SettingsProvider extends ChangeNotifier {
       temperature: temperature,
       gpuLayers: gpuLayers,
       maxTokens: maxTokens,
+      cacheTypeK: cacheTypeK,
+      cacheTypeV: cacheTypeV,
     );
     _localProviders = [..._localProviders, provider];
     if (_activeLocalProviderId == null) {

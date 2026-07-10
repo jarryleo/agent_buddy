@@ -316,6 +316,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get localProviderMaxTokens => '最大生成 token';
 
   @override
+  String get localProviderKvCacheK => 'KV 缓存 (K) 量化';
+
+  @override
+  String get localProviderKvCacheV => 'KV 缓存 (V) 量化';
+
+  @override
+  String get localProviderKvCacheHint =>
+      'f16 = 全精度,q8_0 ≈ 内存减半,q4_0 ≈ 内存降至 1/4。非 f16 需要开启 flash attention。';
+
+  @override
   String get localProviderSetAsDefault => '设为默认';
 
   @override

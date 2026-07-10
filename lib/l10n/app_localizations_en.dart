@@ -326,6 +326,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get localProviderMaxTokens => 'Max generated tokens';
 
   @override
+  String get localProviderKvCacheK => 'KV cache (K) quantization';
+
+  @override
+  String get localProviderKvCacheV => 'KV cache (V) quantization';
+
+  @override
+  String get localProviderKvCacheHint =>
+      'f16 = full quality, q8_0 ≈ 0.5× memory, q4_0 ≈ 0.25×. Non-f16 requires flash attention.';
+
+  @override
   String get localProviderSetAsDefault => 'Set as default';
 
   @override

@@ -680,6 +680,24 @@ abstract class AppLocalizations {
   /// **'Max generated tokens'**
   String get localProviderMaxTokens;
 
+  /// No description provided for @localProviderKvCacheK.
+  ///
+  /// In en, this message translates to:
+  /// **'KV cache (K) quantization'**
+  String get localProviderKvCacheK;
+
+  /// No description provided for @localProviderKvCacheV.
+  ///
+  /// In en, this message translates to:
+  /// **'KV cache (V) quantization'**
+  String get localProviderKvCacheV;
+
+  /// No description provided for @localProviderKvCacheHint.
+  ///
+  /// In en, this message translates to:
+  /// **'f16 = full quality, q8_0 ≈ 0.5× memory, q4_0 ≈ 0.25×. Non-f16 requires flash attention.'**
+  String get localProviderKvCacheHint;
+
   /// No description provided for @localProviderSetAsDefault.
   ///
   /// In en, this message translates to:

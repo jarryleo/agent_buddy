@@ -34,6 +34,8 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
   late double _temperature;
   late int _gpuLayers;
   late int _maxTokens;
+  late String _cacheTypeK;
+  late String _cacheTypeV;
   bool _busy = false;
 
   static const _contextPresets = <int>[
@@ -58,7 +60,25 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
     _temperature = p?.temperature ?? 0.7;
     _gpuLayers = p?.gpuLayers ?? 0;
     _maxTokens = p?.maxTokens ?? 1024;
+    final defaultK = _defaultKvCacheTypeK();
+    final defaultV = _defaultKvCacheTypeV();
+    _cacheTypeK = p?.cacheTypeK ?? defaultK;
+    _cacheTypeV = p?.cacheTypeV ?? defaultV;
   }
+
+  /// On mobile the RAM and VRAM budgets are usually much smaller than
+  /// on a desktop, so we default to q8_0 (K) + q4_0 (V) to give the
+  /// model a fighting chance at larger context windows. Desktop / web
+  /// keep the llama.cpp default of f16 for max quality. Users can
+  /// still override either value explicitly.
+  static bool get _isMobile {
+    if (kIsWeb) return false;
+    return Platform.isAndroid || Platform.isIOS;
+  }
+
+  static String _defaultKvCacheTypeK() => _isMobile ? 'q8_0' : 'f16';
+
+  static String _defaultKvCacheTypeV() => _isMobile ? 'q4_0' : 'f16';
 
   @override
   void dispose() {
@@ -226,6 +246,8 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
         temperature: _temperature,
         gpuLayers: _gpuLayers,
         maxTokens: _maxTokens,
+        cacheTypeK: _cacheTypeK,
+        cacheTypeV: _cacheTypeV,
       );
     } else {
       await widget.settings.updateLocalProvider(
@@ -237,6 +259,8 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
           temperature: _temperature,
           gpuLayers: _gpuLayers,
           maxTokens: _maxTokens,
+          cacheTypeK: _cacheTypeK,
+          cacheTypeV: _cacheTypeV,
         ),
       );
     }
@@ -372,6 +396,20 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
               presets: _maxTokensPresets,
               onChanged: (v) => setState(() => _maxTokens = v),
               label: l10n.localProviderMaxTokens,
+            ),
+            const SizedBox(height: 16),
+            _KvCacheTypeField(
+              label: l10n.localProviderKvCacheK,
+              hint: l10n.localProviderKvCacheHint,
+              value: _cacheTypeK,
+              onChanged: (v) => setState(() => _cacheTypeK = v),
+            ),
+            const SizedBox(height: 12),
+            _KvCacheTypeField(
+              label: l10n.localProviderKvCacheV,
+              hint: null,
+              value: _cacheTypeV,
+              onChanged: (v) => setState(() => _cacheTypeV = v),
             ),
             const SizedBox(height: 24),
             SizedBox(
@@ -689,6 +727,64 @@ class _GpuLayersFieldState extends State<_GpuLayersField> {
           widget.hint,
           style: TextStyle(fontSize: 10, color: context.textSecondary),
         ),
+      ],
+    );
+  }
+}
+
+class _KvCacheTypeField extends StatelessWidget {
+  const _KvCacheTypeField({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.hint,
+  });
+
+  final String label;
+  final String value;
+  final ValueChanged<String> onChanged;
+  final String? hint;
+
+  static const _options = <String>['f16', 'q8_0', 'q4_0'];
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: context.textSecondary,
+                ),
+              ),
+            ),
+            DropdownButton<String>(
+              value: value,
+              isDense: true,
+              underline: const SizedBox.shrink(),
+              items: [
+                for (final opt in _options)
+                  DropdownMenuItem(value: opt, child: Text(opt)),
+              ],
+              onChanged: (v) {
+                if (v != null) onChanged(v);
+              },
+            ),
+          ],
+        ),
+        if (hint != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            hint!,
+            style: TextStyle(fontSize: 10, color: context.textSecondary),
+          ),
+        ],
       ],
     );
   }
