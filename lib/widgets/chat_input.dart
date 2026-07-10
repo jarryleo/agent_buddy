@@ -153,6 +153,7 @@ class _ChatInputState extends State<ChatInput> {
                       controller: _controller,
                       focusNode: _focusNode,
                       enabled: widget.enabled,
+                      sending: widget.sending,
                       onSubmit: _send,
                     ),
                   ),
@@ -227,12 +228,14 @@ class _InputField extends StatelessWidget {
     required this.controller,
     required this.focusNode,
     required this.enabled,
+    required this.sending,
     required this.onSubmit,
   });
 
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool enabled;
+  final bool sending;
   final VoidCallback onSubmit;
 
   bool get _isDesktop {
@@ -262,6 +265,20 @@ class _InputField extends StatelessWidget {
     return KeyEventResult.handled;
   }
 
+  /// The input box's hint text depends on three states: ready
+  /// to send, currently replying (model in flight), or no
+  /// model configured. The last one was previously conflated
+  /// with the second — the widget would say "please add a
+  /// model" while the model was actively replying — which is
+  /// the user-visible bug we're fixing. The replying hint
+  /// already existed in l10n; it just wasn't wired up.
+  String _hintText(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    if (!enabled && sending) return l10n.chatInputHintReplying;
+    if (!enabled) return l10n.chatInputHintNoModel;
+    return l10n.chatInputHint;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Focus(
@@ -276,9 +293,7 @@ class _InputField extends StatelessWidget {
         keyboardType: TextInputType.multiline,
         style: const TextStyle(fontSize: 15, height: 1.4),
         decoration: InputDecoration(
-          hintText: enabled
-              ? AppLocalizations.of(context).chatInputHint
-              : AppLocalizations.of(context).chatInputHintNoModel,
+          hintText: _hintText(context),
           hintStyle: TextStyle(color: context.textSecondary),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 12,

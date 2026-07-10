@@ -88,4 +88,88 @@ void main() {
       expect(sent, isEmpty);
     });
   });
+
+  group('ChatInput hint text', () {
+    // Locks in the regression: while the model is replying the
+    // input box used to fall back to the "please add a model"
+    // hint (because `enabled` went false and the original code
+    // had only two branches: enabled / not-enabled). The fix
+    // adds a third branch — replying — so the user sees a
+    // correct "Model is replying…" hint while the model is
+    // in flight.
+    Future<void> pumpWithState(
+      WidgetTester tester, {
+      required bool enabled,
+      required bool sending,
+      AppLocalizations? l10n,
+    }) async {
+      late AppLocalizations captured;
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+          ],
+          supportedLocales: const [Locale('en'), Locale('zh')],
+          locale: const Locale('en'),
+          home: Scaffold(
+            body: Builder(
+              builder: (ctx) {
+                captured = AppLocalizations.of(ctx);
+                return ChatInput(
+                  onSend: (_, _) {},
+                  enabled: enabled,
+                  sending: sending,
+                  imageService: ImageService(),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      l10n = captured;
+    }
+
+    testWidgets('shows the regular "say something" hint when ready', (
+      tester,
+    ) async {
+      AppLocalizations? l10n;
+      await pumpWithState(
+        tester,
+        enabled: true,
+        sending: false,
+        l10n: null,
+      ).then(
+        (_) =>
+            l10n = AppLocalizations.of(tester.element(find.byType(ChatInput))),
+      );
+      // The text is hidden as a hint, so we need to find the
+      // TextField's InputDecoration directly. Material renders
+      // the hint as a Text descendant.
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.decoration!.hintText, l10n!.chatInputHint);
+    });
+
+    testWidgets('shows the "no model" hint when disabled and not sending', (
+      tester,
+    ) async {
+      AppLocalizations? l10n;
+      await pumpWithState(tester, enabled: false, sending: false, l10n: null);
+      l10n = AppLocalizations.of(tester.element(find.byType(ChatInput)));
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.decoration!.hintText, l10n.chatInputHintNoModel);
+    });
+
+    testWidgets('shows the "replying" hint while the model is in flight', (
+      tester,
+    ) async {
+      AppLocalizations? l10n;
+      await pumpWithState(tester, enabled: false, sending: true, l10n: null);
+      l10n = AppLocalizations.of(tester.element(find.byType(ChatInput)));
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.decoration!.hintText, l10n.chatInputHintReplying);
+    });
+  });
 }
