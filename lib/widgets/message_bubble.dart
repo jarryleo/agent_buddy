@@ -590,7 +590,9 @@ class _ToolCallCardState extends State<_ToolCallCard> {
 }
 
 /// Renders markdown, with throttled re-render while [streaming] is true to
-/// avoid re-parsing the entire block on every token during AI streaming.
+/// avoid re-parsing the entire block on every token during AI streaming,
+/// then animates the visible character count up to the latest snapshot to
+/// produce a typewriter feel.
 class _StreamingMarkdown extends StatefulWidget {
   const _StreamingMarkdown({required this.data, required this.streaming});
 
@@ -601,14 +603,25 @@ class _StreamingMarkdown extends StatefulWidget {
   State<_StreamingMarkdown> createState() => _StreamingMarkdownState();
 }
 
-class _StreamingMarkdownState extends State<_StreamingMarkdown> {
+class _StreamingMarkdownState extends State<_StreamingMarkdown>
+    with SingleTickerProviderStateMixin {
   String _rendered = '';
   Timer? _throttle;
+  late final AnimationController _typewriter = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 16),
+  )..addListener(_onTypewriterTick);
+  int _visibleLength = 0;
+
+  static const Duration _smallDeltaDelay = Duration(milliseconds: 120);
+  static const int _smallDeltaInstantChars = 64;
+  static const int _typewriterCharsPerSecond = 30;
 
   @override
   void initState() {
     super.initState();
     _rendered = widget.data;
+    _visibleLength = _rendered.length;
   }
 
   @override
@@ -616,31 +629,71 @@ class _StreamingMarkdownState extends State<_StreamingMarkdown> {
     super.didUpdateWidget(old);
     if (!widget.streaming) {
       _throttle?.cancel();
+      _typewriter.stop();
       _rendered = widget.data;
+      _visibleLength = _rendered.length;
       return;
     }
     final delta = widget.data.length - _rendered.length;
-    if (delta > 64) {
+    if (delta > _smallDeltaInstantChars) {
       _throttle?.cancel();
       _rendered = widget.data;
+      _animateTo(_rendered.length);
     } else {
       _throttle?.cancel();
-      _throttle = Timer(const Duration(milliseconds: 120), () {
+      _throttle = Timer(_smallDeltaDelay, () {
         if (!mounted) return;
-        setState(() => _rendered = widget.data);
+        setState(() {
+          _rendered = widget.data;
+          _animateTo(_rendered.length);
+        });
       });
     }
   }
 
+  void _animateTo(int target) {
+    final remaining = target - _visibleLength;
+    if (remaining <= 0) {
+      _visibleLength = target;
+      return;
+    }
+    _startLengthForTick = _visibleLength;
+    _endLengthForTick = target;
+    final ms = (remaining * 1000 / _typewriterCharsPerSecond)
+        .clamp(60, 800)
+        .toInt();
+    _typewriter
+      ..stop()
+      ..duration = Duration(milliseconds: ms)
+      ..value = 0;
+    _typewriter.forward();
+  }
+
+  void _onTypewriterTick() {
+    if (!mounted) return;
+    setState(() {
+      final t = _typewriter.value;
+      _visibleLength =
+          (_startLengthForTick + t * (_endLengthForTick - _startLengthForTick))
+              .round()
+              .clamp(0, _rendered.length);
+    });
+  }
+
+  int _startLengthForTick = 0;
+  int _endLengthForTick = 0;
+
   @override
   void dispose() {
     _throttle?.cancel();
+    _typewriter.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final text = _rendered.isEmpty ? ' ' : _rendered;
+    final visible = _rendered.substring(0, _visibleLength);
+    final text = visible.isEmpty ? ' ' : visible;
     return AnimatedSize(
       duration: const Duration(milliseconds: 80),
       curve: Curves.easeOut,

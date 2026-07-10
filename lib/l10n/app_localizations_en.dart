@@ -445,6 +445,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatInputHintNoModel => 'Please add a model in settings first';
 
   @override
+  String get chatInputHintReplying => 'Model is replying…';
+
+  @override
   String get imageAttachTooltip => 'Attach image';
 
   @override

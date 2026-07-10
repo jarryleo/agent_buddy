@@ -430,6 +430,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatInputHintNoModel => '请先在设置中添加模型';
 
   @override
+  String get chatInputHintReplying => '模型回复中…';
+
+  @override
   String get imageAttachTooltip => '添加图片';
 
   @override

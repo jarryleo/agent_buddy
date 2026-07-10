@@ -884,6 +884,12 @@ abstract class AppLocalizations {
   /// **'Please add a model in settings first'**
   String get chatInputHintNoModel;
 
+  /// No description provided for @chatInputHintReplying.
+  ///
+  /// In en, this message translates to:
+  /// **'Model is replying…'**
+  String get chatInputHintReplying;
+
   /// No description provided for @imageAttachTooltip.
   ///
   /// In en, this message translates to:
