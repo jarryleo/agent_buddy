@@ -17,12 +17,6 @@ import 'widgets/phone_frame.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark,
-    ),
-  );
   final storage = StorageService();
   await storage.init();
   runApp(AgentBuddyApp(storage: storage));
@@ -72,19 +66,50 @@ class AgentBuddyApp extends StatelessWidget {
               ),
         ),
       ],
-      child: MaterialApp(
-        onGenerateTitle: (ctx) => AppLocalizations.of(ctx).appTitle,
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light(),
-        localizationsDelegates: const [
-          AppLocalizations.delegate,
-          GlobalMaterialLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-        ],
-        supportedLocales: const [Locale('en'), Locale('zh')],
-        home: const PhoneFrame(child: HomePage()),
+      child: Consumer<SettingsProvider>(
+        builder: (context, settings, _) {
+          SystemChrome.setSystemUIOverlayStyle(
+            SystemUiOverlayStyle(
+              statusBarColor: Colors.transparent,
+              statusBarIconBrightness: settings.themeMode == 'dark'
+                  ? Brightness.light
+                  : Brightness.dark,
+            ),
+          );
+          return MaterialApp(
+            onGenerateTitle: (ctx) => AppLocalizations.of(ctx).appTitle,
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.light(),
+            darkTheme: AppTheme.dark(),
+            themeMode: _parseThemeMode(settings.themeMode),
+            locale: _parseLocale(settings.localeCode),
+            localizationsDelegates: const [
+              AppLocalizations.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+            ],
+            supportedLocales: const [Locale('en'), Locale('zh')],
+            home: PhoneFrame(child: HomePage()),
+          );
+        },
       ),
     );
+  }
+
+  ThemeMode _parseThemeMode(String mode) {
+    switch (mode) {
+      case 'light':
+        return ThemeMode.light;
+      case 'dark':
+        return ThemeMode.dark;
+      default:
+        return ThemeMode.system;
+    }
+  }
+
+  Locale? _parseLocale(String code) {
+    if (code == 'system' || code.isEmpty) return null;
+    return Locale(code);
   }
 }

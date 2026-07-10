@@ -102,6 +102,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsTitle => 'Settings';
 
   @override
+  String get settingsTabGeneral => 'General';
+
+  @override
   String get settingsTabProvider => 'Models';
 
   @override
@@ -532,5 +535,46 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String chatRequestFailed(String error) {
     return 'Request failed: $error';
+  }
+
+  @override
+  String get generalSectionAppearance => 'Appearance';
+
+  @override
+  String get generalDarkMode => 'Dark mode';
+
+  @override
+  String get generalThemeSystem => 'Follow system';
+
+  @override
+  String get generalThemeLight => 'Light';
+
+  @override
+  String get generalThemeDark => 'Dark';
+
+  @override
+  String get generalSectionLanguage => 'Language';
+
+  @override
+  String get generalLanguageSystem => 'Follow system';
+
+  @override
+  String get generalLanguageEn => 'English';
+
+  @override
+  String get generalLanguageZh => '中文';
+
+  @override
+  String get generalSectionAbout => 'About';
+
+  @override
+  String get generalAboutAppName => 'Agent Buddy';
+
+  @override
+  String get generalAboutTagline => 'Cross-platform agent hub';
+
+  @override
+  String generalAboutVersion(String version) {
+    return 'Version $version';
   }
 }

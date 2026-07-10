@@ -55,7 +55,7 @@ class _ChatInputState extends State<ChatInput> {
       final l10n = AppLocalizations.of(context);
       final source = await showModalBottomSheet<ImageSourceChoice>(
         context: context,
-        backgroundColor: AppTheme.surface,
+        backgroundColor: context.surface,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
@@ -64,7 +64,7 @@ class _ChatInputState extends State<ChatInput> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.photo_library_outlined),
+                leading: Icon(Icons.photo_library_outlined),
                 title: Text(l10n.imagePickGallery),
                 onTap: () => Navigator.pop(ctx, ImageSourceChoice.gallery),
               ),
@@ -107,9 +107,9 @@ class _ChatInputState extends State<ChatInput> {
     final l10n = AppLocalizations.of(context);
     final hasImages = _imagePaths.isNotEmpty;
     return Container(
-      decoration: const BoxDecoration(
-        color: AppTheme.surface,
-        border: Border(top: BorderSide(color: AppTheme.border)),
+      decoration: BoxDecoration(
+        color: context.surface,
+        border: Border(top: BorderSide(color: context.appBorder)),
       ),
       padding: EdgeInsets.fromLTRB(
         10,
@@ -134,12 +134,12 @@ class _ChatInputState extends State<ChatInput> {
                     onPressed: widget.enabled && !_pickingImage
                         ? _pickImage
                         : null,
-                    icon: const Icon(Icons.add_photo_alternate_outlined),
-                    color: AppTheme.textSecondary,
+                    icon: Icon(Icons.add_photo_alternate_outlined),
+                    color: context.textSecondary,
                     tooltip: l10n.imageAttachTooltip,
                   ),
                 ),
-                const SizedBox(width: 6),
+                SizedBox(width: 6),
                 Expanded(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(
@@ -161,8 +161,8 @@ class _ChatInputState extends State<ChatInput> {
                             : widget.sending
                                 ? l10n.chatInputHintReplying
                                 : l10n.chatInputHintNoModel,
-                        hintStyle: const TextStyle(
-                          color: AppTheme.textSecondary,
+                        hintStyle: TextStyle(
+                          color: context.textSecondary,
                         ),
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12,
@@ -170,15 +170,15 @@ class _ChatInputState extends State<ChatInput> {
                         ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(20),
-                          borderSide: const BorderSide(color: AppTheme.border),
+                          borderSide: BorderSide(color: context.appBorder),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(20),
-                          borderSide: const BorderSide(color: AppTheme.border),
+                          borderSide: BorderSide(color: context.appBorder),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(20),
-                          borderSide: const BorderSide(
+                          borderSide: BorderSide(
                             color: AppTheme.primary,
                             width: 1.2,
                           ),
@@ -272,10 +272,10 @@ class _ImageThumbnail extends StatelessWidget {
                   File(path),
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stack) => Container(
-                    color: AppTheme.bg,
-                    child: const Icon(
+                    color: context.bg,
+                    child: Icon(
                       Icons.broken_image_outlined,
-                      color: AppTheme.textSecondary,
+                      color: context.textSecondary,
                       size: 20,
                     ),
                   ),

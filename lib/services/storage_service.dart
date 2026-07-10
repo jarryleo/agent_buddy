@@ -22,6 +22,8 @@ class StorageService {
   static const _kActiveSkillIds = 'active_skill_ids';
   static const _kActiveToolIds = 'active_tool_ids';
   static const _kMessages = 'chat_messages';
+  static const _kThemeMode = 'theme_mode';
+  static const _kLocaleCode = 'locale_code';
 
   late final SharedPreferences _prefs;
 
@@ -146,5 +148,17 @@ class StorageService {
   Future<void> saveMessages(List<ChatMessage> messages) async {
     final raw = jsonEncode(messages.map((e) => e.toJson()).toList());
     await _prefs.setString(_kMessages, raw);
+  }
+
+  // Theme
+  String get themeMode => _prefs.getString(_kThemeMode) ?? 'system';
+  Future<void> setThemeMode(String mode) async {
+    await _prefs.setString(_kThemeMode, mode);
+  }
+
+  // Locale
+  String get localeCode => _prefs.getString(_kLocaleCode) ?? 'system';
+  Future<void> setLocaleCode(String code) async {
+    await _prefs.setString(_kLocaleCode, code);
   }
 }

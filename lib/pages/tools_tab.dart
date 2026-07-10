@@ -20,11 +20,11 @@ class ToolsTab extends StatelessWidget {
       );
     }
     return Scaffold(
-      backgroundColor: AppTheme.bg,
+      backgroundColor: context.bg,
       body: ListView.separated(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
         itemCount: tools.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 10),
+        separatorBuilder: (_, _) => SizedBox(height: 10),
         itemBuilder: (context, index) {
           final t = tools[index];
           final active = settings.activeToolIds.contains(t.id);
@@ -45,14 +45,14 @@ class ToolsTab extends StatelessWidget {
             _ => t.description,
           };
           return Material(
-            color: AppTheme.surface,
+            color: context.surface,
             borderRadius: BorderRadius.circular(14),
             child: Container(
               padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color: active ? AppTheme.primary : AppTheme.border,
+                  color: active ? AppTheme.primary : context.appBorder,
                   width: active ? 1.4 : 0.6,
                 ),
               ),
@@ -65,7 +65,7 @@ class ToolsTab extends StatelessWidget {
                       color: AppTheme.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.handyman_outlined,
                       color: AppTheme.primary,
                       size: 18,
@@ -86,9 +86,9 @@ class ToolsTab extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           description,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: AppTheme.textSecondary,
+                            color: context.textSecondary,
                             height: 1.4,
                           ),
                         ),

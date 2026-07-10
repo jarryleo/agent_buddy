@@ -184,11 +184,11 @@ class _CodeBlockState extends State<CodeBlock> {
               language: lang,
               theme: githubTheme,
               padding: EdgeInsets.zero,
-              textStyle: const TextStyle(
+              textStyle: TextStyle(
                 fontFamily: 'monospace',
                 fontSize: 13,
                 height: 1.5,
-                color: AppTheme.textPrimary,
+                color: context.textPrimary,
               ),
             ),
           ),

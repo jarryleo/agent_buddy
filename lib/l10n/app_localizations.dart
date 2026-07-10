@@ -272,6 +272,12 @@ abstract class AppLocalizations {
   /// **'Settings'**
   String get settingsTitle;
 
+  /// No description provided for @settingsTabGeneral.
+  ///
+  /// In en, this message translates to:
+  /// **'General'**
+  String get settingsTabGeneral;
+
   /// No description provided for @settingsTabProvider.
   ///
   /// In en, this message translates to:
@@ -1039,6 +1045,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Request failed: {error}'**
   String chatRequestFailed(String error);
+
+  /// No description provided for @generalSectionAppearance.
+  ///
+  /// In en, this message translates to:
+  /// **'Appearance'**
+  String get generalSectionAppearance;
+
+  /// No description provided for @generalDarkMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Dark mode'**
+  String get generalDarkMode;
+
+  /// No description provided for @generalThemeSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow system'**
+  String get generalThemeSystem;
+
+  /// No description provided for @generalThemeLight.
+  ///
+  /// In en, this message translates to:
+  /// **'Light'**
+  String get generalThemeLight;
+
+  /// No description provided for @generalThemeDark.
+  ///
+  /// In en, this message translates to:
+  /// **'Dark'**
+  String get generalThemeDark;
+
+  /// No description provided for @generalSectionLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Language'**
+  String get generalSectionLanguage;
+
+  /// No description provided for @generalLanguageSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow system'**
+  String get generalLanguageSystem;
+
+  /// No description provided for @generalLanguageEn.
+  ///
+  /// In en, this message translates to:
+  /// **'English'**
+  String get generalLanguageEn;
+
+  /// No description provided for @generalLanguageZh.
+  ///
+  /// In en, this message translates to:
+  /// **'中文'**
+  String get generalLanguageZh;
+
+  /// No description provided for @generalSectionAbout.
+  ///
+  /// In en, this message translates to:
+  /// **'About'**
+  String get generalSectionAbout;
+
+  /// No description provided for @generalAboutAppName.
+  ///
+  /// In en, this message translates to:
+  /// **'Agent Buddy'**
+  String get generalAboutAppName;
+
+  /// No description provided for @generalAboutTagline.
+  ///
+  /// In en, this message translates to:
+  /// **'Cross-platform agent hub'**
+  String get generalAboutTagline;
+
+  /// No description provided for @generalAboutVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Version {version}'**
+  String generalAboutVersion(String version);
 }
 
 class _AppLocalizationsDelegate

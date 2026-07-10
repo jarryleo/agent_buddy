@@ -247,16 +247,16 @@ class _AddProviderPageState extends State<AddProviderPage> {
               decoration: InputDecoration(
                 hintText: _protocol.defaultPath,
                 helperText: l10n.providerChatPathHelper,
-                helperStyle: const TextStyle(
+                helperStyle: TextStyle(
                   fontSize: 11,
-                  color: AppTheme.textSecondary,
+                  color: context.textSecondary,
                 ),
               ),
               validator: (v) => (v == null || v.trim().isEmpty)
                   ? l10n.providerChatPathRequired
                   : null,
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
@@ -336,10 +336,10 @@ class _Label extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 6, left: 2),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: AppTheme.textSecondary,
+          color: context.textSecondary,
         ),
       ),
     );

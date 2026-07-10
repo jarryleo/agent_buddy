@@ -115,10 +115,10 @@ class ProvidersTab extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final useLocal = settings.useLocalModel;
     return Scaffold(
-      backgroundColor: AppTheme.bg,
+      backgroundColor: context.bg,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openAdd(context),
-        icon: const Icon(Icons.add),
+        icon: Icon(Icons.add),
         label: Text(l10n.commonAdd),
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
@@ -301,9 +301,9 @@ class _ModeSwitcher extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
+        color: context.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.border, width: 0.6),
+        border: Border.all(color: context.appBorder, width: 0.6),
       ),
       child: Row(
         children: [
@@ -312,7 +312,7 @@ class _ModeSwitcher extends StatelessWidget {
             size: 18,
             color: AppTheme.primary,
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: 8),
           Expanded(
             child: Text(
               l10n.providerUseLocalModel,
@@ -362,7 +362,7 @@ class _ProviderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppTheme.surface,
+      color: context.surface,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
@@ -372,7 +372,7 @@ class _ProviderCard extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: isActive ? AppTheme.primary : AppTheme.border,
+              color: isActive ? AppTheme.primary : context.appBorder,
               width: isActive ? 1.4 : 0.6,
             ),
           ),
@@ -388,7 +388,7 @@ class _ProviderCard extends StatelessWidget {
                       color: AppTheme.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.cloud_outlined,
                       color: AppTheme.primary,
                       size: 20,
@@ -435,9 +435,9 @@ class _ProviderCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           '${_protocolLabel(context)} · ${l10n.providerModelCount(provider.models.length)}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: AppTheme.textSecondary,
+                            color: context.textSecondary,
                           ),
                         ),
                       ],
@@ -446,29 +446,29 @@ class _ProviderCard extends StatelessWidget {
                   Switch(value: provider.enabled, onChanged: onToggle),
                 ],
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               Text(
                 provider.baseUrl,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: AppTheme.textSecondary,
+                  color: context.textSecondary,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
               if (provider.models.isNotEmpty) ...[
-                const SizedBox(height: 10),
+                SizedBox(height: 10),
                 Text(
                   l10n.providerCurrentModel(
                     provider.selectedModel ?? provider.models.first,
                   ),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: AppTheme.textSecondary,
+                    color: context.textSecondary,
                   ),
                 ),
               ],
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               Row(
                 children: [
                   TextButton.icon(
@@ -550,7 +550,7 @@ class _LocalProviderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppTheme.surface,
+      color: context.surface,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
@@ -560,7 +560,7 @@ class _LocalProviderCard extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: isActive ? AppTheme.primary : AppTheme.border,
+              color: isActive ? AppTheme.primary : context.appBorder,
               width: isActive ? 1.4 : 0.6,
             ),
           ),
@@ -576,7 +576,7 @@ class _LocalProviderCard extends StatelessWidget {
                       color: AppTheme.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.memory,
                       color: AppTheme.primary,
                       size: 20,
@@ -623,9 +623,9 @@ class _LocalProviderCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           provider.displayModelName,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: AppTheme.textSecondary,
+                            color: context.textSecondary,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -638,21 +638,21 @@ class _LocalProviderCard extends StatelessWidget {
               ),
               if (provider.mmprojPath != null &&
                   provider.mmprojPath!.isNotEmpty) ...[
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.image_outlined,
                       size: 14,
-                      color: AppTheme.textSecondary,
+                      color: context.textSecondary,
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4),
                     Expanded(
                       child: Text(
                         provider.mmprojPath!.split(RegExp(r'[\\/]')).last,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: AppTheme.textSecondary,
+                          color: context.textSecondary,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

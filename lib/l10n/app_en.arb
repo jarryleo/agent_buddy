@@ -42,6 +42,7 @@
   "homeLocalModelDismiss": "Dismiss",
 
   "settingsTitle": "Settings",
+  "settingsTabGeneral": "General",
   "settingsTabProvider": "Models",
   "settingsTabRole": "Role",
   "settingsTabTools": "Tools",
@@ -253,6 +254,25 @@
   "@chatRequestFailed": {
     "placeholders": {
       "error": { "type": "String" }
+    }
+  },
+
+  "generalSectionAppearance": "Appearance",
+  "generalDarkMode": "Dark mode",
+  "generalThemeSystem": "Follow system",
+  "generalThemeLight": "Light",
+  "generalThemeDark": "Dark",
+  "generalSectionLanguage": "Language",
+  "generalLanguageSystem": "Follow system",
+  "generalLanguageEn": "English",
+  "generalLanguageZh": "中文",
+  "generalSectionAbout": "About",
+  "generalAboutAppName": "Agent Buddy",
+  "generalAboutTagline": "Cross-platform agent hub",
+  "generalAboutVersion": "Version {version}",
+  "@generalAboutVersion": {
+    "placeholders": {
+      "version": { "type": "String" }
     }
   }
 }

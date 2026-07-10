@@ -45,7 +45,7 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
-      backgroundColor: AppTheme.bg,
+      backgroundColor: context.bg,
       appBar: AppBar(
         leading: NoFocusIconButton(
           icon: const Icon(Icons.settings_outlined),
@@ -53,7 +53,7 @@ class _HomePageState extends State<HomePage> {
           onPressed: () {
             Navigator.of(
               context,
-            ).push(MaterialPageRoute(builder: (_) => const SettingsPage()));
+            ).push(MaterialPageRoute(builder: (_) => SettingsPage()));
           },
         ),
         title: Consumer<SettingsProvider>(
@@ -88,9 +88,9 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(height: 1),
                 Text(
                   subtitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: AppTheme.textSecondary,
+                    color: context.textSecondary,
                     fontWeight: FontWeight.w400,
                   ),
                 ),
@@ -102,7 +102,7 @@ class _HomePageState extends State<HomePage> {
           Consumer<ChatProvider>(
             builder: (context, chat, _) {
               return NoFocusIconButton(
-                icon: const Icon(Icons.delete_sweep_outlined),
+                icon: Icon(Icons.delete_sweep_outlined),
                 tooltip: l10n.homeClearChatTooltip,
                 onPressed: chat.messages.isEmpty
                     ? null
@@ -160,7 +160,7 @@ class _HomePageState extends State<HomePage> {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(l10n.homeCopied),
-                                    duration: const Duration(
+                                    duration: Duration(
                                       milliseconds: 1200,
                                     ),
                                   ),
@@ -220,7 +220,7 @@ class _EmptyState extends StatelessWidget {
                 color: AppTheme.primary.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.smart_toy_outlined,
                 size: 36,
                 color: AppTheme.primary,
@@ -235,9 +235,9 @@ class _EmptyState extends StatelessWidget {
             Text(
               l10n.homeEmptySubtitle,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: AppTheme.textSecondary,
+                color: context.textSecondary,
                 height: 1.5,
               ),
             ),
@@ -273,7 +273,7 @@ class _LocalModelStatusBar extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
         child: Row(
           children: [
-            const SizedBox(
+            SizedBox(
               width: 16,
               height: 16,
               child: CircularProgressIndicator(strokeWidth: 2),
@@ -282,9 +282,9 @@ class _LocalModelStatusBar extends StatelessWidget {
             Expanded(
               child: Text(
                 l10n.homeLocalModelLoading,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: AppTheme.textSecondary,
+                  color: context.textSecondary,
                 ),
               ),
             ),
@@ -300,7 +300,7 @@ class _LocalModelStatusBar extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
         child: Row(
           children: [
-            const Icon(
+            Icon(
               Icons.error_outline,
               size: 16,
               color: Colors.red,
@@ -337,7 +337,7 @@ class _LocalModelStatusBar extends StatelessWidget {
                   horizontal: 10,
                   vertical: 4,
                 ),
-                minimumSize: const Size(0, 32),
+                minimumSize: Size(0, 32),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 visualDensity: VisualDensity.compact,
               ),
@@ -350,12 +350,12 @@ class _LocalModelStatusBar extends StatelessWidget {
               onPressed: () =>
                   context.read<LocalLlmService>().clearLoadError(),
               style: TextButton.styleFrom(
-                foregroundColor: AppTheme.textSecondary,
+                foregroundColor: context.textSecondary,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 8,
                   vertical: 4,
                 ),
-                minimumSize: const Size(0, 32),
+                minimumSize: Size(0, 32),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 visualDensity: VisualDensity.compact,
               ),

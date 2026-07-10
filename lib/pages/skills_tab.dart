@@ -31,10 +31,10 @@ class SkillsTab extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final skills = settings.skills;
     return Scaffold(
-      backgroundColor: AppTheme.bg,
+      backgroundColor: context.bg,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openEdit(context),
-        icon: const Icon(Icons.add),
+        icon: Icon(Icons.add),
         label: Text(l10n.commonAdd),
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
@@ -52,7 +52,7 @@ class SkillsTab extends StatelessWidget {
                 final s = skills[index];
                 final active = settings.activeSkillIds.contains(s.id);
                 return Material(
-                  color: AppTheme.surface,
+                  color: context.surface,
                   borderRadius: BorderRadius.circular(14),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(14),
@@ -62,7 +62,7 @@ class SkillsTab extends StatelessWidget {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: active ? AppTheme.primary : AppTheme.border,
+                          color: active ? AppTheme.primary : context.appBorder,
                           width: active ? 1.4 : 0.6,
                         ),
                       ),
@@ -75,7 +75,7 @@ class SkillsTab extends StatelessWidget {
                               color: AppTheme.primary.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.workspace_premium_outlined,
                               color: AppTheme.primary,
                               size: 18,
@@ -97,9 +97,9 @@ class SkillsTab extends StatelessWidget {
                                   const SizedBox(height: 2),
                                   Text(
                                     s.description,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
-                                      color: AppTheme.textSecondary,
+                                      color: context.textSecondary,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -138,7 +138,7 @@ class SkillsTab extends StatelessWidget {
                                 await settings.deleteSkill(s.id);
                               }
                             },
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.delete_outline,
                               size: 18,
                               color: Colors.redAccent,
@@ -257,10 +257,10 @@ class _FieldLabel extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 6, left: 2),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: AppTheme.textSecondary,
+          color: context.textSecondary,
         ),
       ),
     );

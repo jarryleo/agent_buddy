@@ -32,10 +32,10 @@ class RolesTab extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final roles = settings.roles;
     return Scaffold(
-      backgroundColor: AppTheme.bg,
+      backgroundColor: context.bg,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openEdit(context),
-        icon: const Icon(Icons.add),
+        icon: Icon(Icons.add),
         label: Text(l10n.commonAdd),
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
@@ -50,7 +50,7 @@ class RolesTab extends StatelessWidget {
                 final r = roles[index];
                 final active = settings.activeRoleId == r.id;
                 return Material(
-                  color: AppTheme.surface,
+                  color: context.surface,
                   borderRadius: BorderRadius.circular(14),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(14),
@@ -60,7 +60,7 @@ class RolesTab extends StatelessWidget {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: active ? AppTheme.primary : AppTheme.border,
+                          color: active ? AppTheme.primary : context.appBorder,
                           width: active ? 1.4 : 0.6,
                         ),
                       ),
@@ -73,7 +73,7 @@ class RolesTab extends StatelessWidget {
                             ),
                             child: Text(
                               r.name.isNotEmpty ? r.name.characters.first : '?',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: AppTheme.primary,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -123,15 +123,15 @@ class RolesTab extends StatelessWidget {
                                   const SizedBox(height: 4),
                                   Text(
                                     r.description,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
-                                      color: AppTheme.textSecondary,
+                                      color: context.textSecondary,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
-                                const SizedBox(height: 8),
+                                SizedBox(height: 8),
                                 Row(
                                   children: [
                                     TextButton(
@@ -305,10 +305,10 @@ class _FieldLabel extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 6, left: 2),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: AppTheme.textSecondary,
+          color: context.textSecondary,
         ),
       ),
     );

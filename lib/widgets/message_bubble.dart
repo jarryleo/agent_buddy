@@ -120,7 +120,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                       vertical: 10,
                     ),
                     decoration: BoxDecoration(
-                      color: AppTheme.bubbleUser,
+                      color: context.bubbleUser,
                       borderRadius: const BorderRadius.only(
                         topLeft: Radius.circular(16),
                         topRight: Radius.circular(16),
@@ -130,7 +130,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                     ),
                     child: Text(
                       m.content,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Colors.white,
                         fontSize: 15,
                         height: 1.4,
@@ -175,11 +175,11 @@ class _MessageBubbleState extends State<MessageBubble> {
                 height: thumbSize,
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stack) => Container(
-                  color: AppTheme.bg,
+                  color: context.bg,
                   alignment: Alignment.center,
-                  child: const Icon(
+                  child: Icon(
                     Icons.broken_image_outlined,
-                    color: AppTheme.textSecondary,
+                    color: context.textSecondary,
                   ),
                 ),
               ),
@@ -205,14 +205,14 @@ class _MessageBubbleState extends State<MessageBubble> {
               margin: EdgeInsets.only(top: (hasThinking || hasTools) ? 6 : 0),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: AppTheme.bubbleAssistant,
+                color: context.bubbleAssistant,
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(4),
                   topRight: Radius.circular(16),
                   bottomLeft: Radius.circular(16),
                   bottomRight: Radius.circular(16),
                 ),
-                border: Border.all(color: AppTheme.border),
+                border: Border.all(color: context.appBorder),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -229,22 +229,22 @@ class _MessageBubbleState extends State<MessageBubble> {
               children: [
                 Text(
                   DateFormat('HH:mm').format(m.createdAt.toLocal()),
-                  style: const TextStyle(
-                    color: AppTheme.textSecondary,
+                  style: TextStyle(
+                    color: context.textSecondary,
                     fontSize: 11,
                   ),
                 ),
                 if (m.content.isNotEmpty) ...[
-                  const SizedBox(width: 6),
+                  SizedBox(width: 6),
                   InkWell(
                     onTap: () => widget.onCopy(m.content),
                     borderRadius: BorderRadius.circular(4),
-                    child: const Padding(
+                    child: Padding(
                       padding: EdgeInsets.all(2),
                       child: Icon(
                         Icons.copy_rounded,
                         size: 12,
-                        color: AppTheme.textSecondary,
+                        color: context.textSecondary,
                       ),
                     ),
                   ),
@@ -272,9 +272,9 @@ class _MessageBubbleState extends State<MessageBubble> {
     final canToggle = _thinkingExpanded || overflow;
     return Container(
       decoration: BoxDecoration(
-        color: AppTheme.thinking,
+        color: context.thinkingBg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFEED79B)),
+        border: Border.all(color: context.thinkingBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -288,7 +288,7 @@ class _MessageBubbleState extends State<MessageBubble> {
               padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.psychology_outlined,
                     size: 14,
                     color: Color(0xFFA37300),
@@ -349,7 +349,7 @@ class _MessageBubbleState extends State<MessageBubble> {
               },
             ),
           ],
-          const SizedBox(height: 6),
+          SizedBox(height: 6),
         ],
       ],
     );
@@ -467,13 +467,13 @@ class _ToolCallCardState extends State<_ToolCallCard> {
                     const SizedBox(width: 6),
                     Text(
                       _formatDuration(tc.duration!),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
-                        color: AppTheme.textSecondary,
+                        color: context.textSecondary,
                       ),
                     ),
                   ],
-                  const SizedBox(width: 4),
+                  SizedBox(width: 4),
                   Icon(
                     _expanded
                         ? Icons.expand_less_rounded
@@ -503,37 +503,37 @@ class _ToolCallCardState extends State<_ToolCallCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Divider(height: 1, color: AppTheme.border),
-          const SizedBox(height: 6),
+          Divider(height: 1, color: context.appBorder),
+          SizedBox(height: 6),
           Text(
             l10n.toolCallArguments,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: AppTheme.textSecondary,
+              color: context.textSecondary,
             ),
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: 4),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: AppTheme.border),
+              border: Border.all(color: context.appBorder),
             ),
             child: Text(
               hasArgs ? _prettyJson(tc.arguments) : l10n.toolCallNoArguments,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
                 fontFamily: 'monospace',
-                color: AppTheme.textPrimary,
+                color: context.textPrimary,
                 height: 1.4,
               ),
             ),
           ),
           if (tc.isDone) ...[
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             Text(
               l10n.toolCallResult,
               style: TextStyle(
@@ -541,10 +541,10 @@ class _ToolCallCardState extends State<_ToolCallCard> {
                 fontWeight: FontWeight.w600,
                 color: tc.isFailed
                     ? const Color(0xFFD1242F)
-                    : AppTheme.textSecondary,
+                    : context.textSecondary,
               ),
             ),
-            const SizedBox(height: 4),
+            SizedBox(height: 4),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(6),
@@ -554,7 +554,7 @@ class _ToolCallCardState extends State<_ToolCallCard> {
                 border: Border.all(
                   color: tc.isFailed
                       ? const Color(0xFFFFC1C1)
-                      : AppTheme.border,
+                      : context.appBorder,
                 ),
               ),
               child: Text(
@@ -563,8 +563,8 @@ class _ToolCallCardState extends State<_ToolCallCard> {
                   fontSize: 11,
                   fontFamily: 'monospace',
                   color: tc.isFailed
-                      ? const Color(0xFF8B0000)
-                      : AppTheme.textPrimary,
+                      ? Color(0xFF8B0000)
+                      : context.textPrimary,
                   height: 1.4,
                 ),
                 maxLines: 20,
@@ -609,7 +609,7 @@ class _StreamingMarkdownState extends State<_StreamingMarkdown>
   Timer? _throttle;
   late final AnimationController _typewriter = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 16),
+    duration: Duration(milliseconds: 16),
   )..addListener(_onTypewriterTick);
   int _visibleLength = 0;
 
@@ -881,17 +881,17 @@ class _OptionChip extends StatelessWidget {
     final Color bg;
     final Color fg;
     if (!enabled) {
-      bg = selected ? AppTheme.primary.withValues(alpha: 0.45) : AppTheme.bg;
-      fg = selected ? Colors.white : AppTheme.textSecondary;
+      bg = selected ? AppTheme.primary.withValues(alpha: 0.45) : context.bg;
+      fg = selected ? Colors.white : context.textSecondary;
     } else {
-      bg = selected ? AppTheme.primary : AppTheme.surface;
-      fg = selected ? Colors.white : AppTheme.textPrimary;
+      bg = selected ? AppTheme.primary : context.surface;
+      fg = selected ? Colors.white : context.textPrimary;
     }
     return Material(
       color: bg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: selected ? AppTheme.primary : AppTheme.border),
+        side: BorderSide(color: selected ? AppTheme.primary : context.appBorder),
       ),
       child: InkWell(
         onTap: enabled ? onTap : null,

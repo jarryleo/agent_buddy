@@ -1,70 +1,70 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 
+import 'app_colors.dart';
+
+export 'app_colors.dart';
+
 class AppTheme {
   static const Color primary = Color(0xFF1F6FEB);
-  static const Color bg = Color(0xFFF6F7F9);
-  static const Color surface = Colors.white;
-  static const Color textPrimary = Color(0xFF1A1A1A);
-  static const Color textSecondary = Color(0xFF6E6E73);
-  static const Color border = Color(0xFFE5E5EA);
-  static const Color bubbleUser = Color(0xFF1F6FEB);
-  static const Color bubbleAssistant = Color(0xFFFFFFFF);
-  static const Color thinking = Color(0xFFFFF7E0);
 
   static ThemeData light() {
     final base = ThemeData.light(useMaterial3: true);
+    final colors = AppColors.light;
     return base.copyWith(
-      scaffoldBackgroundColor: bg,
+      scaffoldBackgroundColor: colors.bg,
       colorScheme: base.colorScheme.copyWith(
         primary: primary,
-        surface: surface,
+        surface: colors.surface,
         onPrimary: Colors.white,
+        onSurface: colors.textPrimary,
+        onSurfaceVariant: colors.textSecondary,
+        outline: colors.border,
       ),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: surface,
-        foregroundColor: textPrimary,
+      appBarTheme: AppBarTheme(
+        backgroundColor: colors.surface,
+        foregroundColor: colors.textPrimary,
         elevation: 0,
         scrolledUnderElevation: 0.5,
         centerTitle: true,
         titleTextStyle: TextStyle(
-          color: textPrimary,
+          color: colors.textPrimary,
           fontSize: 17,
           fontWeight: FontWeight.w600,
         ),
       ),
       textTheme: base.textTheme.apply(
-        bodyColor: textPrimary,
-        displayColor: textPrimary,
+        bodyColor: colors.textPrimary,
+        displayColor: colors.textPrimary,
       ),
-      dividerTheme: const DividerThemeData(
-        color: border,
+      dividerTheme: DividerThemeData(
+        color: colors.border,
         thickness: 0.5,
         space: 0.5,
       ),
       cardTheme: CardThemeData(
-        color: surface,
+        color: colors.surface,
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
-          side: const BorderSide(color: border),
+          side: BorderSide(color: colors.border),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: surface,
+        fillColor: colors.surface,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 12,
           vertical: 10,
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: border),
+          borderSide: BorderSide(color: colors.border),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: border),
+          borderSide: BorderSide(color: colors.border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
@@ -72,17 +72,17 @@ class AppTheme {
         ),
         isDense: true,
       ),
-      tabBarTheme: const TabBarThemeData(
+      tabBarTheme: TabBarThemeData(
         labelColor: primary,
-        unselectedLabelColor: textSecondary,
+        unselectedLabelColor: colors.textSecondary,
         indicatorColor: primary,
         indicatorSize: TabBarIndicatorSize.label,
-        labelStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: TextStyle(
+        labelStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        unselectedLabelStyle: const TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.w500,
         ),
-        dividerColor: border,
+        dividerColor: colors.border,
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
@@ -96,6 +96,100 @@ class AppTheme {
           return CupertinoColors.systemGrey5;
         }),
       ),
+      extensions: [colors],
+    );
+  }
+
+  static ThemeData dark() {
+    final base = ThemeData.dark(useMaterial3: true);
+    final colors = AppColors.dark;
+    return base.copyWith(
+      scaffoldBackgroundColor: colors.bg,
+      colorScheme: base.colorScheme.copyWith(
+        primary: primary,
+        surface: colors.surface,
+        onPrimary: Colors.white,
+        onSurface: colors.textPrimary,
+        onSurfaceVariant: colors.textSecondary,
+        outline: colors.border,
+        brightness: Brightness.dark,
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: colors.surface,
+        foregroundColor: colors.textPrimary,
+        elevation: 0,
+        scrolledUnderElevation: 0.5,
+        centerTitle: true,
+        titleTextStyle: TextStyle(
+          color: colors.textPrimary,
+          fontSize: 17,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      textTheme: base.textTheme.apply(
+        bodyColor: colors.textPrimary,
+        displayColor: colors.textPrimary,
+      ),
+      dividerTheme: DividerThemeData(
+        color: colors.border,
+        thickness: 0.5,
+        space: 0.5,
+      ),
+      cardTheme: CardThemeData(
+        color: colors.surface,
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: colors.border),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: colors.surface,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: colors.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: colors.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: primary, width: 1.2),
+        ),
+        isDense: true,
+      ),
+      tabBarTheme: TabBarThemeData(
+        labelColor: primary,
+        unselectedLabelColor: colors.textSecondary,
+        indicatorColor: primary,
+        indicatorSize: TabBarIndicatorSize.label,
+        labelStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        unselectedLabelStyle: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+        ),
+        dividerColor: colors.border,
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return primary;
+          return CupertinoColors.systemGrey3;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return primary.withValues(alpha: 0.4);
+          }
+          return CupertinoColors.systemGrey5;
+        }),
+      ),
+      extensions: [colors],
     );
   }
 }

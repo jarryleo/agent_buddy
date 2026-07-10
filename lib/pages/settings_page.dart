@@ -6,6 +6,7 @@ import '../providers/chat_provider.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/no_focus_icon_button.dart';
+import 'general_tab.dart';
 import 'providers_tab.dart';
 import 'roles_tab.dart';
 import 'skills_tab.dart';
@@ -18,7 +19,7 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: Text(l10n.settingsTitle),
@@ -30,6 +31,7 @@ class SettingsPage extends StatelessWidget {
             isScrollable: true,
             tabAlignment: TabAlignment.start,
             tabs: [
+              Tab(text: l10n.settingsTabGeneral),
               Tab(text: l10n.settingsTabProvider),
               Tab(text: l10n.settingsTabRole),
               Tab(text: l10n.settingsTabTools),
@@ -41,6 +43,7 @@ class SettingsPage extends StatelessWidget {
           builder: (context, settings, _) {
             return TabBarView(
               children: [
+                const GeneralTab(),
                 ProvidersTab(
                   settings: settings,
                   onChanged: () {
@@ -69,10 +72,10 @@ class SectionTitle extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: AppTheme.textSecondary,
+          color: context.textSecondary,
           letterSpacing: 0.4,
         ),
       ),
@@ -96,15 +99,15 @@ class EmptyHint extends StatelessWidget {
             Icon(
               icon,
               size: 40,
-              color: AppTheme.textSecondary.withValues(alpha: 0.6),
+              color: context.textSecondary.withValues(alpha: 0.6),
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             Text(
               text,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: AppTheme.textSecondary,
+                color: context.textSecondary,
                 height: 1.5,
               ),
             ),

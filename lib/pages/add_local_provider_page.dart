@@ -302,13 +302,13 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
             _Label(text: l10n.localProviderMmprojFile),
             Text(
               l10n.localProviderMmprojHint,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
-                color: AppTheme.textSecondary,
+                color: context.textSecondary,
                 height: 1.4,
               ),
             ),
-            const SizedBox(height: 6),
+            SizedBox(height: 6),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -414,10 +414,10 @@ class _Label extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 6, left: 2),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: AppTheme.textSecondary,
+          color: context.textSecondary,
         ),
       ),
     );
@@ -447,16 +447,16 @@ class _ContextSizeSlider extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: AppTheme.textSecondary,
+                  color: context.textSecondary,
                 ),
               ),
             ),
             Text(
               '$value',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ],
         ),
@@ -476,9 +476,9 @@ class _ContextSizeSlider extends StatelessWidget {
               .map(
                 (p) => Text(
                   '$p',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 10,
-                    color: AppTheme.textSecondary,
+                    color: context.textSecondary,
                   ),
                 ),
               )
@@ -512,16 +512,16 @@ class _MaxTokensSlider extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: AppTheme.textSecondary,
+                  color: context.textSecondary,
                 ),
               ),
             ),
             Text(
               '$value',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ],
         ),
@@ -541,9 +541,9 @@ class _MaxTokensSlider extends StatelessWidget {
               .map(
                 (p) => Text(
                   '$p',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 10,
-                    color: AppTheme.textSecondary,
+                    color: context.textSecondary,
                   ),
                 ),
               )
@@ -583,16 +583,16 @@ class _SliderField extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: AppTheme.textSecondary,
+                  color: context.textSecondary,
                 ),
               ),
             ),
             Text(
               display,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ],
         ),
@@ -659,10 +659,10 @@ class _GpuLayersFieldState extends State<_GpuLayersField> {
             Expanded(
               child: Text(
                 widget.label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: AppTheme.textSecondary,
+                  color: context.textSecondary,
                 ),
               ),
             ),
@@ -672,7 +672,7 @@ class _GpuLayersFieldState extends State<_GpuLayersField> {
                 controller: _controller,
                 keyboardType: TextInputType.number,
                 textAlign: TextAlign.right,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isDense: true,
                   contentPadding: EdgeInsets.symmetric(
                     vertical: 6,
@@ -692,7 +692,7 @@ class _GpuLayersFieldState extends State<_GpuLayersField> {
         const SizedBox(height: 2),
         Text(
           widget.hint,
-          style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary),
+          style: TextStyle(fontSize: 10, color: context.textSecondary),
         ),
       ],
     );

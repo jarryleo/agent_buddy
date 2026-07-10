@@ -31,6 +31,7 @@
   "homeLocalModelDismiss": "忽略",
 
   "settingsTitle": "设置",
+  "settingsTabGeneral": "常规",
   "settingsTabProvider": "模型",
   "settingsTabRole": "角色",
   "settingsTabTools": "工具",
@@ -168,5 +169,24 @@
 
   "chatNoProvider": "请先在设置中添加并启用一个模型提供商。",
   "chatNoModel": "当前提供商没有可用模型,请先在设置中获取模型列表并选择一个模型。",
-  "chatRequestFailed": "请求失败: {error}"
+  "chatRequestFailed": "请求失败: {error}",
+
+  "generalSectionAppearance": "外观",
+  "generalDarkMode": "夜间模式",
+  "generalThemeSystem": "跟随系统",
+  "generalThemeLight": "浅色",
+  "generalThemeDark": "深色",
+  "generalSectionLanguage": "语言",
+  "generalLanguageSystem": "跟随系统",
+  "generalLanguageEn": "English",
+  "generalLanguageZh": "中文",
+  "generalSectionAbout": "关于",
+  "generalAboutAppName": "Agent Buddy",
+  "generalAboutTagline": "跨端智能体基座",
+  "generalAboutVersion": "版本 {version}",
+  "@generalAboutVersion": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  }
 }

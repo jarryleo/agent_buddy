@@ -25,6 +25,8 @@ class SettingsProvider extends ChangeNotifier {
   String? _activeRoleId;
   Set<String> _activeToolIds = {};
   Set<String> _activeSkillIds = {};
+  String _themeMode = 'system';
+  String _localeCode = 'system';
 
   List<ModelProvider> get providers => List.unmodifiable(_providers);
   List<LocalProvider> get localProviders => List.unmodifiable(_localProviders);
@@ -37,6 +39,8 @@ class SettingsProvider extends ChangeNotifier {
   String? get activeRoleId => _activeRoleId;
   Set<String> get activeToolIds => Set.unmodifiable(_activeToolIds);
   Set<String> get activeSkillIds => Set.unmodifiable(_activeSkillIds);
+  String get themeMode => _themeMode;
+  String get localeCode => _localeCode;
 
   ModelProvider? get activeProvider {
     if (_activeProviderId == null) return null;
@@ -79,6 +83,8 @@ class SettingsProvider extends ChangeNotifier {
     _activeRoleId = _storage.activeRoleId;
     _activeToolIds = _storage.activeToolIds.toSet();
     _activeSkillIds = _storage.activeSkillIds.toSet();
+    _themeMode = _storage.themeMode;
+    _localeCode = _storage.localeCode;
 
     // Seed built-in tools. Fresh installs hit the `isEmpty` branch and
     // get every builtin; existing installs hit the second branch which
@@ -415,6 +421,19 @@ class SettingsProvider extends ChangeNotifier {
     }
     await _storage.saveSkills(_skills);
     await _storage.setActiveSkillIds(_activeSkillIds.toList());
+    notifyListeners();
+  }
+
+  // General
+  Future<void> setThemeMode(String mode) async {
+    _themeMode = mode;
+    await _storage.setThemeMode(mode);
+    notifyListeners();
+  }
+
+  Future<void> setLocaleCode(String code) async {
+    _localeCode = code;
+    await _storage.setLocaleCode(code);
     notifyListeners();
   }
 }

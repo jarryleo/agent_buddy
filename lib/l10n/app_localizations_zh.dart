@@ -100,6 +100,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsTitle => '设置';
 
   @override
+  String get settingsTabGeneral => '常规';
+
+  @override
   String get settingsTabProvider => '模型';
 
   @override
@@ -515,5 +518,46 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String chatRequestFailed(String error) {
     return '请求失败: $error';
+  }
+
+  @override
+  String get generalSectionAppearance => '外观';
+
+  @override
+  String get generalDarkMode => '夜间模式';
+
+  @override
+  String get generalThemeSystem => '跟随系统';
+
+  @override
+  String get generalThemeLight => '浅色';
+
+  @override
+  String get generalThemeDark => '深色';
+
+  @override
+  String get generalSectionLanguage => '语言';
+
+  @override
+  String get generalLanguageSystem => '跟随系统';
+
+  @override
+  String get generalLanguageEn => 'English';
+
+  @override
+  String get generalLanguageZh => '中文';
+
+  @override
+  String get generalSectionAbout => '关于';
+
+  @override
+  String get generalAboutAppName => 'Agent Buddy';
+
+  @override
+  String get generalAboutTagline => '跨端智能体基座';
+
+  @override
+  String generalAboutVersion(String version) {
+    return '版本 $version';
   }
 }
