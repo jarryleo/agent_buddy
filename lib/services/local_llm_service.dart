@@ -6,6 +6,7 @@ import 'package:llamadart/llamadart.dart';
 import '../models/local_provider.dart';
 import '../models/message.dart';
 import 'api_service.dart';
+import 'tool_orchestrator.dart';
 
 class LocalLlmService extends ChangeNotifier {
   LlamaEngine? _engine;
@@ -78,6 +79,7 @@ class LocalLlmService extends ChangeNotifier {
     required List<ChatRequestMessage> messages,
     required List<Map<String, dynamic>> tools,
     Future<String> Function(Map<String, dynamic> toolCall)? onToolCall,
+    ToolOrchestrator? orchestrator,
   }) async* {
     if (!isReady) {
       try {
@@ -107,7 +109,6 @@ class LocalLlmService extends ChangeNotifier {
     _seedHistory(session, historyMessages);
 
     final llamaTools = _buildTools(tools);
-    final historyBefore = session.history.length;
 
     final parts = _buildUserParts(messages);
     if (parts.isEmpty) {
@@ -115,103 +116,218 @@ class LocalLlmService extends ChangeNotifier {
       return;
     }
 
-    try {
-      await for (final chunk in session.create(
-        parts,
-        params: GenerationParams(
-          maxTokens: provider.maxTokens,
-          temp: provider.temperature,
-        ),
-        tools: llamaTools.isEmpty ? null : llamaTools,
-        toolChoice: llamaTools.isEmpty ? ToolChoice.none : ToolChoice.auto,
-      )) {
-        if (chunk.choices.isEmpty) continue;
-        final delta = chunk.choices.first.delta;
-        if (delta.thinking != null && delta.thinking!.isNotEmpty) {
-          yield StreamEvent(type: 'reasoning', thinkingDelta: delta.thinking);
-        }
-        if (delta.content != null && delta.content!.isNotEmpty) {
-          yield StreamEvent(type: 'content', contentDelta: delta.content);
-        }
-      }
-    } catch (e) {
-      yield StreamEvent.error('$e');
-      return;
-    }
+    // We can't `yield` from inside the `runOneTurn` closure passed
+    // to the orchestrator (it must return a Stream, not be a
+    // generator running inside another generator). The local
+    // engine's `session.create` is a Stream<GenerationChunk> that we
+    // want to forward live to the chat UI. So: we run a private
+    // StreamController; the runOneTurn generator pumps its session
+    // chunks into the controller, and the controller's output is
+    // what we `yield*` to the caller. The orchestrator's "loop"
+    // sits on top.
+    final outbound = StreamController<StreamEvent>();
+    StreamSubscription<StreamEvent>? outboundSub;
+    final completer = Completer<void>();
 
-    if (onToolCall != null && llamaTools.isNotEmpty) {
-      // Inspect the assistant message the session just added; if it
-      // carries tool calls, execute them, feed the result back, and
-      // stream a follow-up turn.
-      final toolCalls = _lastToolCalls(session, historyBefore);
-      if (toolCalls.isNotEmpty) {
-        for (final call in toolCalls) {
-          final id = call['id'] as String? ?? '';
-          final name = call['name'] as String? ?? '';
-          final argsRaw = call['arguments'] as String? ?? '';
-          final argsMap =
-              call['argsMap'] as Map<String, dynamic>? ??
-              const <String, dynamic>{};
-          yield StreamEvent.toolStart(id: id, name: name, arguments: argsRaw);
-          String toolResult;
-          bool success = true;
-          String? toolError;
-          try {
-            toolResult = await onToolCall({
-              'id': id,
-              'name': name,
-              'arguments': argsMap,
-            });
-          } catch (e) {
-            toolResult = 'Error: $e';
-            success = false;
-            toolError = e.toString();
-          }
-          yield StreamEvent.toolDone(
-            id: id,
-            name: name,
-            result: toolResult,
-            success: success,
-            error: toolError,
-          );
-          session.addMessage(
-            LlamaChatMessage.withContent(
-              role: LlamaChatRole.tool,
-              content: [
-                LlamaToolResultContent(id: id, name: name, result: toolResult),
-              ],
-            ),
-          );
-        }
+    // Run the orchestrator on a microtask so we can set up the
+    // outbound subscription first (no race on the first events).
+    Future<void> orchFuture() async {
+      // The local engine owns the conversation history itself; the
+      // orchestrator's working history list is just a marker. Each
+      // per-round "runOneTurn" advances the session and inspects its
+      // history to extract the just-produced tool calls.
+      Stream<OrchestratorEvent> runOneTurn(
+        List<ChatRequestMessage> history,
+      ) async* {
+        final historyBefore = session.history.length;
+        // Empty parts array is the engine's way of saying "continue
+        // the conversation". We use it on follow-up rounds after the
+        // initial user turn has been added.
+        final isFollowup = history.isNotEmpty;
         try {
           await for (final chunk in session.create(
-            const <LlamaContentPart>[],
+            isFollowup ? const <LlamaContentPart>[] : parts,
             params: GenerationParams(
               maxTokens: provider.maxTokens,
               temp: provider.temperature,
             ),
-            tools: llamaTools,
-            toolChoice: ToolChoice.auto,
+            tools: llamaTools.isEmpty ? null : llamaTools,
+            toolChoice: llamaTools.isEmpty
+                ? ToolChoice.none
+                : ToolChoice.auto,
           )) {
             if (chunk.choices.isEmpty) continue;
             final delta = chunk.choices.first.delta;
             if (delta.thinking != null && delta.thinking!.isNotEmpty) {
-              yield StreamEvent(
-                type: 'reasoning',
-                thinkingDelta: delta.thinking,
-              );
+              yield OrchestratorEvent.reasoning(delta.thinking!);
             }
             if (delta.content != null && delta.content!.isNotEmpty) {
-              yield StreamEvent(type: 'content', contentDelta: delta.content);
+              yield OrchestratorEvent.content(delta.content!);
             }
           }
         } catch (e) {
-          yield StreamEvent.error('$e');
+          yield OrchestratorEvent.turnDone(
+            TurnResult(protocolError: '$e'),
+          );
           return;
         }
+
+        final calls = _lastToolCalls(session, historyBefore);
+        final parsedCalls = <ParsedToolCall>[];
+        for (final call in calls) {
+          final id = call['id'] as String? ?? '';
+          final name = call['name'] as String? ?? '';
+          final argsRaw = call['arguments'] as String? ?? '';
+          final argsMap =
+              (call['argsMap'] as Map?)?.cast<String, dynamic>() ??
+              const <String, dynamic>{};
+          parsedCalls.add(
+            ParsedToolCall(
+              id: id,
+              name: name,
+              argumentsRaw: argsRaw,
+              arguments: argsMap,
+            ),
+          );
+        }
+        yield OrchestratorEvent.turnDone(
+          TurnResult(
+            toolCalls: parsedCalls,
+            emittedAnyContent: true,
+          ),
+        );
+      }
+
+      try {
+        if (onToolCall != null && llamaTools.isNotEmpty) {
+          final orch = orchestrator ?? ToolOrchestrator();
+          await for (final ev in orch.run(
+            runOneTurn: runOneTurn,
+            initialHistory: const <ChatRequestMessage>[],
+            executor: (call) async {
+              final result = await onToolCall({
+                'id': call.id,
+                'name': call.name,
+                'arguments': call.arguments,
+              });
+              session.addMessage(
+                LlamaChatMessage.withContent(
+                  role: LlamaChatRole.tool,
+                  content: [
+                    LlamaToolResultContent(
+                      id: call.id,
+                      name: call.name,
+                      result: result,
+                    ),
+                  ],
+                ),
+              );
+              return result;
+            },
+            onTurnCommitted: (_) {},
+          )) {
+            switch (ev.kind) {
+              case OrchestratorEventKind.content:
+                outbound.add(
+                  StreamEvent(
+                    type: 'content',
+                    contentDelta: ev.contentDelta,
+                  ),
+                );
+                break;
+              case OrchestratorEventKind.reasoning:
+                outbound.add(
+                  StreamEvent(
+                    type: 'reasoning',
+                    thinkingDelta: ev.thinkingDelta,
+                  ),
+                );
+                break;
+              case OrchestratorEventKind.toolStart:
+                outbound.add(
+                  StreamEvent.toolStart(
+                    id: ev.toolId!,
+                    name: ev.toolName!,
+                    arguments: ev.toolArguments ?? '',
+                  ),
+                );
+                break;
+              case OrchestratorEventKind.toolDone:
+                outbound.add(
+                  StreamEvent.toolDone(
+                    id: ev.toolId!,
+                    name: ev.toolName!,
+                    result: ev.toolResult ?? '',
+                    success: ev.toolSuccess ?? false,
+                    error: ev.toolError,
+                  ),
+                );
+                break;
+              case OrchestratorEventKind.error:
+                outbound.add(
+                  StreamEvent(type: 'error', error: ev.error),
+                );
+                break;
+              case OrchestratorEventKind.turnDone:
+                // Internal sentinel; never forwarded to the chat UI.
+                break;
+            }
+          }
+        } else {
+          // Single turn (no orchestrator). Just run one turn and
+          // stream the events.
+          await for (final ev in runOneTurn(
+            const <ChatRequestMessage>[],
+          )) {
+            if (ev.kind == OrchestratorEventKind.turnDone) {
+              if (ev.turnResult?.protocolError != null) {
+                outbound.add(
+                  StreamEvent.error(ev.turnResult!.protocolError!),
+                );
+              }
+              continue;
+            }
+            if (ev.kind == OrchestratorEventKind.content) {
+              outbound.add(
+                StreamEvent(
+                  type: 'content',
+                  contentDelta: ev.contentDelta,
+                ),
+              );
+            } else if (ev.kind == OrchestratorEventKind.reasoning) {
+              outbound.add(
+                StreamEvent(
+                  type: 'reasoning',
+                  thinkingDelta: ev.thinkingDelta,
+                ),
+              );
+            }
+          }
+        }
+      } finally {
+        await outbound.close();
+        if (!completer.isCompleted) completer.complete();
       }
     }
 
+    // Bridge: yield every event the orchestrator pushes into
+    // `outbound` to the caller, and resolve `completer` when the
+    // stream closes.
+    outboundSub = outbound.stream.listen(
+      (e) {},
+      onDone: () {
+        if (!completer.isCompleted) completer.complete();
+      },
+    );
+
+    // Fire and forget — orchFuture() drains outbound on its own.
+    unawaited(orchFuture());
+
+    await for (final ev in outbound.stream) {
+      yield ev;
+    }
+    await completer.future;
+    await outboundSub.cancel();
     yield StreamEvent.done();
   }
 

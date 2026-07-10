@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/message.dart';
 import '../models/provider.dart';
+import 'tool_orchestrator.dart';
 
 class StreamEvent {
   final String type;
@@ -81,12 +82,38 @@ class ChatRequestMessage {
   /// disk instead of decoding base64 data URLs.
   final List<String> imagePaths;
 
+  /// For tool-result messages only: the id of the tool call this
+  /// result is responding to. Protocol layers (OpenAI / Anthropic)
+  /// read this to build the `tool_call_id` / `tool_use_id` field.
+  final String? toolCallId;
+
+  /// For tool-result messages only: the name of the tool that produced
+  /// this result. Some local LLM backends (llamadart) require it on
+  /// the tool message itself.
+  final String? toolName;
+
+  /// OpenAI-only: pre-built `tool_calls` array to attach to an
+  /// assistant message in a follow-up turn. When non-null,
+  /// `_buildOpenAIMessages` writes it directly into the wire payload
+  /// (otherwise it would be impossible to replay a tool call without
+  /// re-decoding the SSE stream).
+  final List<Map<String, dynamic>>? toolCallsWire;
+
+  /// Anthropic-only: pre-built `content` array (with `tool_use`
+  /// blocks) to attach to an assistant message in a follow-up turn.
+  /// Mirrors [toolCallsWire] for Anthropic.
+  final List<Map<String, dynamic>>? anthropicContentBlocks;
+
   const ChatRequestMessage({
     required this.role,
     required this.content,
     this.thinking = '',
     this.imageDataUrls = const [],
     this.imagePaths = const [],
+    this.toolCallId,
+    this.toolName,
+    this.toolCallsWire,
+    this.anthropicContentBlocks,
   });
 }
 
@@ -177,8 +204,9 @@ class ApiService {
   }
 
   /// Streams chat completion. Yields StreamEvent chunks.
-  /// If [onToolCall] is provided and the model requests a tool, the tool is invoked
-  /// and the result is fed back to the model in a follow-up request. The final
+  /// If [onToolCall] is provided, the underlying protocol layer
+  /// is wrapped in a [ToolOrchestrator] that drives the multi-round
+  /// tool-calling loop (with a hard cap on rounds). The final
   /// [StreamEvent.done] is yielded after the conversation is complete.
   Stream<StreamEvent> streamChat({
     required ModelProvider provider,
@@ -187,43 +215,195 @@ class ApiService {
     String? systemPrompt,
     List<Map<String, dynamic>>? tools,
     Future<String> Function(Map<String, dynamic> toolCall)? onToolCall,
+    ToolOrchestrator? orchestrator,
   }) async* {
-    switch (provider.protocol) {
-      case ProviderProtocol.openai:
-        yield* _streamOpenAI(
-          provider: provider,
-          model: model,
-          messages: messages,
-          systemPrompt: systemPrompt,
-          tools: tools,
-          onToolCall: onToolCall,
-        );
-        break;
-      case ProviderProtocol.anthropic:
-        yield* _streamAnthropic(
-          provider: provider,
-          model: model,
-          messages: messages,
-          systemPrompt: systemPrompt,
-          tools: tools,
-          onToolCall: onToolCall,
-        );
-        break;
+    // Without an executor there's no point in the orchestrator — the
+    // model can't actually call any tools, so we just do a single
+    // turn.
+    if (onToolCall == null) {
+      yield* _streamSingleTurn(
+        provider: provider,
+        model: model,
+        messages: messages,
+        systemPrompt: systemPrompt,
+        tools: tools,
+      );
+      return;
     }
+
+    final orch = orchestrator ?? ToolOrchestrator();
+    // Working copy of the request history; the protocol layer mutates
+    // it across rounds (appending the assistant turn + tool messages).
+    final history = List<ChatRequestMessage>.from(messages);
+
+    // Forward every orchestrator event to the chat UI as a
+    // StreamEvent. The protocol layer (called via [runOneTurn])
+    // already streams its content / reasoning deltas, so the UI sees
+    // the live token stream without waiting for a full round to
+    // complete.
+    Stream<OrchestratorEvent> runOneTurn(
+      List<ChatRequestMessage> h,
+    ) {
+      switch (provider.protocol) {
+        case ProviderProtocol.openai:
+          return _runOpenAITurn(
+            provider: provider,
+            model: model,
+            history: h,
+            systemPrompt: systemPrompt,
+            tools: tools,
+          );
+        case ProviderProtocol.anthropic:
+          return _runAnthropicTurn(
+            provider: provider,
+            model: model,
+            history: h,
+            systemPrompt: systemPrompt,
+            tools: tools,
+          );
+      }
+    }
+
+    await for (final ev in orch.run(
+      runOneTurn: runOneTurn,
+      initialHistory: history,
+      executor: (call) async {
+        // The protocol layer doesn't know about the l10n-aware
+        // wrapping in ChatProvider; we throw raw here and let the
+        // orchestrator prefix it with "Error: " for the model. The
+        // UI side gets the error from the toolDone event.
+        return onToolCall({
+          'id': call.id,
+          'name': call.name,
+          'arguments': call.arguments,
+        });
+      },
+      onTurnCommitted: (_) {},
+    )) {
+      switch (ev.kind) {
+        case OrchestratorEventKind.content:
+          yield StreamEvent(
+            type: 'content',
+            contentDelta: ev.contentDelta,
+          );
+          break;
+        case OrchestratorEventKind.reasoning:
+          yield StreamEvent(
+            type: 'reasoning',
+            thinkingDelta: ev.thinkingDelta,
+          );
+          break;
+        case OrchestratorEventKind.toolStart:
+          yield StreamEvent.toolStart(
+            id: ev.toolId!,
+            name: ev.toolName!,
+            arguments: ev.toolArguments ?? '',
+          );
+          break;
+        case OrchestratorEventKind.toolDone:
+          yield StreamEvent.toolDone(
+            id: ev.toolId!,
+            name: ev.toolName!,
+            result: ev.toolResult ?? '',
+            success: ev.toolSuccess ?? false,
+            error: ev.toolError,
+          );
+          break;
+        case OrchestratorEventKind.error:
+          yield StreamEvent(type: 'error', error: ev.error);
+          break;
+        case OrchestratorEventKind.turnDone:
+          // Internal sentinel; never forwarded to the chat UI.
+          break;
+      }
+    }
+    yield StreamEvent.done();
   }
 
-  Stream<StreamEvent> _streamOpenAI({
+  /// Single-turn (no tool calling) streaming. Used when the caller
+  /// doesn't pass an [onToolCall] — i.e. tools aren't actually wired
+  /// up. Mirrors the pre-orchestrator behavior of `_streamOpenAI` /
+  /// `_streamAnthropic` for the "model just chats" case.
+  Stream<StreamEvent> _streamSingleTurn({
     required ModelProvider provider,
     required String model,
     required List<ChatRequestMessage> messages,
     String? systemPrompt,
     List<Map<String, dynamic>>? tools,
-    Future<String> Function(Map<String, dynamic> toolCall)? onToolCall,
+  }) async* {
+    switch (provider.protocol) {
+      case ProviderProtocol.openai:
+        yield* _streamOpenAISingleTurn(
+          provider: provider,
+          model: model,
+          messages: messages,
+          systemPrompt: systemPrompt,
+          tools: tools,
+        );
+        break;
+      case ProviderProtocol.anthropic:
+        yield* _streamAnthropicSingleTurn(
+          provider: provider,
+          model: model,
+          messages: messages,
+          systemPrompt: systemPrompt,
+          tools: tools,
+        );
+        break;
+    }
+  }
+
+  Stream<StreamEvent> _streamOpenAISingleTurn({
+    required ModelProvider provider,
+    required String model,
+    required List<ChatRequestMessage> messages,
+    String? systemPrompt,
+    List<Map<String, dynamic>>? tools,
+  }) async* {
+    // Backward-compat wrapper: run a single turn, ignore any tool
+    // calls the model emits, just stream the text. (No orchestrator
+    // involved.)
+    TurnResult? finalResult;
+    await for (final ev in _runOpenAITurn(
+      provider: provider,
+      model: model,
+      history: messages,
+      systemPrompt: systemPrompt,
+      tools: tools,
+    )) {
+      if (ev.kind == OrchestratorEventKind.turnDone) {
+        finalResult = ev.turnResult;
+      } else if (ev.kind == OrchestratorEventKind.content &&
+          ev.contentDelta != null) {
+        yield StreamEvent(type: 'content', contentDelta: ev.contentDelta);
+      } else if (ev.kind == OrchestratorEventKind.reasoning &&
+          ev.thinkingDelta != null) {
+        yield StreamEvent(type: 'reasoning', thinkingDelta: ev.thinkingDelta);
+      }
+    }
+    if (finalResult?.protocolError != null) {
+      yield StreamEvent.error(finalResult!.protocolError!);
+    }
+    yield StreamEvent.done();
+  }
+
+  /// Runs a single OpenAI turn. Streams live deltas (content /
+  /// reasoning) as `OrchestratorEvent`s, and ends with a
+  /// `OrchestratorEvent.turnDone` carrying the parsed [TurnResult].
+  /// The orchestrator forwards every event to its caller, so the
+  /// chat UI sees the live token stream the same way as before the
+  /// refactor.
+  Stream<OrchestratorEvent> _runOpenAITurn({
+    required ModelProvider provider,
+    required String model,
+    required List<ChatRequestMessage> history,
+    required String? systemPrompt,
+    required List<Map<String, dynamic>>? tools,
   }) async* {
     final payload = <String, dynamic>{
       'model': model,
       'stream': true,
-      'messages': _buildOpenAIMessages(messages, systemPrompt),
+      'messages': _buildOpenAIMessages(history, systemPrompt),
     };
     if (tools != null && tools.isNotEmpty) {
       payload['tools'] = tools;
@@ -237,20 +417,33 @@ class ApiService {
     try {
       resp = await _client.send(req);
     } catch (e) {
-      yield StreamEvent.error('$e');
+      yield OrchestratorEvent.turnDone(TurnResult(protocolError: '$e'));
       return;
     }
 
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
       final body = await resp.stream.bytesToString();
-      yield StreamEvent.error('HTTP ${resp.statusCode}: $body');
+      yield OrchestratorEvent.turnDone(
+        TurnResult(protocolError: 'HTTP ${resp.statusCode}: $body'),
+      );
       return;
     }
 
     final toolCalls = <int, _OpenAIToolCallAccumulator>{};
     String? finishReason;
-    String currentContent = '';
-    String currentReasoning = '';
+    var currentContent = '';
+    var currentReasoning = '';
+    var anyContent = false;
+
+    void emitContent(String chunk) {
+      currentContent += chunk;
+      anyContent = true;
+    }
+
+    void emitReasoning(String chunk) {
+      currentReasoning += chunk;
+      anyContent = true;
+    }
 
     await for (final line
         in resp.stream
@@ -276,22 +469,22 @@ class ApiService {
 
         final reasoning = delta['reasoning_content'] ?? delta['reasoning'];
         if (reasoning is String && reasoning.isNotEmpty) {
-          currentReasoning += reasoning;
-          yield StreamEvent(type: 'reasoning', thinkingDelta: reasoning);
+          emitReasoning(reasoning);
+          yield OrchestratorEvent.reasoning(reasoning);
         }
 
         final content = delta['content'];
         if (content is String && content.isNotEmpty) {
-          currentContent += content;
-          yield StreamEvent(type: 'content', contentDelta: content);
+          emitContent(content);
+          yield OrchestratorEvent.content(content);
         }
         // `refusal` is how OpenAI surfaces a safety/policy
         // refusal. Surface it as content so the user sees the
         // reason rather than a silent empty bubble.
         final refusal = delta['refusal'];
         if (refusal is String && refusal.isNotEmpty) {
-          currentContent += refusal;
-          yield StreamEvent(type: 'content', contentDelta: refusal);
+          emitContent(refusal);
+          yield OrchestratorEvent.content(refusal);
         }
 
         final tc = delta['tool_calls'];
@@ -320,169 +513,123 @@ class ApiService {
       }
     }
 
-    // Handle tool calls if any
-    if (toolCalls.isNotEmpty && onToolCall != null) {
-      final assistantToolCalls = <Map<String, dynamic>>[];
-      final toolMessages = <Map<String, dynamic>>[];
-      for (final acc in toolCalls.values) {
-        final name = acc.name ?? '';
-        final args = acc.arguments ?? '';
-        final id = acc.id ?? '';
-        // Announce the tool call before executing so the UI can show
-        // a "running" state immediately.
-        yield StreamEvent.toolStart(id: id, name: name, arguments: args);
-        Map<String, dynamic> argsJson;
-        try {
-          argsJson = (jsonDecode(args) as Map<String, dynamic>);
-        } catch (_) {
-          argsJson = {'raw': args};
-        }
-        assistantToolCalls.add({
-          'id': id,
-          'type': 'function',
-          'function': {'name': name, 'arguments': args},
-        });
-        String toolResult;
-        bool success = true;
-        String? toolError;
-        try {
-          toolResult = await onToolCall({
-            'id': id,
-            'name': name,
-            'arguments': argsJson,
-          });
-        } catch (e) {
-          // The AI still needs to see the error so it can recover; we
-          // also flag the failure so the UI can render it as failed.
-          toolResult = 'Error: $e';
-          success = false;
-          toolError = e.toString();
-        }
-        yield StreamEvent.toolDone(
+    final parsedCalls = <ParsedToolCall>[];
+    final toolCallsWire = <Map<String, dynamic>>[];
+    for (final acc in toolCalls.values) {
+      final name = acc.name ?? '';
+      final args = acc.arguments ?? '';
+      final id = acc.id ?? '';
+      Map<String, dynamic> argsJson;
+      try {
+        argsJson = (jsonDecode(args) as Map<String, dynamic>);
+      } catch (_) {
+        argsJson = {'raw': args};
+      }
+      parsedCalls.add(
+        ParsedToolCall(
           id: id,
           name: name,
-          result: toolResult,
-          success: success,
-          error: toolError,
-        );
-        toolMessages.add({
-          'role': 'tool',
-          'tool_call_id': id,
-          'content': toolResult,
-        });
-      }
-      // Continue the conversation with tool result
-      final followMessages = <ChatRequestMessage>[
-        ...messages,
-        ChatRequestMessage(
-          role: MessageRole.assistant,
-          content: currentContent,
-          thinking: currentReasoning,
+          argumentsRaw: args,
+          arguments: argsJson,
         ),
-      ];
-      final followupPayload = <String, dynamic>{
-        'model': model,
-        'stream': true,
-        'messages': _buildOpenAIMessages(followMessages, systemPrompt),
-        'tools': tools ?? const [],
-      };
-      // insert tool_calls into the assistant message for protocol compliance
-      final msgs = followupPayload['messages'] as List;
-      final lastAssistant = msgs.last as Map<String, dynamic>;
-      lastAssistant['content'] = currentContent.isEmpty ? null : currentContent;
-      lastAssistant['tool_calls'] = assistantToolCalls;
-      msgs.addAll(toolMessages);
-
-      final followupReq = http.Request('POST', Uri.parse(provider.fullChatUrl))
-        ..headers.addAll(_openAIHeaders(provider))
-        ..body = jsonEncode(followupPayload);
-      final followupResp = await _client.send(followupReq);
-      if (followupResp.statusCode < 200 || followupResp.statusCode >= 300) {
-        final body = await followupResp.stream.bytesToString();
-        yield StreamEvent.error('HTTP ${followupResp.statusCode}: $body');
-        return;
-      }
-      // Track finish_reason + whether we ever surfaced any text so
-      // we can show a useful marker if the model was truncated, got
-      // its response filtered, or returned nothing at all. Without
-      // this the chat would silently end with an empty assistant
-      // bubble after the tool card.
-      String? followupFinishReason;
-      var followupYieldedContent = false;
-      await for (final line
-          in followupResp.stream
-              .transform(utf8.decoder)
-              .transform(const LineSplitter())) {
-        if (line.isEmpty) continue;
-        if (!line.startsWith('data:')) continue;
-        final data = line.substring(5).trim();
-        if (data == '[DONE]') break;
-        try {
-          final json = jsonDecode(data) as Map<String, dynamic>;
-          final choices = json['choices'] as List?;
-          if (choices == null || choices.isEmpty) continue;
-          final choice = choices.first as Map<String, dynamic>;
-          // `finish_reason` lives on the choice (not the delta) and
-          // is set on the final chunk — usually with an empty delta.
-          final finish = choice['finish_reason'];
-          if (finish is String && finish.isNotEmpty) {
-            followupFinishReason = finish;
-          }
-          final delta = choice['delta'] as Map<String, dynamic>?;
-          if (delta == null) continue;
-          // `refusal` is how OpenAI surfaces a safety/policy
-          // refusal. Without this branch, a refused response would
-          // look identical to a hang.
-          final refusal = delta['refusal'];
-          if (refusal is String && refusal.isNotEmpty) {
-            yield StreamEvent(type: 'content', contentDelta: refusal);
-            followupYieldedContent = true;
-          }
-          final content = delta['content'];
-          if (content is String && content.isNotEmpty) {
-            yield StreamEvent(type: 'content', contentDelta: content);
-            followupYieldedContent = true;
-          }
-        } catch (_) {}
-      }
-      // Surface the three failure modes the user can actually do
-      // something about: truncation (use a smaller tool result),
-      // empty response (often a refusal or model glitch), and
-      // content filter (the API explicitly rejected the response).
-      if (followupFinishReason == 'length') {
-        yield StreamEvent(
-          type: 'content',
-          contentDelta: followupYieldedContent
-              ? '\n\n*(response truncated)*'
-              : '*(response truncated)*',
-        );
-      } else if (!followupYieldedContent) {
-        yield StreamEvent(type: 'content', contentDelta: '*(no response)*');
-      }
-      if (followupFinishReason == 'content_filter') {
-        yield StreamEvent(
-          type: 'error',
-          error: 'Response was filtered by the API',
-        );
-      }
+      );
+      toolCallsWire.add({
+        'id': id,
+        'type': 'function',
+        'function': {'name': name, 'arguments': args},
+      });
     }
 
-    yield StreamEvent.done();
+    // Build the assistant turn. The OpenAI wire format for the
+    // assistant message in a follow-up turn is:
+    //   {
+    //     "role": "assistant",
+    //     "content": <text or null>,
+    //     "tool_calls": [ ... ]
+    //   }
+    // We piggyback this on a `ChatRequestMessage` with a special
+    // `toolCallsWire` field that `_buildOpenAIMessages` will read
+    // when building the next round's payload.
+    final assistantTurn = ChatRequestMessage(
+      role: MessageRole.assistant,
+      content: currentContent,
+      thinking: currentReasoning,
+      toolCallsWire: toolCallsWire.isEmpty ? null : toolCallsWire,
+    );
+
+    // Special-case refusal: the model wanted to answer but the API
+    // filtered it. Surface as protocolError so the orchestrator
+    // bails and the chat UI shows the message.
+    if (finishReason == 'content_filter') {
+      yield OrchestratorEvent.turnDone(
+        TurnResult(
+          assistantTurn: assistantTurn,
+          protocolError: 'Response was filtered by the API',
+          emittedAnyContent: anyContent,
+        ),
+      );
+      return;
+    }
+
+    yield OrchestratorEvent.turnDone(
+      TurnResult(
+        assistantTurn: assistantTurn,
+        toolCalls: parsedCalls,
+        truncated: finishReason == 'length',
+        emittedAnyContent: anyContent,
+      ),
+    );
   }
 
-  Stream<StreamEvent> _streamAnthropic({
+  Stream<StreamEvent> _streamAnthropicSingleTurn({
     required ModelProvider provider,
     required String model,
     required List<ChatRequestMessage> messages,
     String? systemPrompt,
     List<Map<String, dynamic>>? tools,
-    Future<String> Function(Map<String, dynamic> toolCall)? onToolCall,
+  }) async* {
+    // Backward-compat wrapper: run a single turn, ignore any tool
+    // calls the model emits, just stream the text. (No orchestrator
+    // involved.)
+    TurnResult? finalResult;
+    await for (final ev in _runAnthropicTurn(
+      provider: provider,
+      model: model,
+      history: messages,
+      systemPrompt: systemPrompt,
+      tools: tools,
+    )) {
+      if (ev.kind == OrchestratorEventKind.turnDone) {
+        finalResult = ev.turnResult;
+      } else if (ev.kind == OrchestratorEventKind.content &&
+          ev.contentDelta != null) {
+        yield StreamEvent(type: 'content', contentDelta: ev.contentDelta);
+      } else if (ev.kind == OrchestratorEventKind.reasoning &&
+          ev.thinkingDelta != null) {
+        yield StreamEvent(type: 'reasoning', thinkingDelta: ev.thinkingDelta);
+      }
+    }
+    if (finalResult?.protocolError != null) {
+      yield StreamEvent.error(finalResult!.protocolError!);
+    }
+    yield StreamEvent.done();
+  }
+
+  /// Runs a single Anthropic turn. Streams live deltas as
+  /// `OrchestratorEvent`s and ends with a `OrchestratorEvent.turnDone`
+  /// carrying the parsed [TurnResult].
+  Stream<OrchestratorEvent> _runAnthropicTurn({
+    required ModelProvider provider,
+    required String model,
+    required List<ChatRequestMessage> history,
+    required String? systemPrompt,
+    required List<Map<String, dynamic>>? tools,
   }) async* {
     final payload = <String, dynamic>{
       'model': model,
       'stream': true,
       'max_tokens': 4096,
-      'messages': _buildAnthropicMessages(messages),
+      'messages': _buildAnthropicMessages(history),
     };
     if (systemPrompt != null && systemPrompt.isNotEmpty) {
       payload['system'] = systemPrompt;
@@ -499,18 +646,33 @@ class ApiService {
     try {
       resp = await _client.send(req);
     } catch (e) {
-      yield StreamEvent.error('$e');
+      yield OrchestratorEvent.turnDone(TurnResult(protocolError: '$e'));
       return;
     }
 
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
       final body = await resp.stream.bytesToString();
-      yield StreamEvent.error('HTTP ${resp.statusCode}: $body');
+      yield OrchestratorEvent.turnDone(
+        TurnResult(protocolError: 'HTTP ${resp.statusCode}: $body'),
+      );
       return;
     }
 
     final toolUseBlocks = <Map<String, dynamic>>[];
-    String currentStopReason = '';
+    var currentStopReason = '';
+    var currentContent = '';
+    var currentReasoning = '';
+    var anyContent = false;
+
+    void emitContent(String chunk) {
+      currentContent += chunk;
+      anyContent = true;
+    }
+
+    void emitReasoning(String chunk) {
+      currentReasoning += chunk;
+      anyContent = true;
+    }
 
     await for (final line
         in resp.stream
@@ -541,12 +703,14 @@ class ApiService {
             if (deltaType == 'thinking_delta') {
               final text = delta['thinking'];
               if (text is String && text.isNotEmpty) {
-                yield StreamEvent(type: 'reasoning', thinkingDelta: text);
+                emitReasoning(text);
+                yield OrchestratorEvent.reasoning(text);
               }
             } else if (deltaType == 'text_delta') {
               final text = delta['text'];
               if (text is String && text.isNotEmpty) {
-                yield StreamEvent(type: 'content', contentDelta: text);
+                emitContent(text);
+                yield OrchestratorEvent.content(text);
               }
             } else if (deltaType == 'input_json_delta') {
               if (toolUseBlocks.isNotEmpty) {
@@ -569,141 +733,84 @@ class ApiService {
       }
     }
 
-    if (currentStopReason == 'tool_use' &&
-        toolUseBlocks.isNotEmpty &&
-        onToolCall != null) {
-      final toolResults = <Map<String, dynamic>>[];
-      for (final tb in toolUseBlocks) {
-        final name = tb['name'] as String? ?? '';
-        final id = tb['id'] as String? ?? '';
-        final argsRaw = tb['input'] as String? ?? '';
-        yield StreamEvent.toolStart(id: id, name: name, arguments: argsRaw);
-        Map<String, dynamic> args;
-        try {
-          args = (jsonDecode(argsRaw) as Map<String, dynamic>);
-        } catch (_) {
-          args = {'raw': argsRaw};
-        }
-        String toolResult;
-        bool success = true;
-        String? toolError;
-        try {
-          toolResult = await onToolCall({
-            'id': id,
-            'name': name,
-            'arguments': args,
-          });
-        } catch (e) {
-          toolResult = 'Error: $e';
-          success = false;
-          toolError = e.toString();
-        }
-        yield StreamEvent.toolDone(
+    // If the model wanted to call tools but stop_reason wasn't
+    // 'tool_use' (rare: stop_sequence / refusal / max_tokens
+    // mid-tool-block), we still surface the parsed tool calls so
+    // the orchestrator can execute them. stop_reason is mostly
+    // advisory here.
+    final parsedCalls = <ParsedToolCall>[];
+    final contentBlocks = <Map<String, dynamic>>[];
+    for (final tb in toolUseBlocks) {
+      final name = tb['name'] as String? ?? '';
+      final id = tb['id'] as String? ?? '';
+      final argsRaw = tb['input'] as String? ?? '';
+      Map<String, dynamic> args;
+      try {
+        args = (jsonDecode(argsRaw) as Map<String, dynamic>);
+      } catch (_) {
+        args = {'raw': argsRaw};
+      }
+      parsedCalls.add(
+        ParsedToolCall(
           id: id,
           name: name,
-          result: toolResult,
-          success: success,
-          error: toolError,
-        );
-        toolResults.add({
-          'type': 'tool_result',
-          'tool_use_id': id,
-          'content': toolResult,
-        });
-      }
-      // Build follow-up request
-      final followupMessages = <Map<String, dynamic>>[
-        ..._buildAnthropicMessages(messages),
-        {
-          'role': 'assistant',
-          'content': [
-            for (final tb in toolUseBlocks)
-              {
-                'type': 'tool_use',
-                'id': tb['id'],
-                'name': tb['name'],
-                'input': jsonDecode(tb['input'] as String? ?? '{}'),
-              },
-          ],
-        },
-        {'role': 'user', 'content': toolResults},
-      ];
-
-      final followupPayload = <String, dynamic>{
-        'model': model,
-        'stream': true,
-        'max_tokens': 4096,
-        'messages': followupMessages,
-      };
-      if (systemPrompt != null && systemPrompt.isNotEmpty) {
-        followupPayload['system'] = systemPrompt;
-      }
-      if (tools != null && tools.isNotEmpty) {
-        followupPayload['tools'] = tools;
-      }
-
-      final followupReq = http.Request('POST', Uri.parse(provider.fullChatUrl))
-        ..headers.addAll(_anthropicHeaders(provider))
-        ..body = jsonEncode(followupPayload);
-      final followupResp = await _client.send(followupReq);
-      if (followupResp.statusCode < 200 || followupResp.statusCode >= 300) {
-        final body = await followupResp.stream.bytesToString();
-        yield StreamEvent.error('HTTP ${followupResp.statusCode}: $body');
-        return;
-      }
-      // Same kind of post-loop handling as OpenAI: capture the
-      // stop_reason (Anthropic sends it on `message_delta` events)
-      // and surface truncation / empty-response cases.
-      String? followupStopReason;
-      var followupYieldedContent = false;
-      await for (final line
-          in followupResp.stream
-              .transform(utf8.decoder)
-              .transform(const LineSplitter())) {
-        if (line.isEmpty) continue;
-        if (!line.startsWith('data:')) continue;
-        final data = line.substring(5).trim();
-        if (data.isEmpty) continue;
-        try {
-          final json = jsonDecode(data) as Map<String, dynamic>;
-          final type = json['type'] as String?;
-          if (type == 'content_block_delta') {
-            final delta = json['delta'] as Map<String, dynamic>?;
-            if (delta != null && delta['type'] == 'text_delta') {
-              final text = delta['text'];
-              if (text is String && text.isNotEmpty) {
-                yield StreamEvent(type: 'content', contentDelta: text);
-                followupYieldedContent = true;
-              }
-            } else if (delta != null && delta['type'] == 'thinking_delta') {
-              final text = delta['thinking'];
-              if (text is String && text.isNotEmpty) {
-                yield StreamEvent(type: 'reasoning', thinkingDelta: text);
-              }
-            }
-          } else if (type == 'message_delta') {
-            // stop_reason is on the delta of message_delta. Values:
-            //   end_turn, max_tokens, stop_sequence, tool_use, refusal.
-            final delta = json['delta'] as Map<String, dynamic>?;
-            if (delta != null && delta['stop_reason'] is String) {
-              followupStopReason = delta['stop_reason'] as String;
-            }
-          }
-        } catch (_) {}
-      }
-      if (followupStopReason == 'max_tokens') {
-        yield StreamEvent(
-          type: 'content',
-          contentDelta: followupYieldedContent
-              ? '\n\n*(response truncated)*'
-              : '*(response truncated)*',
-        );
-      } else if (!followupYieldedContent) {
-        yield StreamEvent(type: 'content', contentDelta: '*(no response)*');
-      }
+          argumentsRaw: argsRaw,
+          arguments: args,
+        ),
+      );
+      contentBlocks.add({
+        'type': 'tool_use',
+        'id': id,
+        'name': name,
+        'input': args,
+      });
     }
 
-    yield StreamEvent.done();
+    final hasBlocks = contentBlocks.isNotEmpty;
+    if (currentContent.isNotEmpty) {
+      contentBlocks.insert(0, {'type': 'text', 'text': currentContent});
+    }
+    if (currentReasoning.isNotEmpty) {
+      // Anthropic puts thinking into its own `thinking` content
+      // block, but for the purposes of feeding back to the model we
+      // treat it as a text block. The reasoning has already been
+      // streamed to the UI via `emitReasoning`; the assistant
+      // content blocks we serialize here are only for the wire
+      // payload.
+      contentBlocks.insert(
+        0,
+        {'type': 'text', 'text': currentReasoning},
+      );
+    }
+
+    final assistantTurn = ChatRequestMessage(
+      role: MessageRole.assistant,
+      content: currentContent,
+      thinking: currentReasoning,
+      anthropicContentBlocks: hasBlocks || currentContent.isNotEmpty
+          ? contentBlocks
+          : null,
+    );
+
+    if (currentStopReason == 'refusal') {
+      yield OrchestratorEvent.turnDone(
+        TurnResult(
+          assistantTurn: assistantTurn,
+          protocolError: 'Response was refused by the API',
+          emittedAnyContent: anyContent,
+        ),
+      );
+      return;
+    }
+
+    yield OrchestratorEvent.turnDone(
+      TurnResult(
+        assistantTurn: assistantTurn,
+        toolCalls: parsedCalls,
+        truncated: currentStopReason == 'max_tokens',
+        emittedAnyContent: anyContent,
+      ),
+    );
   }
 
   List<Map<String, dynamic>> _buildOpenAIMessages(
@@ -734,10 +841,32 @@ class ApiService {
           }
           break;
         case MessageRole.assistant:
-          out.add({'role': 'assistant', 'content': m.content});
+          if (m.toolCallsWire != null && m.toolCallsWire!.isNotEmpty) {
+            // OpenAI requires the assistant message in a tool-calling
+            // round-trip to carry the `tool_calls` array verbatim.
+            // Content can be null when the model only emitted tool
+            // calls.
+            out.add({
+              'role': 'assistant',
+              if (m.content.isNotEmpty) 'content': m.content,
+              if (m.content.isEmpty) 'content': null,
+              'tool_calls': m.toolCallsWire,
+            });
+          } else {
+            out.add({'role': 'assistant', 'content': m.content});
+          }
           break;
         case MessageRole.system:
           out.add({'role': 'system', 'content': m.content});
+          break;
+        case MessageRole.tool:
+          // Tool-result messages go right after the assistant turn
+          // that called them. The id comes from `toolCallId`.
+          out.add({
+            'role': 'tool',
+            'tool_call_id': m.toolCallId ?? '',
+            'content': m.content,
+          });
           break;
       }
     }
@@ -776,11 +905,39 @@ class ApiService {
           }
           break;
         case MessageRole.assistant:
-          out.add({'role': 'assistant', 'content': m.content});
+          if (m.anthropicContentBlocks != null &&
+              m.anthropicContentBlocks!.isNotEmpty) {
+            // Round-trip the assistant content blocks (which include
+            // the `tool_use` entries) verbatim. Otherwise the
+            // follow-up turn would have no record of what tools the
+            // model asked us to call, and the API would 400.
+            out.add({
+              'role': 'assistant',
+              'content': m.anthropicContentBlocks,
+            });
+          } else {
+            out.add({'role': 'assistant', 'content': m.content});
+          }
           break;
         case MessageRole.system:
           // Anthropic uses top-level system; caller should pass via systemPrompt.
           out.add({'role': 'user', 'content': m.content});
+          break;
+        case MessageRole.tool:
+          // Tool-result messages are part of a `user` turn in
+          // Anthropic's wire format. They follow the assistant turn
+          // that called them. We synthesize a `tool_result` content
+          // block keyed by the tool call id.
+          out.add({
+            'role': 'user',
+            'content': [
+              {
+                'type': 'tool_result',
+                'tool_use_id': m.toolCallId ?? '',
+                'content': m.content,
+              },
+            ],
+          });
           break;
       }
     }

@@ -23,7 +23,7 @@ No CI, no pre-commit hooks, no `melos`/`fvm` — keep it simple.
 
 - `lib/main.dart` — root + `MultiProvider` (Settings, Api, Tool, Chat, LocalLlm)
 - `lib/models/` — plain Dart models with `toJson` / `fromJson` for SharedPreferences (incl. `LocalProvider` for on-device GGUF models)
-- `lib/services/` — `StorageService` (SharedPreferences), `ApiService` (OpenAI + Anthropic SSE, throws raw `Error:` strings on purpose for the AI), `ToolService` (HTML fetch for `fetch_web`), `LocalLlmService` (wraps `llamadart`'s `LlamaEngine` + `ChatSession` for GGUF, lazy-loaded on first chat, supports mmproj multimodal)
+- `lib/services/` — `StorageService` (SharedPreferences), `ApiService` (OpenAI + Anthropic SSE, throws raw `Error:` strings on purpose for the AI), `ToolService` (HTML fetch for `fetch_web`), `LocalLlmService` (wraps `llamadart`'s `LlamaEngine` + `ChatSession` for GGUF, lazy-loaded on first chat, supports mmproj multimodal), `ToolOrchestrator` (multi-round tool-calling loop, transport-agnostic; both `ApiService` and `LocalLlmService` delegate to it so model turns can chain tool calls without manual follow-up bookkeeping)
 - `lib/providers/` — `ChangeNotifier`s; `ChatProvider.sendMessage(BuildContext, String)` takes context on purpose to read l10n for user-facing errors
 - `lib/pages/` — top-level routes (`HomePage`, `SettingsPage` + 5 tab pages incl. `LocalProvidersTab`, `AddProviderPage`, `AddLocalProviderPage`)
 - `lib/widgets/` — reusable (`PhoneFrame`, `ChatInput`, `MessageBubble`, `MarkdownContent`, `CodeBlock`, `ImagePreviewPage`, `NoFocusIconButton`)
@@ -61,6 +61,13 @@ No CI, no pre-commit hooks, no `melos`/`fvm` — keep it simple.
 - The model path, mmproj path, context size, temperature, GPU layers and max-tokens are stored in `LocalProvider` (SharedPreferences). The first time the user actually sends a message, `ensureLoaded()` is called and the engine is held in memory for subsequent turns; it's disposed on app teardown.
 - Images attached to a chat message are passed through as `LlamaImageContent(path: ...)` pointing at the local file already cached by `ImageService`. Remote URLs / base64 data URLs are not used (the engine prefers file paths on native backends).
 - The llmamadart native-assets hook downloads runtime archives on first build per platform — first build after adding the dep is slow (similar to Gradle cold start). Don't be surprised by a multi-minute first compile.
+
+### Tool-calling loop (`ToolOrchestrator`)
+- `lib/services/tool_orchestrator.dart` owns the multi-round tool-calling loop. Both `ApiService` (OpenAI / Anthropic) and `LocalLlmService` (llamadart) hand off to it via a `runOneTurn` callback that returns a `TurnResult` (`toolCalls`, `assistantTurn`, `protocolError`, `truncated`).
+- The orchestrator enforces `maxToolRounds` (default 6) and surfaces a soft `OrchestratorEvent.error` when the cap is hit, so a runaway model can't burn tokens forever.
+- `MessageRole.tool` was added to the role enum; old persisted `ChatMessage` JSON is safe because the deserializer falls back to `user` for unknown values.
+- `ChatRequestMessage` gained two protocol-specific fields: `toolCallsWire` (OpenAI) and `anthropicContentBlocks` (Anthropic) so the protocol layer can replay an assistant tool-use turn verbatim in the follow-up payload.
+- `ChatProvider.retryToolCall(context, assistantId, toolId)` re-executes a single failed tool call, updates the in-place `ToolCall` card, and (on success) appends a synthetic user message with the new result so the next user turn feeds it back to the model. The button lives in `MessageBubble._ToolCallCard`.
 
 ## Scope / what "done" looks like
 

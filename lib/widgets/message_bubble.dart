@@ -334,18 +334,26 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _buildToolCalls(BuildContext context, List<ToolCall> calls) {
+    final chat = context.read<ChatProvider>();
+    final assistantId = widget.message.id;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (final tc in calls) ...[
-          _ToolCallCard(toolCall: tc),
+          _ToolCallCard(
+            key: ValueKey('tool_${tc.id}'),
+            toolCall: tc,
+            onRetry: tc.isFailed
+                ? () => chat.retryToolCall(context, assistantId, tc.id)
+                : null,
+          ),
           if (tc.question != null && tc.options != null) ...[
             const SizedBox(height: 4),
             _AskUserOptions(
               key: ValueKey('ask_user_${tc.id}'),
               toolCall: tc,
               onSubmit: (selection) {
-                context.read<ChatProvider>().resolveAskUser(tc.id, selection);
+                chat.resolveAskUser(tc.id, selection);
               },
             ),
           ],
@@ -357,9 +365,10 @@ class _MessageBubbleState extends State<MessageBubble> {
 }
 
 class _ToolCallCard extends StatefulWidget {
-  const _ToolCallCard({required this.toolCall});
+  const _ToolCallCard({super.key, required this.toolCall, this.onRetry});
 
   final ToolCall toolCall;
+  final VoidCallback? onRetry;
 
   @override
   State<_ToolCallCard> createState() => _ToolCallCardState();
@@ -473,6 +482,24 @@ class _ToolCallCardState extends State<_ToolCallCard> {
                       ),
                     ),
                   ],
+                  if (widget.onRetry != null && tc.isFailed) ...[
+                    const SizedBox(width: 4),
+                    Tooltip(
+                      message: l10n.toolCallRetryFailed,
+                      child: InkWell(
+                        onTap: widget.onRetry,
+                        borderRadius: BorderRadius.circular(4),
+                        child: Padding(
+                          padding: const EdgeInsets.all(2),
+                          child: Icon(
+                            Icons.refresh_rounded,
+                            size: 14,
+                            color: color,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   SizedBox(width: 4),
                   Icon(
                     _expanded
@@ -490,6 +517,13 @@ class _ToolCallCardState extends State<_ToolCallCard> {
       ),
     );
   }
+
+  /// Max height for the tool-call arguments / result code blocks.
+  /// Tall enough to show ~24 lines of monospace text; beyond that,
+  /// the block becomes internally scrollable. Without a hard cap the
+  /// bubbles grow without bound for long tool results (a 30KB page
+  /// fetch would push everything else off-screen).
+  static const double _detailsMaxHeight = 320;
 
   Widget _buildDetails(
     BuildContext context,
@@ -516,19 +550,27 @@ class _ToolCallCardState extends State<_ToolCallCard> {
           SizedBox(height: 4),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(6),
+            constraints: const BoxConstraints(maxHeight: _detailsMaxHeight),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(4),
               border: Border.all(color: context.appBorder),
             ),
-            child: Text(
-              hasArgs ? _prettyJson(tc.arguments) : l10n.toolCallNoArguments,
-              style: TextStyle(
-                fontSize: 11,
-                fontFamily: 'monospace',
-                color: context.textPrimary,
-                height: 1.4,
+            child: Scrollbar(
+              thumbVisibility: false,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(6),
+                child: Text(
+                  hasArgs
+                      ? _prettyJson(tc.arguments)
+                      : l10n.toolCallNoArguments,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                    color: context.textPrimary,
+                    height: 1.4,
+                  ),
+                ),
               ),
             ),
           ),
@@ -547,7 +589,7 @@ class _ToolCallCardState extends State<_ToolCallCard> {
             SizedBox(height: 4),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(6),
+              constraints: const BoxConstraints(maxHeight: _detailsMaxHeight),
               decoration: BoxDecoration(
                 color: tc.isFailed ? const Color(0xFFFFF5F5) : Colors.white,
                 borderRadius: BorderRadius.circular(4),
@@ -557,18 +599,24 @@ class _ToolCallCardState extends State<_ToolCallCard> {
                       : context.appBorder,
                 ),
               ),
-              child: Text(
-                (tc.result ?? '').isEmpty ? l10n.toolCallNoResult : tc.result!,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontFamily: 'monospace',
-                  color: tc.isFailed
-                      ? Color(0xFF8B0000)
-                      : context.textPrimary,
-                  height: 1.4,
+              child: Scrollbar(
+                thumbVisibility: false,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(6),
+                  child: Text(
+                    (tc.result ?? '').isEmpty
+                        ? l10n.toolCallNoResult
+                        : tc.result!,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      color: tc.isFailed
+                          ? Color(0xFF8B0000)
+                          : context.textPrimary,
+                      height: 1.4,
+                    ),
+                  ),
                 ),
-                maxLines: 20,
-                overflow: TextOverflow.fade,
               ),
             ),
           ],

@@ -151,6 +151,17 @@ class _HomePageState extends State<HomePage> {
                         itemBuilder: (context, index) {
                           final m = chat.messages[index];
                           return MessageBubble(
+                            // Stable key: the State (and its
+                            // ScrollController) must be tied to the
+                            // message's identity, not its position in
+                            // the list. Without this, Flutter reuses
+                            // the State across messages when the
+                            // list reorders / grows, and the
+                            // controller gets attached to two
+                            // different SingleChildScrollViews
+                            // simultaneously — which throws
+                            // "_positions.length == 1".
+                            key: ValueKey('msg_${m.id}'),
                             message: m,
                             onCopy: (text) async {
                               await Clipboard.setData(

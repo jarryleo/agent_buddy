@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -11,6 +12,7 @@ import '../services/api_service.dart';
 import '../services/image_service.dart';
 import '../services/local_llm_service.dart';
 import '../services/storage_service.dart';
+import '../services/tool_orchestrator.dart';
 import '../services/tool_service.dart';
 import 'settings_provider.dart';
 
@@ -33,6 +35,11 @@ class ChatProvider extends ChangeNotifier {
   final LocalLlmService _localLlm;
   final SettingsProvider _settings;
   final _uuid = const Uuid();
+
+  /// Owns the multi-round tool-calling loop. Stateless from the
+  /// provider's perspective; one instance is enough for the whole
+  /// app lifetime.
+  final ToolOrchestrator _orchestrator = ToolOrchestrator();
 
   List<ChatMessage> _messages = [];
   bool _sending = false;
@@ -95,6 +102,23 @@ class ChatProvider extends ChangeNotifier {
       '当工具返回错误结果(例如命令退出码非零、网络请求失败、'
       '抛出的异常)时,务必在回复中向用户说明错误原因,'
       '并在合适时给出替代方案。不要在工具出错后直接结束本轮。',
+    );
+    // Hard rule: when the user asks for information only a tool can
+    // provide, actually invoke the tool — never paraphrase what the
+    // tool would have said. The orchestrator loops, so it's safe to
+    // call multiple tools per turn; you don't need to bundle them
+    // into one giant call. The system surfaces tool calls as
+    // structured function invocations; "I'll call X now" without a
+    // matching function call is treated as a protocol violation by
+    // the chat UI.
+    buffer.writeln(
+      '【工具调用规则】当用户提出只能通过工具获取的信息时(例如:'
+      '当前时间、抓取某个网页、执行某条命令、获取本地环境、向用户提问),'
+      '你必须直接调用对应的工具来获取结果,不要在文字中假装调用、'
+      '也不要凭印象回答。同一回合内可以连续调用多个工具,'
+      '所有工具结果回来后再综合回答用户。'
+      '在文本中描述"我现在要调用 X"而没有真正发出对应的工具调用,'
+      '等同于协议错误,会导致回复被截断。',
     );
     return buffer.toString().trim();
   }
@@ -300,6 +324,128 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  /// Re-runs a single failed tool call from a finished assistant
+  /// message. The tool is executed once, the in-place `ToolCall` is
+  /// updated with the new result, and a synthetic user message is
+  /// appended so the user can send a new turn (or we can trigger
+  /// one immediately) that feeds the new result back to the model.
+  ///
+  /// We deliberately do NOT auto-trigger a follow-up turn from
+  /// here: the model's previous turn already produced `[DONE]`, so
+  /// re-running it would be ambiguous. The user explicitly clicking
+  /// "Retry" is the trigger to add a new user turn that includes
+  /// the new tool result in the history.
+  Future<void> retryToolCall(
+    BuildContext context,
+    String assistantId,
+    String toolId,
+  ) async {
+    if (_sending) return;
+    final l10n = AppLocalizations.of(context);
+    final idx = _messages.indexWhere((m) => m.id == assistantId);
+    if (idx < 0) return;
+    final assistant = _messages[idx];
+    final tcIdx = assistant.toolCalls.indexWhere((t) => t.id == toolId);
+    if (tcIdx < 0) return;
+    final tc = assistant.toolCalls[tcIdx];
+    if (tc.status == ToolCallStatus.running) return;
+
+    // Reset the tool call to running so the UI flips back to the
+    // spinner, and clear any previous result/error.
+    final updatedTool = tc.copyWith(
+      status: ToolCallStatus.running,
+      result: null,
+      error: null,
+      finishedAt: null,
+    );
+    _messages = [
+      for (final m in _messages)
+        if (m.id == assistantId)
+          m.copyWith(
+            toolCalls: [
+              for (var i = 0; i < m.toolCalls.length; i++)
+                if (i == tcIdx) updatedTool else m.toolCalls[i],
+            ],
+          )
+        else
+          m,
+    ];
+    notifyListeners();
+
+    // Re-execute the tool using the same dispatcher as the live
+    // stream. We synthesize the input shape that the orchestrator
+    // would have passed.
+    Map<String, dynamic> argsMap;
+    try {
+      final decoded = jsonDecode(tc.arguments);
+      argsMap = decoded is Map<String, dynamic>
+          ? decoded
+          : <String, dynamic>{'raw': tc.arguments};
+    } catch (_) {
+      argsMap = <String, dynamic>{'raw': tc.arguments};
+    }
+    final syntheticCall = {
+      'id': tc.id,
+      'name': tc.name,
+      'arguments': argsMap,
+    };
+    String toolResult;
+    bool success = true;
+    String? toolError;
+    try {
+      toolResult = await _onToolCall(context, syntheticCall, assistantId);
+    } catch (e) {
+      toolResult = 'Error: $e';
+      success = false;
+      toolError = e.toString();
+    }
+
+    final finishedAt = DateTime.now();
+    _messages = [
+      for (final m in _messages)
+        if (m.id == assistantId)
+          m.copyWith(
+            toolCalls: [
+              for (var i = 0; i < m.toolCalls.length; i++)
+                if (i == tcIdx)
+                  updatedTool.copyWith(
+                    status: success
+                        ? ToolCallStatus.success
+                        : ToolCallStatus.failed,
+                    result: toolResult,
+                    error: toolError,
+                    finishedAt: finishedAt,
+                  )
+                else
+                  m.toolCalls[i],
+            ],
+          )
+        else
+          m,
+    ];
+    await _storage.saveMessages(_messages);
+    notifyListeners();
+
+    if (success) {
+      // Surface the new result as a user-facing system note so the
+      // model picks it up on the next user turn. We use a real user
+      // message (not an internal channel) so the retry semantics are
+      // obvious in the chat history and the model treats it as
+      // fresh context.
+      final note = l10n.toolCallRetryNote(tc.name, toolResult);
+      _messages = [
+        ..._messages,
+        ChatMessage(
+          id: _uuid.v4(),
+          role: MessageRole.user,
+          content: note,
+        ),
+      ];
+      await _storage.saveMessages(_messages);
+      notifyListeners();
+    }
+  }
+
   Future<void> sendMessage(
     BuildContext context,
     String text, {
@@ -423,6 +569,7 @@ class ChatProvider extends ChangeNotifier {
             messages: requestMessages,
             tools: tools,
             onToolCall: (tc) => _onToolCall(context, tc, assistantId),
+            orchestrator: _orchestrator,
           )
         : _api.streamChat(
             provider: provider!,
@@ -433,6 +580,7 @@ class ChatProvider extends ChangeNotifier {
             systemPrompt: systemPrompt.isEmpty ? null : systemPrompt,
             tools: tools.isEmpty ? null : tools,
             onToolCall: (tc) => _onToolCall(context, tc, assistantId),
+            orchestrator: _orchestrator,
           );
 
     sub = stream.listen(

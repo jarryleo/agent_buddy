@@ -1028,6 +1028,24 @@ abstract class AppLocalizations {
   /// **'Hide details'**
   String get toolCallCollapse;
 
+  /// No description provided for @toolCallRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get toolCallRetry;
+
+  /// No description provided for @toolCallRetryFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry this tool call'**
+  String get toolCallRetryFailed;
+
+  /// No description provided for @toolCallRetryNote.
+  ///
+  /// In en, this message translates to:
+  /// **'[Retry of {tool}] The tool returned the following new result. Please use it to continue or correct your previous answer:\n\n{result}'**
+  String toolCallRetryNote(String tool, String result);
+
   /// No description provided for @chatNoProvider.
   ///
   /// In en, this message translates to:

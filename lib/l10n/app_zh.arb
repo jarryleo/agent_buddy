@@ -166,6 +166,15 @@
   "toolCallNoResult": "(无结果)",
   "toolCallExpand": "展开详情",
   "toolCallCollapse": "收起详情",
+  "toolCallRetry": "重试",
+  "toolCallRetryFailed": "重新执行该工具调用",
+  "toolCallRetryNote": "[重试 {tool}] 工具返回了新的结果,请基于此继续或修正之前的回答:\n\n{result}",
+  "@toolCallRetryNote": {
+    "placeholders": {
+      "tool": { "type": "String" },
+      "result": { "type": "String" }
+    }
+  },
 
   "chatNoProvider": "请先在设置中添加并启用一个模型提供商。",
   "chatNoModel": "当前提供商没有可用模型,请先在设置中获取模型列表并选择一个模型。",

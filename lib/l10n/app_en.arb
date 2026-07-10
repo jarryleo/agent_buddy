@@ -247,6 +247,15 @@
   "toolCallNoResult": "(no result)",
   "toolCallExpand": "Show details",
   "toolCallCollapse": "Hide details",
+  "toolCallRetry": "Retry",
+  "toolCallRetryFailed": "Retry this tool call",
+  "toolCallRetryNote": "[Retry of {tool}] The tool returned the following new result. Please use it to continue or correct your previous answer:\n\n{result}",
+  "@toolCallRetryNote": {
+    "placeholders": {
+      "tool": { "type": "String" },
+      "result": { "type": "String" }
+    }
+  },
 
   "chatNoProvider": "Please add and enable a model provider in settings first.",
   "chatNoModel": "No model is available for the current provider. Please fetch and select a model in settings.",
