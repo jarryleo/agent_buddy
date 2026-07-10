@@ -3,8 +3,20 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart'
+    show MissingPluginException, PlatformException;
+import 'package:hive_ce/hive.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
+
+import '../models/note.dart';
+import '../models/task.dart';
+import 'platform/calendar_service.dart';
+import 'platform/calendar_service_factory.dart';
+import 'platform/notes_service.dart';
+import 'platform/reminders_service.dart';
+import 'platform/reminders_service_factory.dart';
+import 'platform/tasks_service.dart';
 
 /// Thrown by [ToolService] when a tool call fails. Carries a short,
 /// human-readable message that is both shown to the AI (so it can
@@ -17,7 +29,45 @@ class ToolException implements Exception {
 }
 
 class ToolService {
+  ToolService({Box<Note>? notesBox, Box<Task>? tasksBox}) {
+    if (notesBox != null) {
+      _notes = NotesService()..open(preopened: notesBox);
+    }
+    if (tasksBox != null) {
+      _tasks = TasksService()..open(preopened: tasksBox);
+    }
+  }
+
   final http.Client _client = http.Client();
+
+  /// Lazily resolved on first calendar tool call. On non-mobile
+  /// platforms [createCalendarService] returns a stub that throws
+  /// [UnsupportedError] — `ToolException` catches that and surfaces
+  /// a friendly "not supported" message to the model.
+  CalendarService? _calendar;
+  RemindersService? _reminders;
+  NotesService? _notes;
+  TasksService? _tasks;
+
+  CalendarService get calendar {
+    _calendar ??= createCalendarService();
+    return _calendar!;
+  }
+
+  RemindersService get reminders {
+    _reminders ??= createRemindersService();
+    return _reminders!;
+  }
+
+  NotesService get notes {
+    _notes ??= NotesService()..open();
+    return _notes!;
+  }
+
+  TasksService get tasks {
+    _tasks ??= TasksService()..open();
+    return _tasks!;
+  }
 
   /// Fetches the content of [url] and returns it as plain text.
   /// Throws [ToolException] on any failure (bad URL, network error,
@@ -281,5 +331,346 @@ class ToolService {
       throw ToolException(payload);
     }
     return payload;
+  }
+
+  // ---- Mobile / personal-data tools ----
+  //
+  // Each tool takes the raw argument map the model produced and
+  // returns a JSON string the model can parse. Throws [ToolException]
+  // on user input errors, permission denials, and platform
+  // unavailability — the orchestrator turns those into failed tool
+  // cards and surfaces the message to the model.
+
+  static const _actionList = 'list';
+  static const _actionGet = 'get';
+  static const _actionCreate = 'create';
+  static const _actionUpdate = 'update';
+  static const _actionDelete = 'delete';
+  static const _actionComplete = 'complete';
+
+  /// Dispatches the unified `calendar` tool. The model picks the
+  /// `action` and the rest of the parameters per the schema.
+  Future<String> runCalendar(Map<String, dynamic> args) async {
+    final action = args['action'] as String? ?? '';
+    try {
+      switch (action) {
+        case _actionList:
+          final fromMs = (args['from'] as num?)?.toInt();
+          final toMs = (args['to'] as num?)?.toInt();
+          if (fromMs == null || toMs == null) {
+            throw ToolException('action=list requires "from" and "to" (ms)');
+          }
+          final max = (args['max'] as num?)?.toInt() ?? 50;
+          final events = await calendar.listEvents(
+            from: DateTime.fromMillisecondsSinceEpoch(fromMs),
+            to: DateTime.fromMillisecondsSinceEpoch(toMs),
+            max: max,
+          );
+          return jsonEncode({
+            'action': 'list',
+            'count': events.length,
+            'events': events.map((e) => e.toJson()).toList(),
+          });
+        case _actionGet:
+          final id = args['id'] as String? ?? '';
+          if (id.isEmpty) throw ToolException('action=get requires "id"');
+          final ev = await calendar.getEvent(id);
+          if (ev == null) return jsonEncode({'action': 'get', 'found': false});
+          return jsonEncode({
+            'action': 'get',
+            'found': true,
+            'event': ev.toJson(),
+          });
+        case _actionCreate:
+          final title = args['title'] as String? ?? '';
+          final startMs = (args['start_ms'] as num?)?.toInt();
+          if (title.isEmpty || startMs == null) {
+            throw ToolException(
+              'action=create requires "title" and "start_ms"',
+            );
+          }
+          final ev = await calendar.createEvent(
+            title: title,
+            start: DateTime.fromMillisecondsSinceEpoch(startMs),
+            end: (args['end_ms'] as num?)?.toInt() == null
+                ? null
+                : DateTime.fromMillisecondsSinceEpoch(
+                    (args['end_ms'] as num).toInt(),
+                  ),
+            notes: args['notes'] as String?,
+            location: args['location'] as String?,
+            alarmMinutes: (args['alarm_minutes'] as num?)?.toInt(),
+          );
+          return jsonEncode({'action': 'create', 'event': ev.toJson()});
+        case _actionUpdate:
+          final id = args['id'] as String? ?? '';
+          if (id.isEmpty) throw ToolException('action=update requires "id"');
+          final existing = await calendar.getEvent(id);
+          if (existing == null) {
+            return jsonEncode({'action': 'update', 'found': false});
+          }
+          final patched = existing.copyWith(
+            title: args['title'] as String?,
+            start: (args['start_ms'] as num?)?.toInt() == null
+                ? null
+                : DateTime.fromMillisecondsSinceEpoch(
+                    (args['start_ms'] as num).toInt(),
+                  ),
+            end: (args['end_ms'] as num?)?.toInt() == null
+                ? null
+                : DateTime.fromMillisecondsSinceEpoch(
+                    (args['end_ms'] as num).toInt(),
+                  ),
+            notes: args['notes'] as String?,
+            location: args['location'] as String?,
+            alarmMinutes: (args['alarm_minutes'] as num?)?.toInt(),
+          );
+          final updated = await calendar.updateEvent(patched);
+          if (updated == null) {
+            return jsonEncode({'action': 'update', 'found': false});
+          }
+          return jsonEncode({'action': 'update', 'event': updated.toJson()});
+        case _actionDelete:
+          final id = args['id'] as String? ?? '';
+          if (id.isEmpty) throw ToolException('action=delete requires "id"');
+          final ok = await calendar.deleteEvent(id);
+          return jsonEncode({'action': 'delete', 'id': id, 'ok': ok});
+        default:
+          throw ToolException(
+            'unknown action: $action (expected list/get/create/update/delete)',
+          );
+      }
+    } on ToolException {
+      rethrow;
+    } on UnsupportedError catch (e) {
+      throw ToolException('${e.message} (calendar)');
+    } on MissingPluginException {
+      throw ToolException(
+        'calendar tool is not available: native bridge not registered',
+      );
+    } on PlatformException catch (e) {
+      if (e.code == 'PERMISSION_DENIED') {
+        throw ToolException(
+          'calendar permission denied; please grant it in system settings',
+        );
+      }
+      throw ToolException('calendar error: ${e.code}: ${e.message}');
+    }
+  }
+
+  /// Dispatches the unified `reminders` tool. Android uses
+  /// all-day calendar events under a user-picked "todo" calendar; iOS
+  /// uses the Reminders framework directly.
+  Future<String> runReminders(Map<String, dynamic> args) async {
+    final action = args['action'] as String? ?? '';
+    try {
+      switch (action) {
+        case _actionList:
+          final includeCompleted = args['include_completed'] as bool? ?? false;
+          final max = (args['max'] as num?)?.toInt() ?? 50;
+          final items = await reminders.listReminders(
+            includeCompleted: includeCompleted,
+            max: max,
+          );
+          return jsonEncode({
+            'action': 'list',
+            'count': items.length,
+            'reminders': items.map((r) => r.toJson()).toList(),
+          });
+        case _actionCreate:
+          final title = args['title'] as String? ?? '';
+          if (title.isEmpty) {
+            throw ToolException('action=create requires "title"');
+          }
+          final dueMs = (args['due_ms'] as num?)?.toInt();
+          final r = await reminders.createReminder(
+            title: title,
+            notes: args['notes'] as String?,
+            due: dueMs == null
+                ? null
+                : DateTime.fromMillisecondsSinceEpoch(dueMs),
+          );
+          return jsonEncode({'action': 'create', 'reminder': r.toJson()});
+        case _actionComplete:
+          final id = args['id'] as String? ?? '';
+          if (id.isEmpty) throw ToolException('action=complete requires "id"');
+          final r = await reminders.completeReminder(id);
+          if (r == null) {
+            return jsonEncode({'action': 'complete', 'found': false});
+          }
+          return jsonEncode({'action': 'complete', 'reminder': r.toJson()});
+        case _actionUpdate:
+          final id = args['id'] as String? ?? '';
+          if (id.isEmpty) throw ToolException('action=update requires "id"');
+          final existing = await reminders.listReminders(
+            includeCompleted: true,
+            max: 200,
+          );
+          final target = existing.firstWhere(
+            (r) => r.id == id,
+            orElse: () => throw ToolException('reminder not found: $id'),
+          );
+          final patched = target.copyWith(
+            title: args['title'] as String?,
+            notes: args['notes'] as String?,
+            due: (args['due_ms'] as num?)?.toInt() == null
+                ? null
+                : DateTime.fromMillisecondsSinceEpoch(
+                    (args['due_ms'] as num).toInt(),
+                  ),
+          );
+          final updated = await reminders.updateReminder(patched);
+          if (updated == null) {
+            return jsonEncode({'action': 'update', 'found': false});
+          }
+          return jsonEncode({'action': 'update', 'reminder': updated.toJson()});
+        case _actionDelete:
+          final id = args['id'] as String? ?? '';
+          if (id.isEmpty) throw ToolException('action=delete requires "id"');
+          final ok = await reminders.deleteReminder(id);
+          return jsonEncode({'action': 'delete', 'id': id, 'ok': ok});
+        default:
+          throw ToolException(
+            'unknown action: $action (expected list/create/complete/update/delete)',
+          );
+      }
+    } on ToolException {
+      rethrow;
+    } on UnsupportedError catch (e) {
+      throw ToolException('${e.message} (reminders)');
+    } on MissingPluginException {
+      throw ToolException(
+        'reminders tool is not available: native bridge not registered',
+      );
+    } on PlatformException catch (e) {
+      if (e.code == 'PERMISSION_DENIED') {
+        throw ToolException(
+          'reminders permission denied; please grant it in system settings',
+        );
+      }
+      if (e.code == 'NO_TODO_CALENDAR') {
+        throw ToolException('请先在设置中选择一个本地日历作为"待办日历"');
+      }
+      throw ToolException('reminders error: ${e.code}: ${e.message}');
+    }
+  }
+
+  /// Dispatches the unified `notes` tool. Backed by an in-app Hive
+  /// box — works on every platform without OS permissions.
+  Future<String> runNotes(Map<String, dynamic> args) async {
+    final action = args['action'] as String? ?? '';
+    switch (action) {
+      case _actionList:
+        final keyword = args['keyword'] as String?;
+        final max = (args['max'] as num?)?.toInt() ?? 50;
+        final items = notes.list(keyword: keyword, max: max);
+        return jsonEncode({
+          'action': 'list',
+          'count': items.length,
+          'notes': items.map((n) => n.toJson()).toList(),
+        });
+      case _actionGet:
+        final id = args['id'] as String? ?? '';
+        if (id.isEmpty) throw ToolException('action=get requires "id"');
+        final n = notes.get(id);
+        if (n == null) return jsonEncode({'action': 'get', 'found': false});
+        return jsonEncode({'action': 'get', 'found': true, 'note': n.toJson()});
+      case _actionCreate:
+        final title = args['title'] as String? ?? '';
+        final content = args['content'] as String? ?? '';
+        if (title.isEmpty) {
+          throw ToolException('action=create requires "title"');
+        }
+        final n = await notes.create(title: title, content: content);
+        return jsonEncode({'action': 'create', 'note': n.toJson()});
+      case _actionUpdate:
+        final id = args['id'] as String? ?? '';
+        if (id.isEmpty) throw ToolException('action=update requires "id"');
+        final n = await notes.update(
+          id: id,
+          title: args['title'] as String?,
+          content: args['content'] as String?,
+        );
+        if (n == null) return jsonEncode({'action': 'update', 'found': false});
+        return jsonEncode({'action': 'update', 'note': n.toJson()});
+      case _actionDelete:
+        final id = args['id'] as String? ?? '';
+        if (id.isEmpty) throw ToolException('action=delete requires "id"');
+        final ok = await notes.delete(id);
+        return jsonEncode({'action': 'delete', 'id': id, 'ok': ok});
+      default:
+        throw ToolException(
+          'unknown action: $action (expected list/get/create/update/delete)',
+        );
+    }
+  }
+
+  /// Dispatches the unified `tasks` tool. Backed by an in-app Hive
+  /// box. On Android this is the fallback when no system todo
+  /// calendar is configured.
+  Future<String> runTasks(Map<String, dynamic> args) async {
+    final action = args['action'] as String? ?? '';
+    switch (action) {
+      case _actionList:
+        final includeCompleted = args['include_completed'] as bool? ?? false;
+        final max = (args['max'] as num?)?.toInt() ?? 50;
+        final items = tasks.list(includeCompleted: includeCompleted, max: max);
+        return jsonEncode({
+          'action': 'list',
+          'count': items.length,
+          'tasks': items.map((t) => t.toJson()).toList(),
+        });
+      case _actionGet:
+        final id = args['id'] as String? ?? '';
+        if (id.isEmpty) throw ToolException('action=get requires "id"');
+        final t = tasks.get(id);
+        if (t == null) return jsonEncode({'action': 'get', 'found': false});
+        return jsonEncode({'action': 'get', 'found': true, 'task': t.toJson()});
+      case _actionCreate:
+        final title = args['title'] as String? ?? '';
+        if (title.isEmpty) {
+          throw ToolException('action=create requires "title"');
+        }
+        final dueMs = (args['due_ms'] as num?)?.toInt();
+        final t = await tasks.create(
+          title: title,
+          notes: args['notes'] as String?,
+          due: dueMs == null
+              ? null
+              : DateTime.fromMillisecondsSinceEpoch(dueMs),
+        );
+        return jsonEncode({'action': 'create', 'task': t.toJson()});
+      case _actionComplete:
+        final id = args['id'] as String? ?? '';
+        if (id.isEmpty) throw ToolException('action=complete requires "id"');
+        final t = await tasks.complete(id);
+        if (t == null) {
+          return jsonEncode({'action': 'complete', 'found': false});
+        }
+        return jsonEncode({'action': 'complete', 'task': t.toJson()});
+      case _actionUpdate:
+        final id = args['id'] as String? ?? '';
+        if (id.isEmpty) throw ToolException('action=update requires "id"');
+        final dueMs = (args['due_ms'] as num?)?.toInt();
+        final t = await tasks.update(
+          id: id,
+          title: args['title'] as String?,
+          notes: args['notes'] as String?,
+          due: dueMs == null
+              ? null
+              : DateTime.fromMillisecondsSinceEpoch(dueMs),
+        );
+        if (t == null) return jsonEncode({'action': 'update', 'found': false});
+        return jsonEncode({'action': 'update', 'task': t.toJson()});
+      case _actionDelete:
+        final id = args['id'] as String? ?? '';
+        if (id.isEmpty) throw ToolException('action=delete requires "id"');
+        final ok = await tasks.delete(id);
+        return jsonEncode({'action': 'delete', 'id': id, 'ok': ok});
+      default:
+        throw ToolException(
+          'unknown action: $action (expected list/get/create/complete/update/delete)',
+        );
+    }
   }
 }

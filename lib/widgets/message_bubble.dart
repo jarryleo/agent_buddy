@@ -253,10 +253,7 @@ class _MessageBubbleState extends State<MessageBubble> {
               children: [
                 Text(
                   DateFormat('HH:mm').format(m.createdAt.toLocal()),
-                  style: TextStyle(
-                    color: context.textSecondary,
-                    fontSize: 11,
-                  ),
+                  style: TextStyle(color: context.textSecondary, fontSize: 11),
                 ),
                 if (m.content.isNotEmpty) ...[
                   SizedBox(width: 6),
@@ -995,7 +992,9 @@ class _OptionChip extends StatelessWidget {
       color: bg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: selected ? AppTheme.primary : context.appBorder),
+        side: BorderSide(
+          color: selected ? AppTheme.primary : context.appBorder,
+        ),
       ),
       child: InkWell(
         onTap: enabled ? onTap : null,

@@ -193,12 +193,8 @@ class StorageService {
       final session = ChatSession(
         id: _uuid.v4(),
         title: ChatSession.deriveTitle(firstUser.content),
-        createdAt: messages.isNotEmpty
-            ? messages.first.createdAt
-            : now,
-        updatedAt: messages.isNotEmpty
-            ? messages.last.createdAt
-            : now,
+        createdAt: messages.isNotEmpty ? messages.first.createdAt : now,
+        updatedAt: messages.isNotEmpty ? messages.last.createdAt : now,
         messages: List<ChatMessage>.unmodifiable(messages),
       );
       await _sessions.save(session);

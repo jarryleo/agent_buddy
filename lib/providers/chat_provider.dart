@@ -107,10 +107,7 @@ class ChatProvider extends ChangeNotifier {
     final savedId = _storage.activeSessionId;
     ChatSession? picked;
     if (savedId != null && savedId.isNotEmpty) {
-      picked = all.firstWhere(
-        (s) => s.id == savedId,
-        orElse: () => all.first,
-      );
+      picked = all.firstWhere((s) => s.id == savedId, orElse: () => all.first);
     } else {
       picked = all.first;
     }
@@ -178,7 +175,8 @@ class ChatProvider extends ChangeNotifier {
   Future<void> deleteSessions(Iterable<String> ids) async {
     final idSet = ids.toSet();
     if (idSet.isEmpty) return;
-    final wasActive = _activeSession != null && idSet.contains(_activeSession!.id);
+    final wasActive =
+        _activeSession != null && idSet.contains(_activeSession!.id);
     await _storage.sessions.deleteMany(idSet);
     refreshSessionList();
     if (wasActive) {
@@ -281,6 +279,14 @@ class ChatProvider extends ChangeNotifier {
   bool get _isDesktopPlatform {
     if (kIsWeb) return false;
     return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+  }
+
+  /// True on platforms where mobile-only tools (calendar, reminders)
+  /// can actually run. Used to skip the schema for those tools on
+  /// web / desktop so the model doesn't see tools it can't use.
+  bool get _isMobilePlatform {
+    if (kIsWeb) return false;
+    return Platform.isAndroid || Platform.isIOS;
   }
 
   List<Map<String, dynamic>> _buildToolsSchema() {
@@ -393,6 +399,200 @@ class ChatProvider extends ChangeNotifier {
             },
           });
           break;
+        case 'calendar':
+          if (!_isMobilePlatform) break;
+          list.add({
+            'type': 'function',
+            'function': {
+              'name': 'calendar',
+              'description': t.description,
+              'parameters': {
+                'type': 'object',
+                'properties': {
+                  'action': {
+                    'type': 'string',
+                    'enum': ['list', 'get', 'create', 'update', 'delete'],
+                    'description': '操作类型',
+                  },
+                  'id': {
+                    'type': 'string',
+                    'description': 'get/update/delete 时必填',
+                  },
+                  'title': {
+                    'type': 'string',
+                    'description': 'create/update 时事件标题',
+                  },
+                  'start_ms': {
+                    'type': 'integer',
+                    'description': 'create/update 时事件开始时间 (Unix 毫秒)',
+                  },
+                  'end_ms': {
+                    'type': 'integer',
+                    'description': 'create/update 时事件结束时间 (Unix 毫秒),可选',
+                  },
+                  'notes': {'type': 'string', 'description': '事件备注,可选'},
+                  'location': {'type': 'string', 'description': '事件地点,可选'},
+                  'alarm_minutes': {
+                    'type': 'integer',
+                    'description': '提前多少分钟提醒,可选',
+                  },
+                  'from': {
+                    'type': 'integer',
+                    'description': 'list 时窗口起始时间 (Unix 毫秒)',
+                  },
+                  'to': {
+                    'type': 'integer',
+                    'description': 'list 时窗口结束时间 (Unix 毫秒)',
+                  },
+                  'max': {
+                    'type': 'integer',
+                    'description': 'list 时最多返回条数,默认 50',
+                    'default': 50,
+                  },
+                },
+                'required': ['action'],
+              },
+            },
+          });
+          break;
+        case 'reminders':
+          if (!_isMobilePlatform) break;
+          list.add({
+            'type': 'function',
+            'function': {
+              'name': 'reminders',
+              'description': t.description,
+              'parameters': {
+                'type': 'object',
+                'properties': {
+                  'action': {
+                    'type': 'string',
+                    'enum': ['list', 'create', 'complete', 'update', 'delete'],
+                    'description': '操作类型',
+                  },
+                  'id': {
+                    'type': 'string',
+                    'description': 'complete/update/delete 时必填',
+                  },
+                  'title': {
+                    'type': 'string',
+                    'description': 'create/update 时标题',
+                  },
+                  'notes': {'type': 'string', 'description': '备注,可选'},
+                  'due_ms': {
+                    'type': 'integer',
+                    'description': '截止时间 (Unix 毫秒),可选',
+                  },
+                  'include_completed': {
+                    'type': 'boolean',
+                    'description': 'list 时是否包含已完成,默认 false',
+                    'default': false,
+                  },
+                  'max': {
+                    'type': 'integer',
+                    'description': 'list 时最多返回条数,默认 50',
+                    'default': 50,
+                  },
+                },
+                'required': ['action'],
+              },
+            },
+          });
+          break;
+        case 'notes':
+          list.add({
+            'type': 'function',
+            'function': {
+              'name': 'notes',
+              'description': t.description,
+              'parameters': {
+                'type': 'object',
+                'properties': {
+                  'action': {
+                    'type': 'string',
+                    'enum': ['list', 'get', 'create', 'update', 'delete'],
+                    'description': '操作类型',
+                  },
+                  'id': {
+                    'type': 'string',
+                    'description': 'get/update/delete 时必填',
+                  },
+                  'title': {
+                    'type': 'string',
+                    'description': 'create/update 时标题',
+                  },
+                  'content': {
+                    'type': 'string',
+                    'description': 'create/update 时正文',
+                  },
+                  'keyword': {
+                    'type': 'string',
+                    'description': 'list 时可选的标题/内容关键词',
+                  },
+                  'max': {
+                    'type': 'integer',
+                    'description': 'list 时最多返回条数,默认 50',
+                    'default': 50,
+                  },
+                },
+                'required': ['action'],
+              },
+            },
+          });
+          break;
+        case 'tasks':
+          list.add({
+            'type': 'function',
+            'function': {
+              'name': 'tasks',
+              'description': t.description,
+              'parameters': {
+                'type': 'object',
+                'properties': {
+                  'action': {
+                    'type': 'string',
+                    'enum': [
+                      'list',
+                      'get',
+                      'create',
+                      'complete',
+                      'update',
+                      'delete',
+                    ],
+                    'description': '操作类型',
+                  },
+                  'id': {
+                    'type': 'string',
+                    'description': 'get/complete/update/delete 时必填',
+                  },
+                  'title': {
+                    'type': 'string',
+                    'description': 'create/update 时标题',
+                  },
+                  'notes': {
+                    'type': 'string',
+                    'description': 'create/update 时备注,可选',
+                  },
+                  'due_ms': {
+                    'type': 'integer',
+                    'description': '截止时间 (Unix 毫秒),可选',
+                  },
+                  'include_completed': {
+                    'type': 'boolean',
+                    'description': 'list 时是否包含已完成,默认 false',
+                    'default': false,
+                  },
+                  'max': {
+                    'type': 'integer',
+                    'description': 'list 时最多返回条数,默认 50',
+                    'default': 50,
+                  },
+                },
+                'required': ['action'],
+              },
+            },
+          });
+          break;
       }
     }
     return list;
@@ -406,7 +606,10 @@ class ChatProvider extends ChangeNotifier {
     final s = _activeSession;
     if (s == null) return;
     _setActiveSession(
-      s.copyWith(messages: List<ChatMessage>.unmodifiable(messages), updatedAt: DateTime.now()),
+      s.copyWith(
+        messages: List<ChatMessage>.unmodifiable(messages),
+        updatedAt: DateTime.now(),
+      ),
     );
   }
 
@@ -527,6 +730,14 @@ class ChatProvider extends ChangeNotifier {
         );
       case 'get_environment':
         return await _tools.getEnvironment();
+      case 'calendar':
+        return await _tools.runCalendar(args);
+      case 'reminders':
+        return await _tools.runReminders(args);
+      case 'notes':
+        return await _tools.runNotes(args);
+      case 'tasks':
+        return await _tools.runTasks(args);
       default:
         throw ToolException('unknown tool: $name');
     }
@@ -588,11 +799,7 @@ class ChatProvider extends ChangeNotifier {
     } catch (_) {
       argsMap = <String, dynamic>{'raw': tc.arguments};
     }
-    final syntheticCall = {
-      'id': tc.id,
-      'name': tc.name,
-      'arguments': argsMap,
-    };
+    final syntheticCall = {'id': tc.id, 'name': tc.name, 'arguments': argsMap};
     String toolResult;
     bool success = true;
     String? toolError;
@@ -640,11 +847,7 @@ class ChatProvider extends ChangeNotifier {
       final cur = _activeSession!;
       _replaceMessages([
         ...cur.messages,
-        ChatMessage(
-          id: _uuid.v4(),
-          role: MessageRole.user,
-          content: note,
-        ),
+        ChatMessage(id: _uuid.v4(), role: MessageRole.user, content: note),
       ]);
       await _storage.sessions.save(_activeSession!);
       notifyListeners();
@@ -717,7 +920,10 @@ class ChatProvider extends ChangeNotifier {
       }
     }
 
-    final assistantId = _appendUserAndAssistantPlaceholders(trimmed, imagePaths);
+    final assistantId = _appendUserAndAssistantPlaceholders(
+      trimmed,
+      imagePaths,
+    );
     _sending = true;
     await _storage.sessions.save(_activeSession!);
     refreshSessionList();

@@ -9,6 +9,14 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Agent Buddy needs calendar access to let the AI read, create, update, and delete events on your behalf.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Agent Buddy needs full calendar access to let the AI read, create, update, and delete events on your behalf.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Agent Buddy needs reminders access to let the AI read, create, update, complete, and delete your reminders and to-dos.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Agent Buddy needs full reminders access to let the AI read, create, update, complete, and delete your reminders and to-dos.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

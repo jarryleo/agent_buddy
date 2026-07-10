@@ -121,45 +121,47 @@ void main() {
     expect(repo.get('m2'), isNull);
   });
 
-  test('updateMessages rewrites the message list and bumps updatedAt',
-      () async {
-    final t0 = DateTime(2025, 1, 1);
-    final s = ChatSession(
-      id: 'upd',
-      title: 'upd',
-      createdAt: t0,
-      updatedAt: t0,
-      messages: [
+  test(
+    'updateMessages rewrites the message list and bumps updatedAt',
+    () async {
+      final t0 = DateTime(2025, 1, 1);
+      final s = ChatSession(
+        id: 'upd',
+        title: 'upd',
+        createdAt: t0,
+        updatedAt: t0,
+        messages: [
+          ChatMessage(
+            id: 'a',
+            role: MessageRole.user,
+            content: 'a',
+            createdAt: t0,
+          ),
+        ],
+      );
+      await repo.save(s);
+
+      final newMsgs = <ChatMessage>[
         ChatMessage(
           id: 'a',
           role: MessageRole.user,
           content: 'a',
           createdAt: t0,
         ),
-      ],
-    );
-    await repo.save(s);
-
-    final newMsgs = <ChatMessage>[
-      ChatMessage(
-        id: 'a',
-        role: MessageRole.user,
-        content: 'a',
-        createdAt: t0,
-      ),
-      ChatMessage(
-        id: 'b',
-        role: MessageRole.assistant,
-        content: 'b',
-        createdAt: t0,
-      ),
-    ];
-    await repo.updateMessages('upd', newMsgs);
-    final loaded = repo.get('upd')!;
-    expect(loaded.messages, hasLength(2));
-    expect(loaded.messages[1].content, 'b');
-    expect(loaded.updatedAt.isAfter(t0), isTrue);
-  });
+        ChatMessage(
+          id: 'b',
+          role: MessageRole.assistant,
+          content: 'b',
+          createdAt: t0,
+        ),
+      ];
+      await repo.updateMessages('upd', newMsgs);
+      final loaded = repo.get('upd')!;
+      expect(loaded.messages, hasLength(2));
+      expect(loaded.messages[1].content, 'b');
+      expect(loaded.updatedAt.isAfter(t0), isTrue);
+    },
+  );
 
   test('deriveTitle truncates long user messages', () {
     expect(ChatSession.deriveTitle('hi'), 'hi');

@@ -866,6 +866,72 @@ abstract class AppLocalizations {
   /// **'Get local system information (OS, architecture, user, home directory, shell, kernel version) so the model can pick platform-specific commands. Desktop only (Windows / macOS / Linux).'**
   String get toolGetEnvironmentDescription;
 
+  /// No description provided for @toolCalendarName.
+  ///
+  /// In en, this message translates to:
+  /// **'Calendar'**
+  String get toolCalendarName;
+
+  /// No description provided for @toolCalendarDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage the phone\'s system calendar (list, get, create, update, delete events). Requires calendar read/write permission. Android / iOS only.'**
+  String get toolCalendarDescription;
+
+  /// No description provided for @toolRemindersName.
+  ///
+  /// In en, this message translates to:
+  /// **'Reminders'**
+  String get toolRemindersName;
+
+  /// No description provided for @toolRemindersDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage reminders and to-dos (iOS: Reminders framework; Android: all-day calendar events). Requires reminders / calendar write permission. Android / iOS only.'**
+  String get toolRemindersDescription;
+
+  /// No description provided for @toolNotesName.
+  ///
+  /// In en, this message translates to:
+  /// **'Notes'**
+  String get toolNotesName;
+
+  /// No description provided for @toolNotesDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage Agent Buddy\'s built-in notes (stored locally in Hive, no system permission required).'**
+  String get toolNotesDescription;
+
+  /// No description provided for @toolTasksName.
+  ///
+  /// In en, this message translates to:
+  /// **'Tasks'**
+  String get toolTasksName;
+
+  /// No description provided for @toolTasksDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage Agent Buddy\'s built-in task list (stored locally in Hive, no system permission required). On Android, this also acts as the fallback for the Reminders tool.'**
+  String get toolTasksDescription;
+
+  /// No description provided for @remindersPickerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a todo calendar'**
+  String get remindersPickerTitle;
+
+  /// No description provided for @remindersPickerDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Android stores reminders as all-day events in one of your calendars. Pick the calendar Agent Buddy should use to save your reminders and to-dos.'**
+  String get remindersPickerDescription;
+
+  /// No description provided for @remindersPickerEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No writable calendar found. Add a local or Google calendar on this device first, then come back.'**
+  String get remindersPickerEmpty;
+
   /// No description provided for @skillListEmpty.
   ///
   /// In en, this message translates to:

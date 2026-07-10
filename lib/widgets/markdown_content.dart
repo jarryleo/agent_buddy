@@ -17,11 +17,7 @@ class MarkdownContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final base = MarkdownStyleSheet(
-      p: TextStyle(
-        fontSize: 15,
-        height: 1.6,
-        color: context.textPrimary,
-      ),
+      p: TextStyle(fontSize: 15, height: 1.6, color: context.textPrimary),
       h1: TextStyle(
         fontSize: 22,
         fontWeight: FontWeight.w700,
@@ -62,10 +58,7 @@ class MarkdownContent extends StatelessWidget {
         fontWeight: FontWeight.w700,
         color: context.textPrimary,
       ),
-      em: TextStyle(
-        fontStyle: FontStyle.italic,
-        color: context.textPrimary,
-      ),
+      em: TextStyle(fontStyle: FontStyle.italic, color: context.textPrimary),
       del: TextStyle(
         decoration: TextDecoration.lineThrough,
         color: context.textSecondary,
@@ -84,9 +77,7 @@ class MarkdownContent extends StatelessWidget {
       blockquotePadding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       blockquoteDecoration: BoxDecoration(
         color: context.bg,
-        border: Border(
-          left: BorderSide(color: AppTheme.primary, width: 3),
-        ),
+        border: Border(left: BorderSide(color: AppTheme.primary, width: 3)),
         borderRadius: BorderRadius.circular(4),
       ),
       code: const TextStyle(

@@ -61,9 +61,7 @@ class _SessionManagerSheetState extends State<SessionManagerSheet> {
         return Container(
           decoration: BoxDecoration(
             color: context.surface,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(16),
-            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
           ),
           child: Column(
             children: [
@@ -209,8 +207,7 @@ class _SessionManagerSheetState extends State<SessionManagerSheet> {
                                 _selected.add(s.id);
                               });
                             },
-                            onDelete: () =>
-                                _confirmAndDelete(chat, [s.id]),
+                            onDelete: () => _confirmAndDelete(chat, [s.id]),
                           );
                         },
                       ),
@@ -287,8 +284,10 @@ class _SessionRow extends StatelessWidget {
       return DateFormat('HH:mm').format(local);
     }
     if (now.difference(local).inDays < 7) {
-      return DateFormat('E HH:mm', Localizations.localeOf(context).toString())
-          .format(local);
+      return DateFormat(
+        'E HH:mm',
+        Localizations.localeOf(context).toString(),
+      ).format(local);
     }
     return DateFormat('yyyy-MM-dd HH:mm').format(local);
   }
@@ -343,9 +342,7 @@ class _SessionRow extends StatelessWidget {
                     session.title,
                     style: TextStyle(
                       fontSize: 14,
-                      fontWeight: isActive
-                          ? FontWeight.w600
-                          : FontWeight.w500,
+                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
                       color: isActive ? AppTheme.primary : null,
                     ),
                     maxLines: 1,

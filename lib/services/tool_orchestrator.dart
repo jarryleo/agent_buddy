@@ -6,7 +6,14 @@ import 'api_service.dart';
 /// Events surfaced by [ToolOrchestrator.run] to the caller (chat UI).
 /// Mirrors the existing `StreamEvent` vocabulary so the ChatProvider
 /// listener doesn't need to change.
-enum OrchestratorEventKind { toolStart, toolDone, content, reasoning, error, turnDone }
+enum OrchestratorEventKind {
+  toolStart,
+  toolDone,
+  content,
+  reasoning,
+  error,
+  turnDone,
+}
 
 class OrchestratorEvent {
   final OrchestratorEventKind kind;
@@ -40,10 +47,7 @@ class OrchestratorEvent {
   /// OrchestratorEvent.turnDone(...)` in tests and other constant
   /// contexts.
   const OrchestratorEvent._turnDoneSentinel(TurnResult result)
-    : this._(
-        kind: OrchestratorEventKind.turnDone,
-        turnResult: result,
-      );
+    : this._(kind: OrchestratorEventKind.turnDone, turnResult: result);
 
   factory OrchestratorEvent.toolStart({
     required String id,
@@ -81,10 +85,8 @@ class OrchestratorEvent {
     thinkingDelta: delta,
   );
 
-  factory OrchestratorEvent.error(String error) => OrchestratorEvent._(
-    kind: OrchestratorEventKind.error,
-    error: error,
-  );
+  factory OrchestratorEvent.error(String error) =>
+      OrchestratorEvent._(kind: OrchestratorEventKind.error, error: error);
 
   /// Sentinel: the per-round generator is done and produced a
   /// [TurnResult]. The orchestrator uses this to know when to stop
@@ -159,8 +161,7 @@ class ToolOutcome {
   final bool success;
   final String? error;
   const ToolOutcome(this.result, {required this.success, this.error});
-  factory ToolOutcome.ok(String result) =>
-      ToolOutcome(result, success: true);
+  factory ToolOutcome.ok(String result) => ToolOutcome(result, success: true);
   factory ToolOutcome.fail(String result, String error) =>
       ToolOutcome(result, success: false, error: error);
 }
@@ -207,7 +208,8 @@ class ToolOrchestrator {
   Stream<OrchestratorEvent> run({
     required Stream<OrchestratorEvent> Function(
       List<ChatRequestMessage> history,
-    ) runOneTurn,
+    )
+    runOneTurn,
     required List<ChatRequestMessage> initialHistory,
     required ToolCallExecutor executor,
     required void Function(List<ChatRequestMessage>) onTurnCommitted,

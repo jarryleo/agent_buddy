@@ -171,50 +171,53 @@ void main() {
       expect(events, isEmpty);
     });
 
-    test('catches executor exceptions and reports the tool as failed', () async {
-      final events = <OrchestratorEvent>[];
-      final orch = ToolOrchestrator();
+    test(
+      'catches executor exceptions and reports the tool as failed',
+      () async {
+        final events = <OrchestratorEvent>[];
+        final orch = ToolOrchestrator();
 
-      Stream<OrchestratorEvent> runOneTurn(
-        List<ChatRequestMessage> history,
-      ) async* {
-        yield const OrchestratorEvent.turnDone(
-          TurnResult(
-            assistantTurn: null,
-            toolCalls: [
-              ParsedToolCall(
-                id: 'call_1',
-                name: 'fetch_web',
-                argumentsRaw: '{}',
-                arguments: {},
-              ),
-            ],
-            emittedAnyContent: true,
-          ),
+        Stream<OrchestratorEvent> runOneTurn(
+          List<ChatRequestMessage> history,
+        ) async* {
+          yield const OrchestratorEvent.turnDone(
+            TurnResult(
+              assistantTurn: null,
+              toolCalls: [
+                ParsedToolCall(
+                  id: 'call_1',
+                  name: 'fetch_web',
+                  argumentsRaw: '{}',
+                  arguments: {},
+                ),
+              ],
+              emittedAnyContent: true,
+            ),
+          );
+        }
+
+        await for (final ev in orch.run(
+          runOneTurn: runOneTurn,
+          initialHistory: const <ChatRequestMessage>[],
+          executor: (call) async {
+            throw StateError('boom');
+          },
+          onTurnCommitted: (_) {},
+        )) {
+          events.add(ev);
+        }
+
+        // The orchestrator should have surfaced the failure and stopped
+        // (the follow-up request is the orchestrator's next concern,
+        // not this test's).
+        final toolDone = events.firstWhere(
+          (e) => e.kind == OrchestratorEventKind.toolDone,
         );
-      }
-
-      await for (final ev in orch.run(
-        runOneTurn: runOneTurn,
-        initialHistory: const <ChatRequestMessage>[],
-        executor: (call) async {
-          throw StateError('boom');
-        },
-        onTurnCommitted: (_) {},
-      )) {
-        events.add(ev);
-      }
-
-      // The orchestrator should have surfaced the failure and stopped
-      // (the follow-up request is the orchestrator's next concern,
-      // not this test's).
-      final toolDone = events.firstWhere(
-        (e) => e.kind == OrchestratorEventKind.toolDone,
-      );
-      expect(toolDone.toolSuccess, isFalse);
-      expect(toolDone.toolResult, contains('Error:'));
-      expect(toolDone.toolError, contains('boom'));
-    });
+        expect(toolDone.toolSuccess, isFalse);
+        expect(toolDone.toolResult, contains('Error:'));
+        expect(toolDone.toolError, contains('boom'));
+      },
+    );
 
     test('forwards live content deltas to the outer stream', () async {
       // Regression: a multi-round flow where the FINAL turn emits
@@ -275,67 +278,69 @@ void main() {
       ]);
     });
 
-    test('regression: live text from a final turn after 3 tool rounds',
-        () async {
-      // Mirrors the exact user scenario: 1 time tool + 2 web tools
-      // followed by a final text-only answer turn. The final turn's
-      // text must be forwarded.
-      final events = <OrchestratorEvent>[];
-      final orch = ToolOrchestrator(maxToolRounds: 6);
+    test(
+      'regression: live text from a final turn after 3 tool rounds',
+      () async {
+        // Mirrors the exact user scenario: 1 time tool + 2 web tools
+        // followed by a final text-only answer turn. The final turn's
+        // text must be forwarded.
+        final events = <OrchestratorEvent>[];
+        final orch = ToolOrchestrator(maxToolRounds: 6);
 
-      var round = 0;
-      Stream<OrchestratorEvent> runOneTurn(
-        List<ChatRequestMessage> history,
-      ) async* {
-        round++;
-        if (round <= 3) {
-          // Rounds 1-3: each emits exactly one tool call.
-          yield OrchestratorEvent.turnDone(
-            TurnResult(
-              toolCalls: [
-                ParsedToolCall(
-                  id: 'call_$round',
-                  name: 'fetch_web',
-                  argumentsRaw: '{}',
-                  arguments: const <String, dynamic>{},
-                ),
-              ],
-              emittedAnyContent: true,
-            ),
-          );
-        } else {
-          // Round 4: final answer with text.
-          yield OrchestratorEvent.content('广州明天');
-          yield OrchestratorEvent.content('天气晴');
-          yield const OrchestratorEvent.turnDone(
-            TurnResult(emittedAnyContent: true),
-          );
+        var round = 0;
+        Stream<OrchestratorEvent> runOneTurn(
+          List<ChatRequestMessage> history,
+        ) async* {
+          round++;
+          if (round <= 3) {
+            // Rounds 1-3: each emits exactly one tool call.
+            yield OrchestratorEvent.turnDone(
+              TurnResult(
+                toolCalls: [
+                  ParsedToolCall(
+                    id: 'call_$round',
+                    name: 'fetch_web',
+                    argumentsRaw: '{}',
+                    arguments: const <String, dynamic>{},
+                  ),
+                ],
+                emittedAnyContent: true,
+              ),
+            );
+          } else {
+            // Round 4: final answer with text.
+            yield OrchestratorEvent.content('广州明天');
+            yield OrchestratorEvent.content('天气晴');
+            yield const OrchestratorEvent.turnDone(
+              TurnResult(emittedAnyContent: true),
+            );
+          }
         }
-      }
 
-      await for (final ev in orch.run(
-        runOneTurn: runOneTurn,
-        initialHistory: const <ChatRequestMessage>[],
-        executor: (_) async => 'ok',
-        onTurnCommitted: (_) {},
-      )) {
-        events.add(ev);
-      }
+        await for (final ev in orch.run(
+          runOneTurn: runOneTurn,
+          initialHistory: const <ChatRequestMessage>[],
+          executor: (_) async => 'ok',
+          onTurnCommitted: (_) {},
+        )) {
+          events.add(ev);
+        }
 
-      // 3 rounds of (toolStart, toolDone) followed by 2 content deltas
-      // from the final turn.
-      final kinds = events.map((e) => e.kind).toList();
-      expect(kinds, [
-        OrchestratorEventKind.toolStart,
-        OrchestratorEventKind.toolDone,
-        OrchestratorEventKind.toolStart,
-        OrchestratorEventKind.toolDone,
-        OrchestratorEventKind.toolStart,
-        OrchestratorEventKind.toolDone,
-        OrchestratorEventKind.content,
-        OrchestratorEventKind.content,
-      ]);
-      expect(round, 4);
-    });
+        // 3 rounds of (toolStart, toolDone) followed by 2 content deltas
+        // from the final turn.
+        final kinds = events.map((e) => e.kind).toList();
+        expect(kinds, [
+          OrchestratorEventKind.toolStart,
+          OrchestratorEventKind.toolDone,
+          OrchestratorEventKind.toolStart,
+          OrchestratorEventKind.toolDone,
+          OrchestratorEventKind.toolStart,
+          OrchestratorEventKind.toolDone,
+          OrchestratorEventKind.content,
+          OrchestratorEventKind.content,
+        ]);
+        expect(round, 4);
+      },
+    );
   });
 }

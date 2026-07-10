@@ -260,9 +260,7 @@ class _HomePageState extends State<HomePage> {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(l10n.homeCopied),
-                                    duration: Duration(
-                                      milliseconds: 1200,
-                                    ),
+                                    duration: Duration(milliseconds: 1200),
                                   ),
                                 );
                               }
@@ -371,8 +369,7 @@ class _ChatInputArea extends StatelessWidget {
       final provider = settings.activeProvider;
       ready =
           provider != null &&
-          (provider.selectedModel != null ||
-              provider.models.isNotEmpty);
+          (provider.selectedModel != null || provider.models.isNotEmpty);
     }
     return ChatInput(
       enabled: ready && !sending,
@@ -418,10 +415,7 @@ class _LocalModelStatusBar extends StatelessWidget {
             Expanded(
               child: Text(
                 l10n.homeLocalModelLoading,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: context.textSecondary,
-                ),
+                style: TextStyle(fontSize: 12, color: context.textSecondary),
               ),
             ),
           ],
@@ -436,19 +430,12 @@ class _LocalModelStatusBar extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
         child: Row(
           children: [
-            Icon(
-              Icons.error_outline,
-              size: 16,
-              color: Colors.red,
-            ),
+            Icon(Icons.error_outline, size: 16, color: Colors.red),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 l10n.homeLocalModelLoadFailed(local.loadError.toString()),
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.red,
-                ),
+                style: const TextStyle(fontSize: 12, color: Colors.red),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -483,14 +470,10 @@ class _LocalModelStatusBar extends StatelessWidget {
               ),
             ),
             TextButton(
-              onPressed: () =>
-                  context.read<LocalLlmService>().clearLoadError(),
+              onPressed: () => context.read<LocalLlmService>().clearLoadError(),
               style: TextButton.styleFrom(
                 foregroundColor: context.textSecondary,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 minimumSize: Size(0, 32),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 visualDensity: VisualDensity.compact,
@@ -512,11 +495,7 @@ class _LocalModelStatusBar extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
         child: Row(
           children: [
-            Icon(
-              Icons.check_circle_outline,
-              size: 16,
-              color: AppTheme.primary,
-            ),
+            Icon(Icons.check_circle_outline, size: 16, color: AppTheme.primary),
             const SizedBox(width: 8),
             Expanded(
               child: Text(

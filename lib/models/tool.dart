@@ -3,7 +3,17 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 
-enum BuiltinTool { fetchWeb, currentTime, askUser, runCommand, getEnvironment }
+enum BuiltinTool {
+  fetchWeb,
+  currentTime,
+  askUser,
+  runCommand,
+  getEnvironment,
+  calendar,
+  reminders,
+  notes,
+  tasks,
+}
 
 extension BuiltinToolX on BuiltinTool {
   String get id {
@@ -18,6 +28,14 @@ extension BuiltinToolX on BuiltinTool {
         return 'run_command';
       case BuiltinTool.getEnvironment:
         return 'get_environment';
+      case BuiltinTool.calendar:
+        return 'calendar';
+      case BuiltinTool.reminders:
+        return 'reminders';
+      case BuiltinTool.notes:
+        return 'notes';
+      case BuiltinTool.tasks:
+        return 'tasks';
     }
   }
 
@@ -33,6 +51,14 @@ extension BuiltinToolX on BuiltinTool {
         return 'Run Command';
       case BuiltinTool.getEnvironment:
         return 'Get Environment';
+      case BuiltinTool.calendar:
+        return 'Calendar';
+      case BuiltinTool.reminders:
+        return 'Reminders';
+      case BuiltinTool.notes:
+        return 'Notes';
+      case BuiltinTool.tasks:
+        return 'Tasks';
     }
   }
 
@@ -48,6 +74,14 @@ extension BuiltinToolX on BuiltinTool {
         return '在主机上执行 shell 命令,返回 stdout、stderr 与退出码。仅桌面端 (Windows / macOS / Linux) 可用。';
       case BuiltinTool.getEnvironment:
         return '获取本机环境信息(OS、架构、用户、主目录、shell、内核版本),供模型在执行 run_command 前判断平台特定命令。仅桌面端 (Windows / macOS / Linux) 可用。';
+      case BuiltinTool.calendar:
+        return '管理手机系统日历(读取 / 创建 / 修改 / 删除 / 列出事件)。需要日历读取/写入权限。仅 Android / iOS 可用。';
+      case BuiltinTool.reminders:
+        return '管理提醒事项与待办(iOS: Reminders;Android: 日历全天事件)。需要提醒/日历写入权限。仅 Android / iOS 可用。';
+      case BuiltinTool.notes:
+        return '管理 Agent Buddy 内置笔记(数据存于本机 Hive,无需系统权限)。';
+      case BuiltinTool.tasks:
+        return '管理 Agent Buddy 内置任务清单(数据存于本机 Hive,无需系统权限)。Android 上作为"待办"的回退通路。';
     }
   }
 
@@ -59,11 +93,17 @@ extension BuiltinToolX on BuiltinTool {
       case BuiltinTool.fetchWeb:
       case BuiltinTool.currentTime:
       case BuiltinTool.askUser:
+      case BuiltinTool.notes:
+      case BuiltinTool.tasks:
         return true;
       case BuiltinTool.runCommand:
       case BuiltinTool.getEnvironment:
         if (kIsWeb) return false;
         return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+      case BuiltinTool.calendar:
+      case BuiltinTool.reminders:
+        if (kIsWeb) return false;
+        return Platform.isAndroid || Platform.isIOS;
     }
   }
 }

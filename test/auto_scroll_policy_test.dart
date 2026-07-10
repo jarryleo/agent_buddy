@@ -7,16 +7,10 @@ void main() {
         'already at max', () {
       final p = AutoScrollPolicy();
       // pixels == maxScrollExtent: already at the bottom.
-      expect(
-        p.schedule(pixels: 1000, maxScrollExtent: 1000),
-        isNull,
-      );
+      expect(p.schedule(pixels: 1000, maxScrollExtent: 1000), isNull);
       // pixels within 1 pixel of max: still considered "at the
       // bottom" and skipped.
-      expect(
-        p.schedule(pixels: 1000.5, maxScrollExtent: 1000),
-        isNull,
-      );
+      expect(p.schedule(pixels: 1000.5, maxScrollExtent: 1000), isNull);
     });
 
     test('stream-scroll: jumps while user is at the bottom', () {

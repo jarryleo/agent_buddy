@@ -159,11 +159,9 @@ class _ChatInputState extends State<ChatInput> {
                         hintText: widget.enabled
                             ? l10n.chatInputHint
                             : widget.sending
-                                ? l10n.chatInputHintReplying
-                                : l10n.chatInputHintNoModel,
-                        hintStyle: TextStyle(
-                          color: context.textSecondary,
-                        ),
+                            ? l10n.chatInputHintReplying
+                            : l10n.chatInputHintNoModel,
+                        hintStyle: TextStyle(color: context.textSecondary),
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12,
                           vertical: 10,

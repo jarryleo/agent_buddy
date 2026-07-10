@@ -420,6 +420,43 @@ class AppLocalizationsZh extends AppLocalizations {
       '获取本机环境信息(操作系统、架构、用户、主目录、shell、内核版本),供模型在执行命令行前判断平台特定命令。仅桌面端可用 (Windows / macOS / Linux)。';
 
   @override
+  String get toolCalendarName => '日历';
+
+  @override
+  String get toolCalendarDescription =>
+      '管理手机系统日历(列出 / 读取 / 创建 / 修改 / 删除事件)。需要日历读取/写入权限。仅 Android / iOS 可用。';
+
+  @override
+  String get toolRemindersName => '提醒事项';
+
+  @override
+  String get toolRemindersDescription =>
+      '管理提醒事项与待办(iOS: Reminders 框架;Android: 日历全天事件)。需要提醒/日历写入权限。仅 Android / iOS 可用。';
+
+  @override
+  String get toolNotesName => '笔记';
+
+  @override
+  String get toolNotesDescription => '管理 Agent Buddy 内置笔记(数据存于本机 Hive,无需系统权限)。';
+
+  @override
+  String get toolTasksName => '任务';
+
+  @override
+  String get toolTasksDescription =>
+      '管理 Agent Buddy 内置任务清单(数据存于本机 Hive,无需系统权限)。在 Android 上同时作为提醒事项工具的回退通路。';
+
+  @override
+  String get remindersPickerTitle => '选择待办日历';
+
+  @override
+  String get remindersPickerDescription =>
+      'Android 上的提醒会作为全天事件存放在你某个日历中。请选择 Agent Buddy 用于保存提醒事项与待办的日历。';
+
+  @override
+  String get remindersPickerEmpty => '未找到可写日历。请先在本机添加一个本地或 Google 日历,然后再试。';
+
+  @override
   String get skillListEmpty =>
       '还没有添加任何技能\n技能可在对话时为 AI 提供额外的能力说明\n点击右下角\"新增\"开始';
 

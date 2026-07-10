@@ -70,7 +70,11 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
 
   Future<FilePickerResult?> _pickFile({required bool allowGgufOnly}) async {
     try {
-      if (!allowGgufOnly || kIsWeb || Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+      if (!allowGgufOnly ||
+          kIsWeb ||
+          Platform.isMacOS ||
+          Platform.isWindows ||
+          Platform.isLinux) {
         return await FilePicker.platform.pickFiles(
           type: FileType.custom,
           allowedExtensions: const ['gguf'],
@@ -86,20 +90,17 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
         withData: kIsWeb,
       );
       if (result == null) return null;
-      result.files.retainWhere(
-        (f) => f.extension?.toLowerCase() == 'gguf',
-      );
+      result.files.retainWhere((f) => f.extension?.toLowerCase() == 'gguf');
       return result.files.isEmpty ? null : result;
     } on PlatformException catch (e) {
-      if (e.code == 'unsupported_filter' || e.message?.contains('Unsupported filter') == true) {
+      if (e.code == 'unsupported_filter' ||
+          e.message?.contains('Unsupported filter') == true) {
         final result = await FilePicker.platform.pickFiles(
           type: FileType.any,
           withData: kIsWeb,
         );
         if (result == null) return null;
-        result.files.retainWhere(
-          (f) => f.extension?.toLowerCase() == 'gguf',
-        );
+        result.files.retainWhere((f) => f.extension?.toLowerCase() == 'gguf');
         return result.files.isEmpty ? null : result;
       }
       rethrow;
@@ -476,10 +477,7 @@ class _ContextSizeSlider extends StatelessWidget {
               .map(
                 (p) => Text(
                   '$p',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: context.textSecondary,
-                  ),
+                  style: TextStyle(fontSize: 10, color: context.textSecondary),
                 ),
               )
               .toList(),
@@ -541,10 +539,7 @@ class _MaxTokensSlider extends StatelessWidget {
               .map(
                 (p) => Text(
                   '$p',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: context.textSecondary,
-                  ),
+                  style: TextStyle(fontSize: 10, color: context.textSecondary),
                 ),
               )
               .toList(),

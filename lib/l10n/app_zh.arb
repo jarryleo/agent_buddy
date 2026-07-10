@@ -140,6 +140,18 @@
   "toolRunCommandDescription": "在主机上执行 shell 命令,返回 stdout、stderr 与退出码。仅桌面端可用 (Windows / macOS / Linux)。",
   "toolGetEnvironmentName": "环境信息",
   "toolGetEnvironmentDescription": "获取本机环境信息(操作系统、架构、用户、主目录、shell、内核版本),供模型在执行命令行前判断平台特定命令。仅桌面端可用 (Windows / macOS / Linux)。",
+  "toolCalendarName": "日历",
+  "toolCalendarDescription": "管理手机系统日历(列出 / 读取 / 创建 / 修改 / 删除事件)。需要日历读取/写入权限。仅 Android / iOS 可用。",
+  "toolRemindersName": "提醒事项",
+  "toolRemindersDescription": "管理提醒事项与待办(iOS: Reminders 框架;Android: 日历全天事件)。需要提醒/日历写入权限。仅 Android / iOS 可用。",
+  "toolNotesName": "笔记",
+  "toolNotesDescription": "管理 Agent Buddy 内置笔记(数据存于本机 Hive,无需系统权限)。",
+  "toolTasksName": "任务",
+  "toolTasksDescription": "管理 Agent Buddy 内置任务清单(数据存于本机 Hive,无需系统权限)。在 Android 上同时作为提醒事项工具的回退通路。",
+
+  "remindersPickerTitle": "选择待办日历",
+  "remindersPickerDescription": "Android 上的提醒会作为全天事件存放在你某个日历中。请选择 Agent Buddy 用于保存提醒事项与待办的日历。",
+  "remindersPickerEmpty": "未找到可写日历。请先在本机添加一个本地或 Google 日历,然后再试。",
 
   "skillListEmpty": "还没有添加任何技能\n技能可在对话时为 AI 提供额外的能力说明\n点击右下角\"新增\"开始",
   "skillAddTitle": "新增技能",

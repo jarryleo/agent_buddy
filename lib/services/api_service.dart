@@ -241,9 +241,7 @@ class ApiService {
     // already streams its content / reasoning deltas, so the UI sees
     // the live token stream without waiting for a full round to
     // complete.
-    Stream<OrchestratorEvent> runOneTurn(
-      List<ChatRequestMessage> h,
-    ) {
+    Stream<OrchestratorEvent> runOneTurn(List<ChatRequestMessage> h) {
       switch (provider.protocol) {
         case ProviderProtocol.openai:
           return _runOpenAITurn(
@@ -282,16 +280,10 @@ class ApiService {
     )) {
       switch (ev.kind) {
         case OrchestratorEventKind.content:
-          yield StreamEvent(
-            type: 'content',
-            contentDelta: ev.contentDelta,
-          );
+          yield StreamEvent(type: 'content', contentDelta: ev.contentDelta);
           break;
         case OrchestratorEventKind.reasoning:
-          yield StreamEvent(
-            type: 'reasoning',
-            thinkingDelta: ev.thinkingDelta,
-          );
+          yield StreamEvent(type: 'reasoning', thinkingDelta: ev.thinkingDelta);
           break;
         case OrchestratorEventKind.toolStart:
           yield StreamEvent.toolStart(
@@ -777,10 +769,7 @@ class ApiService {
       // streamed to the UI via `emitReasoning`; the assistant
       // content blocks we serialize here are only for the wire
       // payload.
-      contentBlocks.insert(
-        0,
-        {'type': 'text', 'text': currentReasoning},
-      );
+      contentBlocks.insert(0, {'type': 'text', 'text': currentReasoning});
     }
 
     final assistantTurn = ChatRequestMessage(
@@ -911,10 +900,7 @@ class ApiService {
             // the `tool_use` entries) verbatim. Otherwise the
             // follow-up turn would have no record of what tools the
             // model asked us to call, and the API would 400.
-            out.add({
-              'role': 'assistant',
-              'content': m.anthropicContentBlocks,
-            });
+            out.add({'role': 'assistant', 'content': m.anthropicContentBlocks});
           } else {
             out.add({'role': 'assistant', 'content': m.content});
           }

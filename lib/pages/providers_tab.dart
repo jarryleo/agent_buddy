@@ -29,9 +29,7 @@ class ProvidersTab extends StatelessWidget {
       );
     } else {
       await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => AddProviderPage(settings: settings),
-        ),
+        MaterialPageRoute(builder: (_) => AddProviderPage(settings: settings)),
       );
     }
     onChanged();
@@ -174,7 +172,10 @@ class _CloudList extends StatelessWidget {
   Widget build(BuildContext context) {
     final providers = settings.providers;
     if (providers.isEmpty) {
-      return EmptyHint(text: l10n.providerListEmpty, icon: Icons.cloud_outlined);
+      return EmptyHint(
+        text: l10n.providerListEmpty,
+        icon: Icons.cloud_outlined,
+      );
     }
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
@@ -449,10 +450,7 @@ class _ProviderCard extends StatelessWidget {
               SizedBox(height: 8),
               Text(
                 provider.baseUrl,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: context.textSecondary,
-                ),
+                style: TextStyle(fontSize: 11, color: context.textSecondary),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -462,10 +460,7 @@ class _ProviderCard extends StatelessWidget {
                   l10n.providerCurrentModel(
                     provider.selectedModel ?? provider.models.first,
                   ),
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondary,
-                  ),
+                  style: TextStyle(fontSize: 12, color: context.textSecondary),
                 ),
               ],
               SizedBox(height: 8),

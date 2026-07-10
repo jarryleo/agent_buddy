@@ -5,6 +5,10 @@ import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 
 import 'l10n/app_localizations.dart';
+import 'models/note.dart';
+import 'models/note_adapter.dart';
+import 'models/task.dart';
+import 'models/task_adapter.dart';
 import 'pages/home_page.dart';
 import 'providers/chat_provider.dart';
 import 'providers/settings_provider.dart';
@@ -12,6 +16,8 @@ import 'services/api_service.dart';
 import 'services/chat_session_repository.dart';
 import 'services/image_service.dart';
 import 'services/local_llm_service.dart';
+import 'services/platform/notes_service.dart';
+import 'services/platform/tasks_service.dart';
 import 'services/storage_service.dart';
 import 'services/tool_service.dart';
 import 'theme/app_theme.dart';
@@ -21,14 +27,35 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
   ChatSessionRepository.registerAdapters();
+  if (!Hive.isAdapterRegistered(2)) {
+    Hive.registerAdapter(NoteAdapter());
+  }
+  if (!Hive.isAdapterRegistered(3)) {
+    Hive.registerAdapter(TaskAdapter());
+  }
+  // Built-in notes / tasks boxes. They are opened here so the
+  // ToolService can read / write to them on the first call without
+  // blocking on a Hive lazy-open. Hive is happy to open an empty
+  // box on first launch.
+  final notesBox = await Hive.openBox<Note>(NotesService.boxName);
+  final tasksBox = await Hive.openBox<Task>(TasksService.boxName);
   final storage = StorageService();
   await storage.init();
-  runApp(AgentBuddyApp(storage: storage));
+  runApp(
+    AgentBuddyApp(storage: storage, notesBox: notesBox, tasksBox: tasksBox),
+  );
 }
 
 class AgentBuddyApp extends StatelessWidget {
-  const AgentBuddyApp({super.key, required this.storage});
+  const AgentBuddyApp({
+    super.key,
+    required this.storage,
+    required this.notesBox,
+    required this.tasksBox,
+  });
   final StorageService storage;
+  final Box<Note> notesBox;
+  final Box<Task> tasksBox;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +65,9 @@ class AgentBuddyApp extends StatelessWidget {
           create: (_) => SettingsProvider(storage)..load(),
         ),
         Provider<ApiService>(create: (_) => ApiService()),
-        Provider<ToolService>(create: (_) => ToolService()),
+        Provider<ToolService>(
+          create: (_) => ToolService(notesBox: notesBox, tasksBox: tasksBox),
+        ),
         Provider<ImageService>(create: (_) => ImageService()),
         ChangeNotifierProvider<LocalLlmService>(
           create: (_) => LocalLlmService(),
@@ -91,13 +120,15 @@ class AgentBuddyApp extends StatelessWidget {
               return AnnotatedRegion<SystemUiOverlayStyle>(
                 value: SystemUiOverlayStyle(
                   statusBarColor: Colors.transparent,
-                  statusBarIconBrightness:
-                      isDark ? Brightness.light : Brightness.dark,
+                  statusBarIconBrightness: isDark
+                      ? Brightness.light
+                      : Brightness.dark,
                   systemNavigationBarColor: isDark
                       ? const Color(0xFF0F1115)
                       : const Color(0xFFF6F7F9),
-                  systemNavigationBarIconBrightness:
-                      isDark ? Brightness.light : Brightness.dark,
+                  systemNavigationBarIconBrightness: isDark
+                      ? Brightness.light
+                      : Brightness.dark,
                   systemNavigationBarDividerColor: Colors.transparent,
                 ),
                 child: child ?? const SizedBox.shrink(),

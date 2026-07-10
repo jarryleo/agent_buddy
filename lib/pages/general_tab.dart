@@ -86,23 +86,21 @@ class _ThemeRow extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         child: Row(
           children: [
-            Icon(Icons.dark_mode_outlined, size: 20, color: context.textPrimary),
+            Icon(
+              Icons.dark_mode_outlined,
+              size: 20,
+              color: context.textPrimary,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 l10n.generalDarkMode,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: context.textPrimary,
-                ),
+                style: TextStyle(fontSize: 14, color: context.textPrimary),
               ),
             ),
             Text(
               _labelFor(current),
-              style: TextStyle(
-                fontSize: 13,
-                color: context.textSecondary,
-              ),
+              style: TextStyle(fontSize: 13, color: context.textSecondary),
             ),
             const SizedBox(width: 6),
             Icon(
@@ -145,8 +143,8 @@ class _ThemeRow extends StatelessWidget {
                     m == 'system'
                         ? l10n.generalThemeSystem
                         : m == 'light'
-                            ? l10n.generalThemeLight
-                            : l10n.generalThemeDark,
+                        ? l10n.generalThemeLight
+                        : l10n.generalThemeDark,
                   ),
                   trailing: current == m
                       ? Icon(Icons.check, color: AppTheme.primary)
@@ -187,18 +185,12 @@ class _LanguageRow extends StatelessWidget {
             Expanded(
               child: Text(
                 l10n.generalSectionLanguage,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: context.textPrimary,
-                ),
+                style: TextStyle(fontSize: 14, color: context.textPrimary),
               ),
             ),
             Text(
               _labelFor(current),
-              style: TextStyle(
-                fontSize: 13,
-                color: context.textSecondary,
-              ),
+              style: TextStyle(fontSize: 13, color: context.textSecondary),
             ),
             const SizedBox(width: 6),
             Icon(
@@ -241,8 +233,8 @@ class _LanguageRow extends StatelessWidget {
                     c == 'system'
                         ? l10n.generalLanguageSystem
                         : c == 'en'
-                            ? l10n.generalLanguageEn
-                            : l10n.generalLanguageZh,
+                        ? l10n.generalLanguageEn
+                        : l10n.generalLanguageZh,
                   ),
                   trailing: current == c
                       ? Icon(Icons.check, color: AppTheme.primary)
@@ -282,11 +274,7 @@ class _AboutCard extends StatelessWidget {
               color: AppTheme.primary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: Icon(
-              Icons.bolt_rounded,
-              size: 30,
-              color: AppTheme.primary,
-            ),
+            child: Icon(Icons.bolt_rounded, size: 30, color: AppTheme.primary),
           ),
           const SizedBox(height: 12),
           Text(
@@ -301,10 +289,7 @@ class _AboutCard extends StatelessWidget {
           Text(
             l10n.generalAboutTagline,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 12,
-              color: context.textSecondary,
-            ),
+            style: TextStyle(fontSize: 12, color: context.textSecondary),
           ),
           const SizedBox(height: 10),
           Text(

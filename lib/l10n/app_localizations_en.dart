@@ -435,6 +435,45 @@ class AppLocalizationsEn extends AppLocalizations {
       'Get local system information (OS, architecture, user, home directory, shell, kernel version) so the model can pick platform-specific commands. Desktop only (Windows / macOS / Linux).';
 
   @override
+  String get toolCalendarName => 'Calendar';
+
+  @override
+  String get toolCalendarDescription =>
+      'Manage the phone\'s system calendar (list, get, create, update, delete events). Requires calendar read/write permission. Android / iOS only.';
+
+  @override
+  String get toolRemindersName => 'Reminders';
+
+  @override
+  String get toolRemindersDescription =>
+      'Manage reminders and to-dos (iOS: Reminders framework; Android: all-day calendar events). Requires reminders / calendar write permission. Android / iOS only.';
+
+  @override
+  String get toolNotesName => 'Notes';
+
+  @override
+  String get toolNotesDescription =>
+      'Manage Agent Buddy\'s built-in notes (stored locally in Hive, no system permission required).';
+
+  @override
+  String get toolTasksName => 'Tasks';
+
+  @override
+  String get toolTasksDescription =>
+      'Manage Agent Buddy\'s built-in task list (stored locally in Hive, no system permission required). On Android, this also acts as the fallback for the Reminders tool.';
+
+  @override
+  String get remindersPickerTitle => 'Choose a todo calendar';
+
+  @override
+  String get remindersPickerDescription =>
+      'Android stores reminders as all-day events in one of your calendars. Pick the calendar Agent Buddy should use to save your reminders and to-dos.';
+
+  @override
+  String get remindersPickerEmpty =>
+      'No writable calendar found. Add a local or Google calendar on this device first, then come back.';
+
+  @override
   String get skillListEmpty =>
       'No skills added yet.\nSkills provide extra instructions to the AI during chat.\nTap \"Add\" in the bottom right to start.';
 

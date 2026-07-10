@@ -50,7 +50,7 @@ class LocalLlmService extends ChangeNotifier {
         modelParams: ModelParams(
           contextSize: provider.contextSize,
           gpuLayers: provider.gpuLayers,
-          flashAttention: FlashAttention.enabled
+          flashAttention: FlashAttention.enabled,
         ),
       );
       if (provider.mmprojPath != null && provider.mmprojPath!.isNotEmpty) {
@@ -85,6 +85,7 @@ class LocalLlmService extends ChangeNotifier {
     required List<Map<String, dynamic>> tools,
     Future<String> Function(Map<String, dynamic> toolCall)? onToolCall,
     ToolOrchestrator? orchestrator,
+
     /// Identifier of the chat session this turn belongs to. The
     /// engine's KV cache is only useful across turns of the same
     /// session, so we use this to decide whether to reset+seed the
@@ -113,7 +114,8 @@ class LocalLlmService extends ChangeNotifier {
     // changes (or is null). Same-session turns keep the engine's
     // KV cache hot, so each new turn only does the prefill for
     // the new user message + decode — not the entire history.
-    final sameSession = boundSessionId != null &&
+    final sameSession =
+        boundSessionId != null &&
         _boundSessionId != null &&
         _boundSessionId == boundSessionId;
     if (!sameSession) {
@@ -176,9 +178,7 @@ class LocalLlmService extends ChangeNotifier {
               temp: provider.temperature,
             ),
             tools: llamaTools.isEmpty ? null : llamaTools,
-            toolChoice: llamaTools.isEmpty
-                ? ToolChoice.none
-                : ToolChoice.auto,
+            toolChoice: llamaTools.isEmpty ? ToolChoice.none : ToolChoice.auto,
           )) {
             if (chunk.choices.isEmpty) continue;
             final delta = chunk.choices.first.delta;
@@ -190,9 +190,7 @@ class LocalLlmService extends ChangeNotifier {
             }
           }
         } catch (e) {
-          yield OrchestratorEvent.turnDone(
-            TurnResult(protocolError: '$e'),
-          );
+          yield OrchestratorEvent.turnDone(TurnResult(protocolError: '$e'));
           return;
         }
 
@@ -215,10 +213,7 @@ class LocalLlmService extends ChangeNotifier {
           );
         }
         yield OrchestratorEvent.turnDone(
-          TurnResult(
-            toolCalls: parsedCalls,
-            emittedAnyContent: true,
-          ),
+          TurnResult(toolCalls: parsedCalls, emittedAnyContent: true),
         );
       }
 
@@ -253,10 +248,7 @@ class LocalLlmService extends ChangeNotifier {
             switch (ev.kind) {
               case OrchestratorEventKind.content:
                 outbound.add(
-                  StreamEvent(
-                    type: 'content',
-                    contentDelta: ev.contentDelta,
-                  ),
+                  StreamEvent(type: 'content', contentDelta: ev.contentDelta),
                 );
                 break;
               case OrchestratorEventKind.reasoning:
@@ -288,9 +280,7 @@ class LocalLlmService extends ChangeNotifier {
                 );
                 break;
               case OrchestratorEventKind.error:
-                outbound.add(
-                  StreamEvent(type: 'error', error: ev.error),
-                );
+                outbound.add(StreamEvent(type: 'error', error: ev.error));
                 break;
               case OrchestratorEventKind.turnDone:
                 // Internal sentinel; never forwarded to the chat UI.
@@ -300,30 +290,20 @@ class LocalLlmService extends ChangeNotifier {
         } else {
           // Single turn (no orchestrator). Just run one turn and
           // stream the events.
-          await for (final ev in runOneTurn(
-            const <ChatRequestMessage>[],
-          )) {
+          await for (final ev in runOneTurn(const <ChatRequestMessage>[])) {
             if (ev.kind == OrchestratorEventKind.turnDone) {
               if (ev.turnResult?.protocolError != null) {
-                outbound.add(
-                  StreamEvent.error(ev.turnResult!.protocolError!),
-                );
+                outbound.add(StreamEvent.error(ev.turnResult!.protocolError!));
               }
               continue;
             }
             if (ev.kind == OrchestratorEventKind.content) {
               outbound.add(
-                StreamEvent(
-                  type: 'content',
-                  contentDelta: ev.contentDelta,
-                ),
+                StreamEvent(type: 'content', contentDelta: ev.contentDelta),
               );
             } else if (ev.kind == OrchestratorEventKind.reasoning) {
               outbound.add(
-                StreamEvent(
-                  type: 'reasoning',
-                  thinkingDelta: ev.thinkingDelta,
-                ),
+                StreamEvent(type: 'reasoning', thinkingDelta: ev.thinkingDelta),
               );
             }
           }

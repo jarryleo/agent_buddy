@@ -196,6 +196,18 @@
   "toolRunCommandDescription": "Execute a shell command on the host. Returns stdout, stderr, and exit code. Desktop only (Windows / macOS / Linux).",
   "toolGetEnvironmentName": "Get Environment",
   "toolGetEnvironmentDescription": "Get local system information (OS, architecture, user, home directory, shell, kernel version) so the model can pick platform-specific commands. Desktop only (Windows / macOS / Linux).",
+  "toolCalendarName": "Calendar",
+  "toolCalendarDescription": "Manage the phone's system calendar (list, get, create, update, delete events). Requires calendar read/write permission. Android / iOS only.",
+  "toolRemindersName": "Reminders",
+  "toolRemindersDescription": "Manage reminders and to-dos (iOS: Reminders framework; Android: all-day calendar events). Requires reminders / calendar write permission. Android / iOS only.",
+  "toolNotesName": "Notes",
+  "toolNotesDescription": "Manage Agent Buddy's built-in notes (stored locally in Hive, no system permission required).",
+  "toolTasksName": "Tasks",
+  "toolTasksDescription": "Manage Agent Buddy's built-in task list (stored locally in Hive, no system permission required). On Android, this also acts as the fallback for the Reminders tool.",
+
+  "remindersPickerTitle": "Choose a todo calendar",
+  "remindersPickerDescription": "Android stores reminders as all-day events in one of your calendars. Pick the calendar Agent Buddy should use to save your reminders and to-dos.",
+  "remindersPickerEmpty": "No writable calendar found. Add a local or Google calendar on this device first, then come back.",
 
   "skillListEmpty": "No skills added yet.\nSkills provide extra instructions to the AI during chat.\nTap \"Add\" in the bottom right to start.",
   "skillAddTitle": "Add Skill",
