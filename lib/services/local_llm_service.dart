@@ -152,11 +152,11 @@ class LocalLlmService extends ChangeNotifier {
     // what we `yield*` to the caller. The orchestrator's "loop"
     // sits on top.
     final outbound = StreamController<StreamEvent>();
-    StreamSubscription<StreamEvent>? outboundSub;
     final completer = Completer<void>();
 
-    // Run the orchestrator on a microtask so we can set up the
-    // outbound subscription first (no race on the first events).
+    // Run the orchestrator on a microtask so the `await for` below
+    // is ready to consume the outbound stream before any events are
+    // pushed.
     Future<void> orchFuture() async {
       // The local engine owns the conversation history itself; the
       // orchestrator's working history list is just a marker. Each
@@ -316,22 +316,17 @@ class LocalLlmService extends ChangeNotifier {
 
     // Bridge: yield every event the orchestrator pushes into
     // `outbound` to the caller, and resolve `completer` when the
-    // stream closes.
-    outboundSub = outbound.stream.listen(
-      (e) {},
-      onDone: () {
-        if (!completer.isCompleted) completer.complete();
-      },
-    );
-
-    // Fire and forget — orchFuture() drains outbound on its own.
+    // stream closes. Note: `outbound.stream` is a single-subscription
+    // stream, so we must consume it exactly once — here, via the
+    // `await for` loop. Do NOT add a `.listen(...)` to the same
+    // stream (that double-listens and throws
+    // "Stream has already been listened to").
     unawaited(orchFuture());
 
     await for (final ev in outbound.stream) {
       yield ev;
     }
     await completer.future;
-    await outboundSub.cancel();
     yield StreamEvent.done();
   }
 
