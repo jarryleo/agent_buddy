@@ -59,6 +59,39 @@ class AppLocalizationsEn extends AppLocalizations {
       'Tap the settings button in the top left to add a model provider and a role to start chatting.';
 
   @override
+  String get homeSessionsTooltip => 'Sessions';
+
+  @override
+  String get sessionManagerTitle => 'Sessions';
+
+  @override
+  String get sessionManagerNew => 'New chat';
+
+  @override
+  String get sessionManagerEmpty => 'No saved sessions yet.';
+
+  @override
+  String get sessionManagerSelectAll => 'Select all';
+
+  @override
+  String get sessionManagerDeselectAll => 'Deselect all';
+
+  @override
+  String get sessionManagerDelete => 'Delete';
+
+  @override
+  String get sessionManagerDeleteConfirmTitle => 'Delete session?';
+
+  @override
+  String sessionManagerDeleteBatchConfirmTitle(int count) {
+    return 'Delete $count sessions?';
+  }
+
+  @override
+  String get sessionManagerDeleteMessage =>
+      'The selected conversations will be removed. This action cannot be undone.';
+
+  @override
   String get homeNoModel => 'No model configured';
 
   @override

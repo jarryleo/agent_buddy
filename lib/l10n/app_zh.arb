@@ -17,6 +17,22 @@
   "homeClearChatConfirm": "清空",
   "homeEmptyTitle": "Agent Buddy",
   "homeEmptySubtitle": "点击左上角设置按钮,添加模型提供商与角色后开始对话。",
+
+  "homeSessionsTooltip": "会话",
+  "sessionManagerTitle": "会话管理",
+  "sessionManagerNew": "新建会话",
+  "sessionManagerEmpty": "暂无历史会话",
+  "sessionManagerSelectAll": "全选",
+  "sessionManagerDeselectAll": "取消全选",
+  "sessionManagerDelete": "删除",
+  "sessionManagerDeleteConfirmTitle": "确认删除会话?",
+  "sessionManagerDeleteBatchConfirmTitle": "确认删除 {count} 个会话?",
+  "@sessionManagerDeleteBatchConfirmTitle": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "sessionManagerDeleteMessage": "选中的会话将被删除,且无法恢复。",
   "homeNoModel": "未配置模型",
   "homeNoModelSelected": "未选模型",
   "homeProviderModel": "{provider} · {model}",

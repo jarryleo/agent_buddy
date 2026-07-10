@@ -57,6 +57,38 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeEmptySubtitle => '点击左上角设置按钮,添加模型提供商与角色后开始对话。';
 
   @override
+  String get homeSessionsTooltip => '会话';
+
+  @override
+  String get sessionManagerTitle => '会话管理';
+
+  @override
+  String get sessionManagerNew => '新建会话';
+
+  @override
+  String get sessionManagerEmpty => '暂无历史会话';
+
+  @override
+  String get sessionManagerSelectAll => '全选';
+
+  @override
+  String get sessionManagerDeselectAll => '取消全选';
+
+  @override
+  String get sessionManagerDelete => '删除';
+
+  @override
+  String get sessionManagerDeleteConfirmTitle => '确认删除会话?';
+
+  @override
+  String sessionManagerDeleteBatchConfirmTitle(int count) {
+    return '确认删除 $count 个会话?';
+  }
+
+  @override
+  String get sessionManagerDeleteMessage => '选中的会话将被删除,且无法恢复。';
+
+  @override
   String get homeNoModel => '未配置模型';
 
   @override

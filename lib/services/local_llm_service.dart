@@ -17,6 +17,11 @@ class LocalLlmService extends ChangeNotifier {
   bool _supportsVision = false;
   bool _supportsAudio = false;
 
+  /// Id of the chat session the engine is currently bound to. Used
+  /// to skip the reset+seed cycle on follow-up turns of the same
+  /// session so llama.cpp's KV cache stays hot.
+  Object? _boundSessionId;
+
   bool get isReady => _engine != null && _session != null;
   bool get isLoading => _loading;
   String? get loadedProviderId => _loadedProviderId;
@@ -80,6 +85,14 @@ class LocalLlmService extends ChangeNotifier {
     required List<Map<String, dynamic>> tools,
     Future<String> Function(Map<String, dynamic> toolCall)? onToolCall,
     ToolOrchestrator? orchestrator,
+    /// Identifier of the chat session this turn belongs to. The
+    /// engine's KV cache is only useful across turns of the same
+    /// session, so we use this to decide whether to reset+seed the
+    /// engine's ChatSession (cache miss) or just continue (cache
+    /// hit). Pass null to force a reset on every call (legacy
+    /// behavior, useful for tests).
+    Object? boundSessionId,
+    void Function(Object?)? onBoundSessionId,
   }) async* {
     if (!isReady) {
       try {
@@ -96,17 +109,28 @@ class LocalLlmService extends ChangeNotifier {
       return;
     }
 
-    // Set the system prompt and seed history from the incoming message
-    // list. ChatSession manages context trimming, so we mirror the
-    // existing conversation into its history before adding the new turn.
-    session.systemPrompt = systemPrompt.isEmpty ? null : systemPrompt;
-    session.reset(keepSystemPrompt: true);
-    // Seed history with everything except the last user turn (which
-    // ChatSession will add itself when we call create() below).
-    final historyMessages = messages.length > 1
-        ? messages.sublist(0, messages.length - 1)
-        : <ChatRequestMessage>[];
-    _seedHistory(session, historyMessages);
+    // KV-cache reuse: only reset+seed when the bound session id
+    // changes (or is null). Same-session turns keep the engine's
+    // KV cache hot, so each new turn only does the prefill for
+    // the new user message + decode — not the entire history.
+    final sameSession = boundSessionId != null &&
+        _boundSessionId != null &&
+        _boundSessionId == boundSessionId;
+    if (!sameSession) {
+      session.systemPrompt = systemPrompt.isEmpty ? null : systemPrompt;
+      session.reset(keepSystemPrompt: true);
+      final historyMessages = messages.length > 1
+          ? messages.sublist(0, messages.length - 1)
+          : <ChatRequestMessage>[];
+      _seedHistory(session, historyMessages);
+      _boundSessionId = boundSessionId;
+      if (onBoundSessionId != null) onBoundSessionId(boundSessionId);
+    } else {
+      // Same session, follow-up turn: the system prompt may have
+      // changed (user switched role mid-conversation). Llama's
+      // ChatSession re-applies it as a soft slot, no reset needed.
+      session.systemPrompt = systemPrompt.isEmpty ? null : systemPrompt;
+    }
 
     final llamaTools = _buildTools(tools);
 
@@ -350,6 +374,7 @@ class LocalLlmService extends ChangeNotifier {
     _loadedProviderId = null;
     _supportsVision = false;
     _supportsAudio = false;
+    _boundSessionId = null;
     if (engine != null) {
       try {
         await engine.dispose();
@@ -368,6 +393,7 @@ class LocalLlmService extends ChangeNotifier {
     _loadedProviderId = null;
     _supportsVision = false;
     _supportsAudio = false;
+    _boundSessionId = null;
     super.dispose();
   }
 

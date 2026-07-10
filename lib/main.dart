@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 
 import 'l10n/app_localizations.dart';
@@ -8,6 +9,7 @@ import 'pages/home_page.dart';
 import 'providers/chat_provider.dart';
 import 'providers/settings_provider.dart';
 import 'services/api_service.dart';
+import 'services/chat_session_repository.dart';
 import 'services/image_service.dart';
 import 'services/local_llm_service.dart';
 import 'services/storage_service.dart';
@@ -17,6 +19,8 @@ import 'widgets/phone_frame.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
+  ChatSessionRepository.registerAdapters();
   final storage = StorageService();
   await storage.init();
   runApp(AgentBuddyApp(storage: storage));

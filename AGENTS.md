@@ -22,8 +22,8 @@ No CI, no pre-commit hooks, no `melos`/`fvm` — keep it simple.
 ## Architecture (one-liner per directory)
 
 - `lib/main.dart` — root + `MultiProvider` (Settings, Api, Tool, Chat, LocalLlm)
-- `lib/models/` — plain Dart models with `toJson` / `fromJson` for SharedPreferences (incl. `LocalProvider` for on-device GGUF models)
-- `lib/services/` — `StorageService` (SharedPreferences), `ApiService` (OpenAI + Anthropic SSE, throws raw `Error:` strings on purpose for the AI), `ToolService` (HTML fetch for `fetch_web`), `LocalLlmService` (wraps `llamadart`'s `LlamaEngine` + `ChatSession` for GGUF, lazy-loaded on first chat, supports mmproj multimodal), `ToolOrchestrator` (multi-round tool-calling loop, transport-agnostic; both `ApiService` and `LocalLlmService` delegate to it so model turns can chain tool calls without manual follow-up bookkeeping)
+- `lib/models/` — plain Dart models with `toJson` / `fromJson` for SharedPreferences (incl. `LocalProvider` for on-device GGUF models). `ChatSession` is the per-conversation model; persisted via a hand-written Hive `TypeAdapter` in `chat_session_adapter.dart`.
+- `lib/services/` — `StorageService` (SharedPreferences for settings + `ChatSessionRepository` for chat history), `ApiService` (OpenAI + Anthropic SSE, throws raw `Error:` strings on purpose for the AI), `ToolService` (HTML fetch for `fetch_web`), `LocalLlmService` (wraps `llamadart`'s `LlamaEngine` + `ChatSession` for GGUF, lazy-loaded on first chat, supports mmproj multimodal), `ToolOrchestrator` (multi-round tool-calling loop, transport-agnostic; both `ApiService` and `LocalLlmService` delegate to it so model turns can chain tool calls without manual follow-up bookkeeping), `ChatSessionRepository` (Hive-backed storage for `ChatSession` objects, cross-platform)
 - `lib/providers/` — `ChangeNotifier`s; `ChatProvider.sendMessage(BuildContext, String)` takes context on purpose to read l10n for user-facing errors
 - `lib/pages/` — top-level routes (`HomePage`, `SettingsPage` + 5 tab pages incl. `LocalProvidersTab`, `AddProviderPage`, `AddLocalProviderPage`)
 - `lib/widgets/` — reusable (`PhoneFrame`, `ChatInput`, `MessageBubble`, `MarkdownContent`, `CodeBlock`, `ImagePreviewPage`, `NoFocusIconButton`)
@@ -59,6 +59,7 @@ No CI, no pre-commit hooks, no `melos`/`fvm` — keep it simple.
 ### Local models (llamadart / GGUF)
 - `LocalLlmService` is a thin wrapper around `LlamaEngine` + `ChatSession`. The model is loaded **lazily on the first chat** after the user enables `useLocalModel` and has an active local provider — never at app startup, never on save.
 - The model path, mmproj path, context size, temperature, GPU layers and max-tokens are stored in `LocalProvider` (SharedPreferences). The first time the user actually sends a message, `ensureLoaded()` is called and the engine is held in memory for subsequent turns; it's disposed on app teardown.
+- **KV-cache reuse across turns of the same session**: the service tracks a `_boundSessionId` (the chat session id). When `streamChat` is called with the same id as the previous turn, the engine's `ChatSession` is **not** reset+seeded — only the new user content is fed in via `session.create(...)`, and llama.cpp's prompt-prefix reuse (`reusePromptPrefix: true`, the default) keeps the KV cache hot. When the id changes (user switches sessions, creates a new one, or deletes the current one), `_boundSessionId` is cleared and the next turn does a full reset+seed.
 - Images attached to a chat message are passed through as `LlamaImageContent(path: ...)` pointing at the local file already cached by `ImageService`. Remote URLs / base64 data URLs are not used (the engine prefers file paths on native backends).
 - The llmamadart native-assets hook downloads runtime archives on first build per platform — first build after adding the dep is slow (similar to Gradle cold start). Don't be surprised by a multi-minute first compile.
 
@@ -68,6 +69,14 @@ No CI, no pre-commit hooks, no `melos`/`fvm` — keep it simple.
 - `MessageRole.tool` was added to the role enum; old persisted `ChatMessage` JSON is safe because the deserializer falls back to `user` for unknown values.
 - `ChatRequestMessage` gained two protocol-specific fields: `toolCallsWire` (OpenAI) and `anthropicContentBlocks` (Anthropic) so the protocol layer can replay an assistant tool-use turn verbatim in the follow-up payload.
 - `ChatProvider.retryToolCall(context, assistantId, toolId)` re-executes a single failed tool call, updates the in-place `ToolCall` card, and (on success) appends a synthetic user message with the new result so the next user turn feeds it back to the model. The button lives in `MessageBubble._ToolCallCard`.
+
+### Sessions & chat persistence
+- Chat history is **per-session**, persisted in `hive_ce` via `ChatSessionRepository` (`lib/services/chat_session_repository.dart`). One Hive box holds all sessions; each session stores its full message list, plus `id`, `title`, `createdAt`, `updatedAt`. The on-disk format is hand-written in `lib/models/chat_session_adapter.dart` (no build_runner / code-gen).
+- `hive_ce_flutter` is initialized in `main.dart` (`Hive.initFlutter()`); the adapter is registered via `ChatSessionRepository.registerAdapters()` before `StorageService.init()` opens the box.
+- One-time migration: the legacy `chat_messages` blob in SharedPreferences is converted into a single "Imported chat" session on first launch. The legacy key is then deleted.
+- `ChatProvider` tracks the active session id and exposes `sessions` (newest-first metadata list), `createNewSession()`, `selectSession(id)`, `deleteSession(id)`, `deleteSessions(ids)`. The home page's top-right button opens `SessionManagerSheet` (`lib/widgets/session_manager_sheet.dart`), which lists all sessions and supports single + batch delete.
+- All session metadata is loaded eagerly on startup (the metadata is small: just title + timestamps). The full message list for the active session is also loaded eagerly. Other sessions are loaded lazily when selected.
+- API path (OpenAI / Anthropic) and local path (llamadart) are both unchanged: each turn still sends the full conversation history over the wire / into the local engine's `ChatSession`. The KV-cache optimization for the local path lives in `LocalLlmService._boundSessionId` (see above); the API path is stateless by protocol design.
 
 ## Scope / what "done" looks like
 

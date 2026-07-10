@@ -1,13 +1,16 @@
 import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 
+import '../models/chat_session.dart';
 import '../models/local_provider.dart';
 import '../models/message.dart';
 import '../models/provider.dart';
 import '../models/role.dart';
 import '../models/skill.dart';
 import '../models/tool.dart';
+import 'chat_session_repository.dart';
 
 class StorageService {
   static const _kProviders = 'providers';
@@ -21,14 +24,24 @@ class StorageService {
   static const _kActiveRoleId = 'active_role_id';
   static const _kActiveSkillIds = 'active_skill_ids';
   static const _kActiveToolIds = 'active_tool_ids';
-  static const _kMessages = 'chat_messages';
+  // Legacy key for the pre-session "single list of messages" model.
+  // Kept for one migration on app start; new writes go to Hive.
+  static const _kLegacyMessages = 'chat_messages';
+  static const _kActiveSessionId = 'active_session_id';
   static const _kThemeMode = 'theme_mode';
   static const _kLocaleCode = 'locale_code';
 
   late final SharedPreferences _prefs;
+  final ChatSessionRepository _sessions = ChatSessionRepository();
+  final _uuid = const Uuid();
+
+  /// Repository for chat sessions. Lazily opened during [init].
+  ChatSessionRepository get sessions => _sessions;
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+    await _sessions.open();
+    await _migrateLegacyMessages();
   }
 
   // Providers
@@ -132,22 +145,70 @@ class StorageService {
   }
 
   // Messages
-  List<ChatMessage> loadMessages() {
-    final raw = _prefs.getString(_kMessages);
-    if (raw == null || raw.isEmpty) return [];
-    try {
-      final list = jsonDecode(raw) as List;
-      return list
-          .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
-          .toList();
-    } catch (_) {
-      return [];
+  //
+  // The chat-history surface has been replaced by a per-session
+  // model persisted via [ChatSessionRepository]. The legacy
+  // SharedPreferences list at [kLegacyMessages] is migrated to a
+  // single "default" session on first launch (see [_migrateLegacyMessages]).
+
+  // Active session tracking (the conversation the user is currently
+  // looking at). Empty string means "no session selected" — the UI
+  // should auto-select the most recent one.
+  String? get activeSessionId => _prefs.getString(_kActiveSessionId);
+  Future<void> setActiveSessionId(String? id) async {
+    if (id == null || id.isEmpty) {
+      await _prefs.remove(_kActiveSessionId);
+    } else {
+      await _prefs.setString(_kActiveSessionId, id);
     }
   }
 
-  Future<void> saveMessages(List<ChatMessage> messages) async {
-    final raw = jsonEncode(messages.map((e) => e.toJson()).toList());
-    await _prefs.setString(_kMessages, raw);
+  /// One-time migration: if the user upgraded from the
+  // pre-session build, their `chat_messages` list is converted into
+  // a single ChatSession named "Imported chat". Subsequent app
+  // starts skip this.
+  Future<void> _migrateLegacyMessages() async {
+    final raw = _prefs.getString(_kLegacyMessages);
+    if (raw == null || raw.isEmpty) return;
+    if (_sessions.length > 0) {
+      // Already migrated (or the user has at least one session).
+      // Clean up the legacy key and exit.
+      await _prefs.remove(_kLegacyMessages);
+      return;
+    }
+    try {
+      final list = jsonDecode(raw) as List;
+      final messages = list
+          .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
+          .toList();
+      if (messages.isEmpty) {
+        await _prefs.remove(_kLegacyMessages);
+        return;
+      }
+      final firstUser = messages.firstWhere(
+        (m) => m.role == MessageRole.user,
+        orElse: () => messages.first,
+      );
+      final now = DateTime.now();
+      final session = ChatSession(
+        id: _uuid.v4(),
+        title: ChatSession.deriveTitle(firstUser.content),
+        createdAt: messages.isNotEmpty
+            ? messages.first.createdAt
+            : now,
+        updatedAt: messages.isNotEmpty
+            ? messages.last.createdAt
+            : now,
+        messages: List<ChatMessage>.unmodifiable(messages),
+      );
+      await _sessions.save(session);
+      await _prefs.setString(_kActiveSessionId, session.id);
+    } catch (_) {
+      // Migration is best-effort; if the legacy blob is corrupt we
+      // just drop it and start fresh.
+    } finally {
+      await _prefs.remove(_kLegacyMessages);
+    }
   }
 
   // Theme

@@ -194,6 +194,66 @@ abstract class AppLocalizations {
   /// **'Tap the settings button in the top left to add a model provider and a role to start chatting.'**
   String get homeEmptySubtitle;
 
+  /// No description provided for @homeSessionsTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Sessions'**
+  String get homeSessionsTooltip;
+
+  /// No description provided for @sessionManagerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sessions'**
+  String get sessionManagerTitle;
+
+  /// No description provided for @sessionManagerNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New chat'**
+  String get sessionManagerNew;
+
+  /// No description provided for @sessionManagerEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved sessions yet.'**
+  String get sessionManagerEmpty;
+
+  /// No description provided for @sessionManagerSelectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Select all'**
+  String get sessionManagerSelectAll;
+
+  /// No description provided for @sessionManagerDeselectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Deselect all'**
+  String get sessionManagerDeselectAll;
+
+  /// No description provided for @sessionManagerDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get sessionManagerDelete;
+
+  /// No description provided for @sessionManagerDeleteConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete session?'**
+  String get sessionManagerDeleteConfirmTitle;
+
+  /// No description provided for @sessionManagerDeleteBatchConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {count} sessions?'**
+  String sessionManagerDeleteBatchConfirmTitle(int count);
+
+  /// No description provided for @sessionManagerDeleteMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected conversations will be removed. This action cannot be undone.'**
+  String get sessionManagerDeleteMessage;
+
   /// No description provided for @homeNoModel.
   ///
   /// In en, this message translates to:

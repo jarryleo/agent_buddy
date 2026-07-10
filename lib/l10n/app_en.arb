@@ -17,6 +17,22 @@
   "homeClearChatConfirm": "Clear",
   "homeEmptyTitle": "Agent Buddy",
   "homeEmptySubtitle": "Tap the settings button in the top left to add a model provider and a role to start chatting.",
+
+  "homeSessionsTooltip": "Sessions",
+  "sessionManagerTitle": "Sessions",
+  "sessionManagerNew": "New chat",
+  "sessionManagerEmpty": "No saved sessions yet.",
+  "sessionManagerSelectAll": "Select all",
+  "sessionManagerDeselectAll": "Deselect all",
+  "sessionManagerDelete": "Delete",
+  "sessionManagerDeleteConfirmTitle": "Delete session?",
+  "sessionManagerDeleteBatchConfirmTitle": "Delete {count} sessions?",
+  "@sessionManagerDeleteBatchConfirmTitle": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "sessionManagerDeleteMessage": "The selected conversations will be removed. This action cannot be undone.",
   "homeNoModel": "No model configured",
   "homeNoModelSelected": "No model selected",
   "homeProviderModel": "{provider} · {model}",

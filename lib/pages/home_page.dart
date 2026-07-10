@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import '../widgets/chat_input.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/no_focus_icon_button.dart';
+import '../widgets/session_manager_sheet.dart';
 import 'settings_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -102,32 +103,9 @@ class _HomePageState extends State<HomePage> {
           Consumer<ChatProvider>(
             builder: (context, chat, _) {
               return NoFocusIconButton(
-                icon: Icon(Icons.delete_sweep_outlined),
-                tooltip: l10n.homeClearChatTooltip,
-                onPressed: chat.messages.isEmpty
-                    ? null
-                    : () async {
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: Text(l10n.homeClearChatTitle),
-                            content: Text(l10n.homeClearChatMessage),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(ctx, false),
-                                child: Text(l10n.commonCancel),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(ctx, true),
-                                child: Text(l10n.homeClearChatConfirm),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (confirm == true) {
-                          await chat.clearMessages();
-                        }
-                      },
+                icon: const Icon(Icons.forum_outlined),
+                tooltip: l10n.homeSessionsTooltip,
+                onPressed: () => SessionManagerSheet.show(context),
               );
             },
           ),

@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:uuid/uuid.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/chat_session.dart';
 import '../models/message.dart';
 import '../services/api_service.dart';
 import '../services/image_service.dart';
@@ -25,7 +26,7 @@ class ChatProvider extends ChangeNotifier {
     this._localLlm,
     this._settings,
   ) {
-    _messages = _storage.loadMessages();
+    _restoreActiveSession();
   }
 
   final StorageService _storage;
@@ -41,33 +42,183 @@ class ChatProvider extends ChangeNotifier {
   /// app lifetime.
   final ToolOrchestrator _orchestrator = ToolOrchestrator();
 
-  List<ChatMessage> _messages = [];
+  /// The currently active session (the conversation whose messages
+  /// are visible in the chat list). Null when the user has just
+  /// opened the app and no session is selected yet.
+  ChatSession? _activeSession;
+
+  /// Lightweight metadata list for the session manager UI. We
+  /// refresh this in-place whenever the repo changes so the home
+  /// page can render the session picker without a Hive round-trip.
+  List<ChatSession> _sessionSummaries = const [];
+
+  /// True while a request is in flight on the active session.
   bool _sending = false;
   bool _disposed = false;
 
+  /// The id of the session the local-llm `ChatSession` instance is
+  /// currently bound to. We re-seed the engine's KV cache only when
+  /// the user switches to a different session; per-turn chat
+  /// reuses the same engine session, which keeps llama.cpp's
+  /// prompt-prefix reuse hot.
+  String? _localSessionId;
+
   /// Pending `ask_user` tool calls. When the model invokes ask_user
-  /// we drop a [Completer] here keyed by the tool-call id; the message
-  /// bubble's inline options call [resolveAskUser] when the user picks,
-  /// which completes the future and unblocks the streaming `await`.
+  /// we drop a [Completer] here keyed by the tool-call id; the
+  /// message bubble's inline options call [resolveAskUser] when the
+  /// user picks, which completes the future and unblocks the
+  /// streaming `await`.
   final Map<String, Completer<String>> _pendingAskUser = {};
 
-  List<ChatMessage> get messages => List.unmodifiable(_messages);
+  // -------- Public read API --------
+
+  /// The currently visible messages. Empty when no session is
+  /// active.
+  List<ChatMessage> get messages {
+    final s = _activeSession;
+    if (s == null) return const [];
+    return List.unmodifiable(s.messages);
+  }
+
+  /// Newest-first session summaries, for the session manager UI.
+  List<ChatSession> get sessions => List.unmodifiable(_sessionSummaries);
+
+  /// The id of the active session (or empty string if none).
+  String get activeSessionId => _activeSession?.id ?? '';
+
   bool get sending => _sending;
 
+  bool get hasActiveSession => _activeSession != null;
+
+  // -------- Session lifecycle --------
+
+  /// Pick the most recent session (or the one stored as "active"
+  /// in SharedPreferences) on app start. Called from the
+  /// constructor.
+  void _restoreActiveSession() {
+    refreshSessionList();
+    final all = _storage.sessions.list();
+    if (all.isEmpty) {
+      // First launch / after migration: create a starter session
+      // so the home page is never empty.
+      _createBlankSessionInternal();
+      return;
+    }
+    final savedId = _storage.activeSessionId;
+    ChatSession? picked;
+    if (savedId != null && savedId.isNotEmpty) {
+      picked = all.firstWhere(
+        (s) => s.id == savedId,
+        orElse: () => all.first,
+      );
+    } else {
+      picked = all.first;
+    }
+    _setActiveSession(picked);
+  }
+
+  /// Re-read the session list from the repository. Call after any
+  /// operation that might have changed the metadata (create,
+  /// delete, switch).
+  void refreshSessionList() {
+    _sessionSummaries = _storage.sessions.list();
+  }
+
+  /// Replace [messages] with a fresh empty session and select it.
+  Future<void> createNewSession() async {
+    final session = _createBlankSessionInternal();
+    setLocalSessionId(null);
+    await _storage.sessions.save(session);
+    await _storage.setActiveSessionId(session.id);
+    refreshSessionList();
+    notifyListeners();
+  }
+
+  ChatSession _createBlankSessionInternal() {
+    final now = DateTime.now();
+    final session = ChatSession(
+      id: _uuid.v4(),
+      title: 'New chat',
+      createdAt: now,
+      updatedAt: now,
+      messages: const [],
+    );
+    _setActiveSession(session);
+    return session;
+  }
+
+  /// Switch to a different session. Persists the choice in
+  /// SharedPreferences so the same conversation reopens on next
+  /// launch.
+  Future<void> selectSession(String id) async {
+    if (id == _activeSession?.id) return;
+    final s = _storage.sessions.get(id);
+    if (s == null) return;
+    _setActiveSession(s);
+    // Force the local-llm engine to reset+seed on the next turn of
+    // the new session; the existing ChatSession binding is stale.
+    setLocalSessionId(null);
+    await _storage.setActiveSessionId(id);
+    notifyListeners();
+  }
+
+  void _setActiveSession(ChatSession s) {
+    _activeSession = s;
+  }
+
+  /// Delete one session. If it was the active one, fall back to the
+  /// most recent remaining session (or create a blank one if there
+  /// are none left).
+  Future<void> deleteSession(String id) async {
+    await deleteSessions([id]);
+  }
+
+  /// Delete a batch of sessions. Active-session reassignment rules
+  /// are the same as [deleteSession].
+  Future<void> deleteSessions(Iterable<String> ids) async {
+    final idSet = ids.toSet();
+    if (idSet.isEmpty) return;
+    final wasActive = _activeSession != null && idSet.contains(_activeSession!.id);
+    await _storage.sessions.deleteMany(idSet);
+    refreshSessionList();
+    if (wasActive) {
+      final remaining = _storage.sessions.list();
+      if (remaining.isEmpty) {
+        final blank = _createBlankSessionInternal();
+        await _storage.sessions.save(blank);
+        await _storage.setActiveSessionId(blank.id);
+      } else {
+        _setActiveSession(remaining.first);
+        await _storage.setActiveSessionId(remaining.first.id);
+      }
+      setLocalSessionId(null);
+    }
+    refreshSessionList();
+    notifyListeners();
+  }
+
+  /// Backwards-compatible: clear the current session's messages
+  /// (used by the legacy "clear chat" button; kept so the home page
+  /// doesn't need a refactor in this commit).
   Future<void> clearMessages() async {
-    // Fail any in-flight ask_user prompts so the stream doesn't stay
-    // paused waiting for a user response that will never come.
+    final s = _activeSession;
+    if (s == null) {
+      _createBlankSessionInternal();
+      notifyListeners();
+      return;
+    }
     for (final c in _pendingAskUser.values) {
       if (!c.isCompleted) c.completeError(ToolException('chat cleared'));
     }
     _pendingAskUser.clear();
-    _messages = [];
-    await _storage.saveMessages(_messages);
+    final cleared = s.copyWith(messages: const [], updatedAt: DateTime.now());
+    _setActiveSession(cleared);
+    await _storage.sessions.save(cleared);
     notifyListeners();
   }
 
-  /// Called by the message bubble's inline option chips when the user
-  /// picks. Unblocks the streaming `await` on this tool call.
+  /// Called by the message bubble's inline option chips when the
+  /// user picks. Unblocks the streaming `await` on this tool call.
   void resolveAskUser(String toolId, String selection) {
     final completer = _pendingAskUser[toolId];
     if (completer != null && !completer.isCompleted) {
@@ -247,6 +398,60 @@ class ChatProvider extends ChangeNotifier {
     return list;
   }
 
+  // -------- Mutators (operate on the active session) --------
+
+  /// Replace the active session's message list. Used after every
+  /// UI mutating event (stream chunks, tool start/done, retry).
+  void _replaceMessages(List<ChatMessage> messages) {
+    final s = _activeSession;
+    if (s == null) return;
+    _setActiveSession(
+      s.copyWith(messages: List<ChatMessage>.unmodifiable(messages), updatedAt: DateTime.now()),
+    );
+  }
+
+  /// Append a fresh user + assistant placeholder pair to the
+  /// active session. Returns the new assistant message id so the
+  /// stream listener can find it.
+  String _appendUserAndAssistantPlaceholders(
+    String userContent,
+    List<String> imagePaths,
+  ) {
+    final s = _activeSession;
+    if (s == null) {
+      // No session yet — create one and try again. This shouldn't
+      // happen because `_restoreActiveSession` always leaves a
+      // session in place, but we keep the guard for testability.
+      final blank = _createBlankSessionInternal();
+      _setActiveSession(blank);
+      return _appendUserAndAssistantPlaceholders(userContent, imagePaths);
+    }
+    final userMsg = ChatMessage(
+      id: _uuid.v4(),
+      role: MessageRole.user,
+      content: userContent,
+      imagePaths: List.unmodifiable(imagePaths),
+    );
+    final assistantId = _uuid.v4();
+    final assistantMsg = ChatMessage(
+      id: assistantId,
+      role: MessageRole.assistant,
+      content: '',
+      streaming: true,
+    );
+    _replaceMessages([...s.messages, userMsg, assistantMsg]);
+
+    // If this is the first user message of a fresh session,
+    // derive a title for the session list.
+    if (s.messages.isEmpty && userContent.isNotEmpty) {
+      final titled = _activeSession!.copyWith(
+        title: ChatSession.deriveTitle(userContent),
+      );
+      _setActiveSession(titled);
+    }
+    return assistantId;
+  }
+
   Future<String> _onToolCall(
     BuildContext context,
     Map<String, dynamic> toolCall,
@@ -278,26 +483,29 @@ class ChatProvider extends ChangeNotifier {
         // Stash the question/options on the tool call so the chat
         // bubble can render the inline option chips. The stream is
         // paused on the `await` below until the user picks.
-        _messages = [
-          for (final m in _messages)
-            if (m.id == assistantId)
-              m.copyWith(
-                toolCalls: [
-                  for (final tc in m.toolCalls)
-                    if (tc.id == toolId)
-                      tc.copyWith(
-                        question: question,
-                        options: options,
-                        multiSelect: multiSelect,
-                      )
-                    else
-                      tc,
-                ],
-              )
-            else
-              m,
-        ];
-        notifyListeners();
+        final s = _activeSession;
+        if (s != null) {
+          _replaceMessages([
+            for (final m in s.messages)
+              if (m.id == assistantId)
+                m.copyWith(
+                  toolCalls: [
+                    for (final tc in m.toolCalls)
+                      if (tc.id == toolId)
+                        tc.copyWith(
+                          question: question,
+                          options: options,
+                          multiSelect: multiSelect,
+                        )
+                      else
+                        tc,
+                  ],
+                )
+              else
+                m,
+          ]);
+          notifyListeners();
+        }
         final completer = Completer<String>();
         _pendingAskUser[toolId] = completer;
         try {
@@ -327,14 +535,8 @@ class ChatProvider extends ChangeNotifier {
   /// Re-runs a single failed tool call from a finished assistant
   /// message. The tool is executed once, the in-place `ToolCall` is
   /// updated with the new result, and a synthetic user message is
-  /// appended so the user can send a new turn (or we can trigger
-  /// one immediately) that feeds the new result back to the model.
-  ///
-  /// We deliberately do NOT auto-trigger a follow-up turn from
-  /// here: the model's previous turn already produced `[DONE]`, so
-  /// re-running it would be ambiguous. The user explicitly clicking
-  /// "Retry" is the trigger to add a new user turn that includes
-  /// the new tool result in the history.
+  /// appended so the next user turn feeds the new result back to
+  /// the model.
   Future<void> retryToolCall(
     BuildContext context,
     String assistantId,
@@ -342,9 +544,11 @@ class ChatProvider extends ChangeNotifier {
   ) async {
     if (_sending) return;
     final l10n = AppLocalizations.of(context);
-    final idx = _messages.indexWhere((m) => m.id == assistantId);
+    final s = _activeSession;
+    if (s == null) return;
+    final idx = s.messages.indexWhere((m) => m.id == assistantId);
     if (idx < 0) return;
-    final assistant = _messages[idx];
+    final assistant = s.messages[idx];
     final tcIdx = assistant.toolCalls.indexWhere((t) => t.id == toolId);
     if (tcIdx < 0) return;
     final tc = assistant.toolCalls[tcIdx];
@@ -358,8 +562,8 @@ class ChatProvider extends ChangeNotifier {
       error: null,
       finishedAt: null,
     );
-    _messages = [
-      for (final m in _messages)
+    _replaceMessages([
+      for (final m in s.messages)
         if (m.id == assistantId)
           m.copyWith(
             toolCalls: [
@@ -369,7 +573,7 @@ class ChatProvider extends ChangeNotifier {
           )
         else
           m,
-    ];
+    ]);
     notifyListeners();
 
     // Re-execute the tool using the same dispatcher as the live
@@ -401,8 +605,8 @@ class ChatProvider extends ChangeNotifier {
     }
 
     final finishedAt = DateTime.now();
-    _messages = [
-      for (final m in _messages)
+    _replaceMessages([
+      for (final m in s.messages)
         if (m.id == assistantId)
           m.copyWith(
             toolCalls: [
@@ -422,26 +626,27 @@ class ChatProvider extends ChangeNotifier {
           )
         else
           m,
-    ];
-    await _storage.saveMessages(_messages);
+    ]);
+    await _storage.sessions.save(_activeSession!);
     notifyListeners();
 
     if (success) {
       // Surface the new result as a user-facing system note so the
       // model picks it up on the next user turn. We use a real user
-      // message (not an internal channel) so the retry semantics are
-      // obvious in the chat history and the model treats it as
+      // message (not an internal channel) so the retry semantics
+      // are obvious in the chat history and the model treats it as
       // fresh context.
       final note = l10n.toolCallRetryNote(tc.name, toolResult);
-      _messages = [
-        ..._messages,
+      final cur = _activeSession!;
+      _replaceMessages([
+        ...cur.messages,
         ChatMessage(
           id: _uuid.v4(),
           role: MessageRole.user,
           content: note,
         ),
-      ];
-      await _storage.saveMessages(_messages);
+      ]);
+      await _storage.sessions.save(_activeSession!);
       notifyListeners();
     }
   }
@@ -459,29 +664,35 @@ class ChatProvider extends ChangeNotifier {
     final localProvider = _settings.activeLocalProvider;
     if (useLocal) {
       if (localProvider == null) {
-        _messages = [
-          ..._messages,
-          ChatMessage(
-            id: _uuid.v4(),
-            role: MessageRole.assistant,
-            content: l10n.chatNoProvider,
-          ),
-        ];
-        await _storage.saveMessages(_messages);
+        final s = _activeSession;
+        if (s != null) {
+          _replaceMessages([
+            ...s.messages,
+            ChatMessage(
+              id: _uuid.v4(),
+              role: MessageRole.assistant,
+              content: l10n.chatNoProvider,
+            ),
+          ]);
+          await _storage.sessions.save(_activeSession!);
+        }
         notifyListeners();
         return;
       }
     } else {
       if (provider == null) {
-        _messages = [
-          ..._messages,
-          ChatMessage(
-            id: _uuid.v4(),
-            role: MessageRole.assistant,
-            content: l10n.chatNoProvider,
-          ),
-        ];
-        await _storage.saveMessages(_messages);
+        final s = _activeSession;
+        if (s != null) {
+          _replaceMessages([
+            ...s.messages,
+            ChatMessage(
+              id: _uuid.v4(),
+              role: MessageRole.assistant,
+              content: l10n.chatNoProvider,
+            ),
+          ]);
+          await _storage.sessions.save(_activeSession!);
+        }
         notifyListeners();
         return;
       }
@@ -489,36 +700,27 @@ class ChatProvider extends ChangeNotifier {
           provider.selectedModel ??
           (provider.models.isNotEmpty ? provider.models.first : null);
       if (model == null) {
-        _messages = [
-          ..._messages,
-          ChatMessage(
-            id: _uuid.v4(),
-            role: MessageRole.assistant,
-            content: l10n.chatNoModel,
-          ),
-        ];
-        await _storage.saveMessages(_messages);
+        final s = _activeSession;
+        if (s != null) {
+          _replaceMessages([
+            ...s.messages,
+            ChatMessage(
+              id: _uuid.v4(),
+              role: MessageRole.assistant,
+              content: l10n.chatNoModel,
+            ),
+          ]);
+          await _storage.sessions.save(_activeSession!);
+        }
         notifyListeners();
         return;
       }
     }
 
-    final userMsg = ChatMessage(
-      id: _uuid.v4(),
-      role: MessageRole.user,
-      content: trimmed,
-      imagePaths: List.unmodifiable(imagePaths),
-    );
-    final assistantId = _uuid.v4();
-    final assistantMsg = ChatMessage(
-      id: assistantId,
-      role: MessageRole.assistant,
-      content: '',
-      streaming: true,
-    );
-    _messages = [..._messages, userMsg, assistantMsg];
+    final assistantId = _appendUserAndAssistantPlaceholders(trimmed, imagePaths);
     _sending = true;
-    await _storage.saveMessages(_messages);
+    await _storage.sessions.save(_activeSession!);
+    refreshSessionList();
     notifyListeners();
 
     // Build request messages, converting any local image paths to
@@ -527,7 +729,7 @@ class ChatProvider extends ChangeNotifier {
     // user sent only images, the API will receive an image-only
     // content array which both OpenAI and Anthropic accept.
     final requestMessages = <ChatRequestMessage>[];
-    for (final m in _messages) {
+    for (final m in _activeSession!.messages) {
       if (m.id == assistantId) continue;
       if (m.role != MessageRole.user && m.role != MessageRole.assistant) {
         continue;
@@ -570,6 +772,8 @@ class ChatProvider extends ChangeNotifier {
             tools: tools,
             onToolCall: (tc) => _onToolCall(context, tc, assistantId),
             orchestrator: _orchestrator,
+            boundSessionId: _activeSession?.id,
+            onBoundSessionId: (id) => setLocalSessionId(id?.toString()),
           )
         : _api.streamChat(
             provider: provider!,
@@ -586,11 +790,11 @@ class ChatProvider extends ChangeNotifier {
     sub = stream.listen(
       (event) {
         if (event.type == 'toolStart') {
-          final idx = _messages.indexWhere((m) => m.id == assistantId);
-          if (idx >= 0) {
+          final s = _activeSession;
+          if (s != null) {
             final toolId = event.toolId ?? '';
-            _messages = [
-              for (final mm in _messages)
+            _replaceMessages([
+              for (final mm in s.messages)
                 if (mm.id == assistantId)
                   mm.copyWith(
                     toolCalls: [
@@ -605,16 +809,16 @@ class ChatProvider extends ChangeNotifier {
                   )
                 else
                   mm,
-            ];
+            ]);
             controller.add(null);
           }
         } else if (event.type == 'toolDone') {
-          final idx = _messages.indexWhere((m) => m.id == assistantId);
-          if (idx >= 0) {
+          final s = _activeSession;
+          if (s != null) {
             final toolId = event.toolId ?? '';
             final now = DateTime.now();
-            _messages = [
-              for (final mm in _messages)
+            _replaceMessages([
+              for (final mm in s.messages)
                 if (mm.id == assistantId)
                   mm.copyWith(
                     toolCalls: [
@@ -634,45 +838,45 @@ class ChatProvider extends ChangeNotifier {
                   )
                 else
                   mm,
-            ];
+            ]);
             controller.add(null);
           }
         } else if (event.type == 'reasoning' && event.thinkingDelta != null) {
-          final idx = _messages.indexWhere((m) => m.id == assistantId);
-          if (idx >= 0) {
-            _messages = [
-              for (final mm in _messages)
+          final s = _activeSession;
+          if (s != null) {
+            _replaceMessages([
+              for (final mm in s.messages)
                 if (mm.id == assistantId)
                   mm.copyWith(thinking: mm.thinking + event.thinkingDelta!)
                 else
                   mm,
-            ];
+            ]);
             if (!updated) {
               updated = true;
             }
             controller.add(null);
           }
         } else if (event.type == 'content' && event.contentDelta != null) {
-          final idx = _messages.indexWhere((m) => m.id == assistantId);
-          if (idx >= 0) {
-            _messages = [
-              for (final mm in _messages)
+          final s = _activeSession;
+          if (s != null) {
+            _replaceMessages([
+              for (final mm in s.messages)
                 if (mm.id == assistantId)
                   mm.copyWith(content: mm.content + event.contentDelta!)
                 else
                   mm,
-            ];
+            ]);
             if (!updated) {
               updated = true;
             }
             controller.add(null);
           }
         } else if (event.type == 'error') {
-          final idx = _messages.indexWhere((m) => m.id == assistantId);
-          if (idx >= 0) {
+          final s = _activeSession;
+          if (s != null) {
             final errText = l10n.messageErrorPrefix(event.error ?? '');
-            _messages = [
-              for (final mm in _messages)
+            _replaceMessages([
+              for (final mm in s.messages)
                 if (mm.id == assistantId)
                   mm.copyWith(
                     content: mm.content.isEmpty
@@ -681,7 +885,7 @@ class ChatProvider extends ChangeNotifier {
                   )
                 else
                   mm,
-            ];
+            ]);
             controller.add(null);
           }
           if (!completer.isCompleted) completer.complete();
@@ -690,11 +894,11 @@ class ChatProvider extends ChangeNotifier {
         }
       },
       onError: (e) {
-        final idx = _messages.indexWhere((m) => m.id == assistantId);
-        if (idx >= 0) {
+        final s = _activeSession;
+        if (s != null) {
           final errText = l10n.messageErrorPrefix(e.toString());
-          _messages = [
-            for (final mm in _messages)
+          _replaceMessages([
+            for (final mm in s.messages)
               if (mm.id == assistantId)
                 mm.copyWith(
                   content: mm.content.isEmpty
@@ -703,16 +907,15 @@ class ChatProvider extends ChangeNotifier {
                 )
               else
                 mm,
-          ];
+          ]);
           controller.add(null);
         }
         if (!completer.isCompleted) completer.complete();
       },
     );
 
-    // Throttle notifyListeners to ~80ms during streaming and debounce
-    // persistence to 300ms, so we don't trigger excessive rebuilds while
-    // the AI is streaming tokens.
+    // Throttle notifyListeners to ~80ms during streaming and
+    // debounce persistence to 300ms.
     Timer? persistTimer;
     Timer? notifyTimer;
     controller.stream.listen((_) {
@@ -726,7 +929,10 @@ class ChatProvider extends ChangeNotifier {
       persistTimer?.cancel();
       persistTimer = Timer(const Duration(milliseconds: 300), () {
         if (_disposed) return;
-        _storage.saveMessages(_messages);
+        final cur = _activeSession;
+        if (cur != null) {
+          _storage.sessions.save(cur);
+        }
       });
     });
 
@@ -734,13 +940,31 @@ class ChatProvider extends ChangeNotifier {
     await sub.cancel();
     await controller.close();
     persistTimer?.cancel();
-    _messages = [
-      for (final m in _messages)
-        if (m.id == assistantId) m.copyWith(streaming: false) else m,
-    ];
+    final s = _activeSession;
+    if (s != null) {
+      _replaceMessages([
+        for (final m in s.messages)
+          if (m.id == assistantId) m.copyWith(streaming: false) else m,
+      ]);
+    }
     _sending = false;
-    await _storage.saveMessages(_messages);
+    final cur = _activeSession;
+    if (cur != null) {
+      await _storage.sessions.save(cur);
+    }
+    refreshSessionList();
     if (!_disposed) notifyListeners();
+  }
+
+  /// Returns the id of the local ChatSession currently bound to the
+  /// llama engine. Used by [LocalLlmService] to decide whether to
+  /// reset+seed or just continue.
+  String? get localSessionId => _localSessionId;
+
+  /// Set the local-llm binding after the engine seeds its session.
+  /// No-op if [sessionId] matches the current binding.
+  void setLocalSessionId(String? sessionId) {
+    _localSessionId = sessionId;
   }
 
   @override
