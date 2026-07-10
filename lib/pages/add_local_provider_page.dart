@@ -9,6 +9,8 @@ import 'package:path/path.dart' as p;
 import '../l10n/app_localizations.dart';
 import '../models/local_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/gguf_metadata.dart';
+import '../services/memory_estimator.dart';
 import '../theme/app_theme.dart';
 
 class AddLocalProviderPage extends StatefulWidget {
@@ -37,6 +39,10 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
   late String _cacheTypeK;
   late String _cacheTypeV;
   late int _batchSize;
+
+  int? _modelFileSize;
+  ModelArchitecture? _modelArch;
+  bool _archLoading = false;
   bool _busy = false;
 
   static const _contextPresets = <int>[
@@ -47,6 +53,8 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
     8192,
     16384,
     32768,
+    65536,
+    131072,
   ];
   static const _maxTokensPresets = <int>[128, 256, 512, 1024, 2048, 4096];
   static const _batchSizePresets = <int>[256, 512, 1024, 2048, 4096];
@@ -67,6 +75,9 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
     _cacheTypeK = p?.cacheTypeK ?? defaultK;
     _cacheTypeV = p?.cacheTypeV ?? defaultV;
     _batchSize = p?.batchSize ?? LocalProvider.kDefaultBatchSize;
+    if (_modelPath.text.trim().isNotEmpty) {
+      _refreshModelMetadata(_modelPath.text.trim());
+    }
   }
 
   /// On mobile the RAM and VRAM budgets are usually much smaller than
@@ -147,6 +158,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
           _mmprojPath?.text = detected;
         }
       });
+      await _refreshModelMetadata(path);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -156,6 +168,40 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
         ),
       );
     }
+  }
+
+  /// Read the GGUF header (architecture fields) and the file size for
+  /// the memory estimate. Both are best-effort — if either fails we
+  /// fall back to file-size-based heuristics in the estimator.
+  Future<void> _refreshModelMetadata(String path) async {
+    if (kIsWeb) {
+      setState(() {
+        _modelFileSize = null;
+        _modelArch = null;
+      });
+      return;
+    }
+    setState(() {
+      _archLoading = true;
+      _modelArch = null;
+      _modelFileSize = null;
+    });
+    int? size;
+    try {
+      final f = File(path);
+      if (await f.exists()) {
+        size = await f.length();
+      }
+    } catch (_) {
+      size = null;
+    }
+    final arch = await const GgufMetadataReader().read(path);
+    if (!mounted) return;
+    setState(() {
+      _modelFileSize = size;
+      _modelArch = arch;
+      _archLoading = false;
+    });
   }
 
   Future<void> _pickMmprojFile() async {
@@ -370,6 +416,22 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
               ),
             ],
             const SizedBox(height: 20),
+            _MemoryEstimateCard(
+              modelFileSize: _modelFileSize,
+              arch: _modelArch,
+              loading: _archLoading,
+              contextSize: _contextSize,
+              batchSize: _batchSize,
+              cacheTypeK: _cacheTypeK,
+              cacheTypeV: _cacheTypeV,
+              modelLabel: l10n.localProviderMemModel,
+              kvLabel: l10n.localProviderMemKv,
+              computeLabel: l10n.localProviderMemCompute,
+              totalLabel: l10n.localProviderMemTotal,
+              missingLabel: l10n.localProviderMemMissing,
+              loadingLabel: l10n.localProviderMemLoading,
+            ),
+            const SizedBox(height: 16),
             _Label(text: l10n.localProviderParams),
             const SizedBox(height: 4),
             _ContextSizeSlider(
@@ -869,6 +931,124 @@ class _BatchSizeSlider extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _MemoryEstimateCard extends StatelessWidget {
+  const _MemoryEstimateCard({
+    required this.modelFileSize,
+    required this.arch,
+    required this.loading,
+    required this.contextSize,
+    required this.batchSize,
+    required this.cacheTypeK,
+    required this.cacheTypeV,
+    required this.modelLabel,
+    required this.kvLabel,
+    required this.computeLabel,
+    required this.totalLabel,
+    required this.missingLabel,
+    required this.loadingLabel,
+  });
+
+  final int? modelFileSize;
+  final ModelArchitecture? arch;
+  final bool loading;
+  final int contextSize;
+  final int batchSize;
+  final String cacheTypeK;
+  final String cacheTypeV;
+  final String modelLabel;
+  final String kvLabel;
+  final String computeLabel;
+  final String totalLabel;
+  final String missingLabel;
+  final String loadingLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: context.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.textSecondary.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (loading) ...[
+            Row(
+              children: [
+                const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(strokeWidth: 1.5),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  loadingLabel,
+                  style: TextStyle(fontSize: 11, color: context.textSecondary),
+                ),
+              ],
+            ),
+          ] else if (modelFileSize == null) ...[
+            Text(
+              missingLabel,
+              style: TextStyle(fontSize: 11, color: context.textSecondary),
+            ),
+          ] else ...[
+            _row(context, totalLabel, formatBytes(_breakdown.totalBytes),
+                emphasize: true),
+            const SizedBox(height: 4),
+            _row(context, modelLabel, formatBytes(_breakdown.modelFileBytes)),
+            _row(context, kvLabel, formatBytes(_breakdown.kvCacheBytes)),
+            _row(context, computeLabel,
+                formatBytes(_breakdown.computeBufferBytes)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  MemoryBreakdown get _breakdown {
+    return const MemoryEstimator().estimate(
+      modelFileBytes: modelFileSize ?? 0,
+      arch: arch,
+      contextSize: contextSize,
+      batchSize: batchSize,
+      cacheTypeK: cacheTypeK,
+      cacheTypeV: cacheTypeV,
+    );
+  }
+
+  Widget _row(BuildContext context, String label, String value,
+      {bool emphasize = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: emphasize ? 12 : 11,
+                color: context.textSecondary,
+                fontWeight: emphasize ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: emphasize ? 13 : 11,
+              color: context.textPrimary,
+              fontWeight: emphasize ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

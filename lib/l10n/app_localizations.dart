@@ -710,6 +710,48 @@ abstract class AppLocalizations {
   /// **'Per-step compute buffer. Default 512 (matches LM Studio / Ollama). Raising it speeds up prefill of long prompts but uses more memory.'**
   String get localProviderBatchSizeHint;
 
+  /// No description provided for @localProviderMemTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory estimate'**
+  String get localProviderMemTitle;
+
+  /// No description provided for @localProviderMemModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model weights'**
+  String get localProviderMemModel;
+
+  /// No description provided for @localProviderMemKv.
+  ///
+  /// In en, this message translates to:
+  /// **'KV cache'**
+  String get localProviderMemKv;
+
+  /// No description provided for @localProviderMemCompute.
+  ///
+  /// In en, this message translates to:
+  /// **'Compute buffer'**
+  String get localProviderMemCompute;
+
+  /// No description provided for @localProviderMemTotal.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated total'**
+  String get localProviderMemTotal;
+
+  /// No description provided for @localProviderMemMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a model file to see the memory estimate.'**
+  String get localProviderMemMissing;
+
+  /// No description provided for @localProviderMemLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading GGUF header...'**
+  String get localProviderMemLoading;
+
   /// No description provided for @localProviderSetAsDefault.
   ///
   /// In en, this message translates to:

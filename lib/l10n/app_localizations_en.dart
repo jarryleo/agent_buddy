@@ -343,6 +343,28 @@ class AppLocalizationsEn extends AppLocalizations {
       'Per-step compute buffer. Default 512 (matches LM Studio / Ollama). Raising it speeds up prefill of long prompts but uses more memory.';
 
   @override
+  String get localProviderMemTitle => 'Memory estimate';
+
+  @override
+  String get localProviderMemModel => 'Model weights';
+
+  @override
+  String get localProviderMemKv => 'KV cache';
+
+  @override
+  String get localProviderMemCompute => 'Compute buffer';
+
+  @override
+  String get localProviderMemTotal => 'Estimated total';
+
+  @override
+  String get localProviderMemMissing =>
+      'Pick a model file to see the memory estimate.';
+
+  @override
+  String get localProviderMemLoading => 'Reading GGUF header...';
+
+  @override
   String get localProviderSetAsDefault => 'Set as default';
 
   @override

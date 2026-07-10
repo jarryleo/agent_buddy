@@ -333,6 +333,27 @@ class AppLocalizationsZh extends AppLocalizations {
       '单次前向计算缓冲区大小。默认 512(对齐 LM Studio / Ollama)。调大可加速长 prompt 的预填充,但更占内存。';
 
   @override
+  String get localProviderMemTitle => '内存预估';
+
+  @override
+  String get localProviderMemModel => '模型权重';
+
+  @override
+  String get localProviderMemKv => 'KV 缓存';
+
+  @override
+  String get localProviderMemCompute => '计算缓冲';
+
+  @override
+  String get localProviderMemTotal => '预估总计';
+
+  @override
+  String get localProviderMemMissing => '选择模型文件后查看内存预估。';
+
+  @override
+  String get localProviderMemLoading => '正在读取 GGUF 文件头...';
+
+  @override
   String get localProviderSetAsDefault => '设为默认';
 
   @override
