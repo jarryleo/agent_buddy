@@ -200,6 +200,7 @@
 
   "chatInputHint": "Say something…",
   "chatInputHintNoModel": "Please add a model in settings first",
+  "chatInputHintReplying": "Model is replying…",
   "imageAttachTooltip": "Attach image",
   "imagePickGallery": "Choose from gallery",
   "imagePickCamera": "Take a photo",

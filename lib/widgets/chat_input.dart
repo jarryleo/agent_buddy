@@ -13,10 +13,12 @@ class ChatInput extends StatefulWidget {
     required this.onSend,
     required this.enabled,
     required this.imageService,
+    this.sending = false,
   });
 
   final void Function(String text, List<String> imagePaths) onSend;
   final bool enabled;
+  final bool sending;
   final ImageService imageService;
 
   @override
@@ -156,7 +158,9 @@ class _ChatInputState extends State<ChatInput> {
                       decoration: InputDecoration(
                         hintText: widget.enabled
                             ? l10n.chatInputHint
-                            : l10n.chatInputHintNoModel,
+                            : widget.sending
+                                ? l10n.chatInputHintReplying
+                                : l10n.chatInputHintNoModel,
                         hintStyle: const TextStyle(
                           color: AppTheme.textSecondary,
                         ),

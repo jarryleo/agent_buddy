@@ -139,6 +139,7 @@
 
   "chatInputHint": "说点什么…",
   "chatInputHintNoModel": "请先在设置中添加模型",
+  "chatInputHintReplying": "模型回复中…",
   "imageAttachTooltip": "添加图片",
   "imagePickGallery": "从相册选择",
   "imagePickCamera": "拍照",

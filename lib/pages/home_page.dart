@@ -185,6 +185,7 @@ class _HomePageState extends State<HomePage> {
                   }
                   return ChatInput(
                     enabled: ready && !chat.sending,
+                    sending: chat.sending,
                     imageService: context.read<ImageService>(),
                     onSend: (text, imagePaths) {
                       chat.sendMessage(context, text, imagePaths: imagePaths);
