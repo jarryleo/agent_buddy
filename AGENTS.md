@@ -2,7 +2,8 @@
 
 Cross-platform (android / ios / web / linux / macos / windows) Flutter app.
 Phone-style UI is enforced everywhere via `lib/widgets/phone_frame.dart`
-(centered, fixed-width column on wide screens).
+(centered, fixed-width column on wide screens). On desktop the OS-level
+window is also locked to phone width (see "Desktop window size" below).
 
 ## Commands
 
@@ -31,6 +32,17 @@ No CI, no pre-commit hooks, no `melos`/`fvm` — keep it simple.
 - `lib/l10n/` — ARB sources + **generated** `app_localizations*.dart` (checked in, do not hand-edit)
 
 ## Repo-specific gotchas
+
+### Desktop window size (`window_manager`)
+- `lib/main.dart::_setupDesktopWindow` constrains the OS-level window on Windows / macOS / Linux via the `window_manager` plugin:
+  - `maximumSize.width = 480` (phone width; matches `PhoneFrame.maxWidth`).
+  - `maximumSize.height` is effectively unbounded (very large value); only width is meaningfully capped.
+  - `setMaximizable(false)` — the maximize button is disabled and the OS-level maximize shortcut is blocked.
+  - `setResizable(true)` — the user can still drag edges to resize, but only within the [min, max] bounds.
+  - Initial size 400×800, minimum 320×568 (smallest reasonable phone).
+- On Android / iOS / web the helper returns early (gated by `defaultTargetPlatform`), so the plugin is never invoked on non-desktop. The `window_manager` import itself is web-safe (pure Dart + method channels).
+- `WindowOptions` in `window_manager` 0.5.x does **not** expose `maximizable` / `resizable` — they have to be set via the separate `setMaximizable` / `setResizable` calls, fired inside the `waitUntilReadyToShow` callback (right before `show()`) so the FIFO method channel applies them before the window becomes visible.
+- First desktop build after adding `window_manager` compiles a small chunk of C++/Obj-C; the build is slower than usual once but not multi-minute (unlike `llamadart`'s native-assets download).
 
 ### Localization (l10n)
 - `l10n.yaml` has `nullable-getter: false` → `AppLocalizations.of(context)` is non-nullable, never `!` it.

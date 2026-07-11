@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'l10n/app_localizations.dart';
 import 'models/memory.dart';
@@ -30,6 +32,7 @@ import 'widgets/phone_frame.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _setupDesktopWindow();
   await Hive.initFlutter();
   ChatSessionRepository.registerAdapters();
   if (!Hive.isAdapterRegistered(2)) {
@@ -59,6 +62,35 @@ Future<void> main() async {
       memoriesBox: memoriesBox,
       memoryRepo: memoryRepo,
     ),
+  );
+}
+
+/// Constrains the OS-level desktop window so it cannot be resized wider
+/// than a phone screen and cannot be maximized. No-op on mobile / web.
+Future<void> _setupDesktopWindow() async {
+  if (defaultTargetPlatform != TargetPlatform.macOS &&
+      defaultTargetPlatform != TargetPlatform.windows &&
+      defaultTargetPlatform != TargetPlatform.linux) {
+    return;
+  }
+  await windowManager.ensureInitialized();
+  windowManager.waitUntilReadyToShow(
+    const WindowOptions(
+      size: Size(400, 800),
+      center: true,
+      minimumSize: Size(320, 568),
+      // Width is the real ceiling (matches PhoneFrame.maxWidth). Height is
+      // intentionally left effectively unbounded so only width is capped.
+      maximumSize: Size(480, 10000),
+      title: 'Agent Buddy',
+    ),
+    () {
+      // FIFO method channel: maximizable / resizable are applied before show().
+      windowManager.setMaximizable(false);
+      windowManager.setResizable(true);
+      windowManager.show();
+      windowManager.focus();
+    },
   );
 }
 
