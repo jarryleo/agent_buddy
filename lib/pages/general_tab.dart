@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_theme.dart';
 import 'settings_page.dart';
-
-const String _kAppVersion = '1.0.1';
 
 class GeneralTab extends StatelessWidget {
   const GeneralTab({super.key});
@@ -50,6 +49,7 @@ class GeneralTab extends StatelessWidget {
 
 class _GroupedCard extends StatelessWidget {
   const _GroupedCard({required this.children});
+
   final List<Widget> children;
 
   @override
@@ -252,55 +252,65 @@ class _LanguageRow extends StatelessWidget {
 
 class _AboutCard extends StatelessWidget {
   const _AboutCard({required this.l10n});
+
   final AppLocalizations l10n;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12),
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-      decoration: BoxDecoration(
-        color: context.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: context.appBorder, width: 0.6),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: AppTheme.primary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(Icons.bolt_rounded, size: 30, color: AppTheme.primary),
+    return FutureBuilder<PackageInfo>(
+      future: PackageInfo.fromPlatform(),
+      builder: (context, snapshot) {
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+          decoration: BoxDecoration(
+            color: context.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: context.appBorder, width: 0.6),
           ),
-          const SizedBox(height: 12),
-          Text(
-            l10n.generalAboutAppName,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: context.textPrimary,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  Icons.bolt_rounded,
+                  size: 30,
+                  color: AppTheme.primary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                l10n.generalAboutAppName,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: context.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                l10n.generalAboutTagline,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: context.textSecondary),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                l10n.generalAboutVersion(snapshot.data?.version ?? "..."),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: context.textSecondary.withValues(alpha: 0.8),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            l10n.generalAboutTagline,
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: context.textSecondary),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            l10n.generalAboutVersion(_kAppVersion),
-            style: TextStyle(
-              fontSize: 11,
-              color: context.textSecondary.withValues(alpha: 0.8),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
