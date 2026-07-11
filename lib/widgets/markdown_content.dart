@@ -80,11 +80,13 @@ class MarkdownContent extends StatelessWidget {
         border: Border(left: BorderSide(color: AppTheme.primary, width: 3)),
         borderRadius: BorderRadius.circular(4),
       ),
-      code: const TextStyle(
+      code: TextStyle(
         fontFamily: 'monospace',
         fontSize: 13,
-        color: Color(0xFFB91C1C),
-        backgroundColor: Color(0xFFF6F8FA),
+        color: Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFFFF7B72)
+            : const Color(0xFFB91C1C),
+        backgroundColor: context.codeBlockBg,
       ),
       codeblockPadding: EdgeInsets.zero,
       codeblockDecoration: const BoxDecoration(),

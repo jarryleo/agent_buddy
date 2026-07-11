@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_highlight/flutter_highlight.dart';
+import 'package:flutter_highlight/themes/atom-one-dark.dart';
 import 'package:flutter_highlight/themes/github.dart';
 
 import '../l10n/app_localizations.dart';
@@ -110,12 +111,27 @@ class _CodeBlockState extends State<CodeBlock> {
         ? widget.code.substring(0, widget.code.length - 1)
         : widget.code;
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseTheme = isDark ? atomOneDarkTheme : githubTheme;
+    final highlightTheme = <String, TextStyle>{
+      ...baseTheme,
+      'root': (baseTheme['root'] ?? const TextStyle()).copyWith(
+        backgroundColor: Colors.transparent,
+      ),
+    };
+    final muted = context.textSecondary;
+    final success = isDark
+        ? const Color(0xFF3FB950)
+        : const Color(0xFF1A7F37);
+    final blockBg = context.codeBlockBg;
+    final blockBorder = context.codeBlockBorder;
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1117),
+        color: blockBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF30363D)),
+        border: Border.all(color: blockBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -123,17 +139,17 @@ class _CodeBlockState extends State<CodeBlock> {
           Container(
             height: 32,
             padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: const BoxDecoration(
-              color: Color(0xFF161B22),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
-              border: Border(bottom: BorderSide(color: Color(0xFF30363D))),
+            decoration: BoxDecoration(
+              color: blockBg,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+              border: Border(bottom: BorderSide(color: blockBorder)),
             ),
             child: Row(
               children: [
                 Text(
                   _displayLanguage(lang),
-                  style: const TextStyle(
-                    color: Color(0xFF8B949E),
+                  style: TextStyle(
+                    color: muted,
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.4,
@@ -154,17 +170,13 @@ class _CodeBlockState extends State<CodeBlock> {
                         Icon(
                           _copied ? Icons.check_rounded : Icons.copy_rounded,
                           size: 12,
-                          color: _copied
-                              ? const Color(0xFF3FB950)
-                              : const Color(0xFF8B949E),
+                          color: _copied ? success : muted,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           _copied ? l10n.codeCopied : l10n.codeCopy,
                           style: TextStyle(
-                            color: _copied
-                                ? const Color(0xFF3FB950)
-                                : const Color(0xFF8B949E),
+                            color: _copied ? success : muted,
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
                           ),
@@ -182,7 +194,7 @@ class _CodeBlockState extends State<CodeBlock> {
             child: HighlightView(
               codeText,
               language: lang,
-              theme: githubTheme,
+              theme: highlightTheme,
               padding: EdgeInsets.zero,
               textStyle: TextStyle(
                 fontFamily: 'monospace',
