@@ -884,6 +884,24 @@ abstract class AppLocalizations {
   /// **'No built-in tools'**
   String get toolsListEmpty;
 
+  /// No description provided for @toolsMasterSwitchTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Tools'**
+  String get toolsMasterSwitchTitle;
+
+  /// No description provided for @toolsMasterSwitchDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Master switch for all built-in tools. Turn off for a pure chat experience to save tokens — the model won\'t see or call any tool until you turn this back on. Individual tool settings below are preserved.'**
+  String get toolsMasterSwitchDescription;
+
+  /// No description provided for @toolsMasterOffHint.
+  ///
+  /// In en, this message translates to:
+  /// **'All tools are off. The model will reply in plain text only.'**
+  String get toolsMasterOffHint;
+
   /// No description provided for @toolFetchWebName.
   ///
   /// In en, this message translates to:

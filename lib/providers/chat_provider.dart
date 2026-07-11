@@ -245,6 +245,14 @@ class ChatProvider extends ChangeNotifier {
         buffer.writeln();
       }
     }
+    // Tool-related blocks below are only useful when the model can
+    // actually call tools. When the user has turned off the master
+    // "use tools" switch (pure chat mode, token-saving), skip all
+    // of them so the system prompt stays small and the model
+    // doesn't burn tokens re-reading rules it can't act on.
+    if (!_settings.toolsEnabled) {
+      return buffer.toString().trim();
+    }
     // Encourage the model not to silently end the turn after a
     // tool returns an error result. Without this hint, some
     // (especially reasoning) models treat "the tool answered
@@ -332,6 +340,11 @@ class ChatProvider extends ChangeNotifier {
   }
 
   List<Map<String, dynamic>> _buildToolsSchema() {
+    // `activeTools` already returns an empty list when the master
+    // "use tools" switch is off, so the loop body never runs in
+    // pure-chat mode — the request goes out with no `tools` field
+    // (the caller in `sendMessage` passes `null` when the list is
+    // empty), which keeps the request body minimal.
     final tools = _settings.activeTools;
     final list = <Map<String, dynamic>>[];
     for (final t in tools) {

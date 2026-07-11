@@ -428,6 +428,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolsListEmpty => '暂无内置工具';
 
   @override
+  String get toolsMasterSwitchTitle => '使用工具';
+
+  @override
+  String get toolsMasterSwitchDescription =>
+      '所有内置工具的总开关。关闭后进入纯聊天模式,可节省 token —— 模型既看不到也无法调用任何工具,直到你重新打开总开关。下方每个工具的独立开关会保留。';
+
+  @override
+  String get toolsMasterOffHint => '工具已全部关闭,模型只会用纯文字回复。';
+
+  @override
   String get toolFetchWebName => 'Fetch Web';
 
   @override

@@ -143,6 +143,9 @@
   "roleDeleteConfirm": "确认删除 \"{name}\"?",
 
   "toolsListEmpty": "暂无内置工具",
+  "toolsMasterSwitchTitle": "使用工具",
+  "toolsMasterSwitchDescription": "所有内置工具的总开关。关闭后进入纯聊天模式,可节省 token —— 模型既看不到也无法调用任何工具,直到你重新打开总开关。下方每个工具的独立开关会保留。",
+  "toolsMasterOffHint": "工具已全部关闭,模型只会用纯文字回复。",
   "toolFetchWebName": "Fetch Web",
   "toolFetchWebDescription": "获取指定网址的内容,返回网页的纯文本。点击页面上的链接进入下一级时,用 link_text 参数把看到的链接文字传进去,工具会返回对应 URL,不必把整页链接列表都拉回来。include_links=true 仅在确实需要时使用(最多 50 条)。",
   "toolCurrentTimeName": "当前时间",

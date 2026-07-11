@@ -25,6 +25,7 @@ class SettingsProvider extends ChangeNotifier {
   String? _activeRoleId;
   Set<String> _activeToolIds = {};
   Set<String> _activeSkillIds = {};
+  bool _toolsEnabled = true;
   String _themeMode = 'system';
   String _localeCode = 'system';
 
@@ -39,6 +40,7 @@ class SettingsProvider extends ChangeNotifier {
   String? get activeRoleId => _activeRoleId;
   Set<String> get activeToolIds => Set.unmodifiable(_activeToolIds);
   Set<String> get activeSkillIds => Set.unmodifiable(_activeSkillIds);
+  bool get toolsEnabled => _toolsEnabled;
   String get themeMode => _themeMode;
   String get localeCode => _localeCode;
 
@@ -66,8 +68,16 @@ class SettingsProvider extends ChangeNotifier {
     return null;
   }
 
-  List<AgentTool> get activeTools =>
-      _tools.where((t) => _activeToolIds.contains(t.id)).toList();
+  List<AgentTool> get activeTools {
+    // The master switch wins over per-tool selection: if the user
+    // has turned tools off globally (to save tokens in a pure-chat
+    // scenario), no tool is exposed to the model even if individual
+    // switches are still flipped on. Per-tool state is preserved so
+    // toggling the master back on restores the previous selection.
+    if (!_toolsEnabled) return const [];
+    return _tools.where((t) => _activeToolIds.contains(t.id)).toList();
+  }
+
   List<Skill> get activeSkills =>
       _skills.where((s) => _activeSkillIds.contains(s.id)).toList();
 
@@ -83,6 +93,7 @@ class SettingsProvider extends ChangeNotifier {
     _activeRoleId = _storage.activeRoleId;
     _activeToolIds = _storage.activeToolIds.toSet();
     _activeSkillIds = _storage.activeSkillIds.toSet();
+    _toolsEnabled = _storage.toolsEnabled;
     _themeMode = _storage.themeMode;
     _localeCode = _storage.localeCode;
 
@@ -381,6 +392,12 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   // Tools
+  Future<void> setToolsEnabled(bool value) async {
+    _toolsEnabled = value;
+    await _storage.setToolsEnabled(value);
+    notifyListeners();
+  }
+
   Future<void> toggleTool(String id, bool enabled) async {
     _tools = [
       for (final t in _tools) t.id == id ? t.copyWith(enabled: enabled) : t,

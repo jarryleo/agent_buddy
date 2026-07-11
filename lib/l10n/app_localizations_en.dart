@@ -442,6 +442,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolsListEmpty => 'No built-in tools';
 
   @override
+  String get toolsMasterSwitchTitle => 'Use Tools';
+
+  @override
+  String get toolsMasterSwitchDescription =>
+      'Master switch for all built-in tools. Turn off for a pure chat experience to save tokens — the model won\'t see or call any tool until you turn this back on. Individual tool settings below are preserved.';
+
+  @override
+  String get toolsMasterOffHint =>
+      'All tools are off. The model will reply in plain text only.';
+
+  @override
   String get toolFetchWebName => 'Fetch Web';
 
   @override

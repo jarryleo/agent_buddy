@@ -24,6 +24,7 @@ class StorageService {
   static const _kActiveRoleId = 'active_role_id';
   static const _kActiveSkillIds = 'active_skill_ids';
   static const _kActiveToolIds = 'active_tool_ids';
+  static const _kToolsEnabled = 'tools_enabled';
   // Legacy key for the pre-session "single list of messages" model.
   // Kept for one migration on app start; new writes go to Hive.
   static const _kLegacyMessages = 'chat_messages';
@@ -125,6 +126,16 @@ class StorageService {
       _prefs.getStringList(_kActiveToolIds) ?? const [];
   Future<void> setActiveToolIds(List<String> ids) async {
     await _prefs.setStringList(_kActiveToolIds, ids);
+  }
+
+  /// Master switch for the whole tool subsystem. When false, the
+  /// model sees no tool schemas and the system prompt skips all
+  /// tool-related guidance, so a "pure chat" turn costs only the
+  /// regular prompt + completion tokens. Defaults to true so
+  /// existing installs keep their current behaviour.
+  bool get toolsEnabled => _prefs.getBool(_kToolsEnabled) ?? true;
+  Future<void> setToolsEnabled(bool value) async {
+    await _prefs.setBool(_kToolsEnabled, value);
   }
 
   // Skills

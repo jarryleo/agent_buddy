@@ -199,6 +199,9 @@
   },
 
   "toolsListEmpty": "No built-in tools",
+  "toolsMasterSwitchTitle": "Use Tools",
+  "toolsMasterSwitchDescription": "Master switch for all built-in tools. Turn off for a pure chat experience to save tokens — the model won't see or call any tool until you turn this back on. Individual tool settings below are preserved.",
+  "toolsMasterOffHint": "All tools are off. The model will reply in plain text only.",
   "toolFetchWebName": "Fetch Web",
   "toolFetchWebDescription": "Fetch the content of a URL and return the page as plain text. Pass link_text with the visible text of a link on the page to get back that link's URL — use it to follow links and walk into sub-pages without dumping the full link list. Pass include_links=true only as a last resort (capped at 50).",
   "toolCurrentTimeName": "Current Time",

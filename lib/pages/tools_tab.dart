@@ -3,6 +3,7 @@ import 'package:flutter/services.dart' show PlatformException;
 import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/tool.dart';
 import '../providers/settings_provider.dart';
 import '../services/platform/reminders_service_io.dart';
 import '../services/tool_service.dart';
@@ -25,106 +26,65 @@ class ToolsTab extends StatelessWidget {
     }
     return Scaffold(
       backgroundColor: context.bg,
-      body: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-        itemCount: tools.length,
-        separatorBuilder: (_, _) => SizedBox(height: 10),
-        itemBuilder: (context, index) {
-          final t = tools[index];
-          final active = settings.activeToolIds.contains(t.id);
-          final name = switch (t.id) {
-            'fetch_web' => l10n.toolFetchWebName,
-            'current_time' => l10n.toolCurrentTimeName,
-            'ask_user' => l10n.toolAskUserName,
-            'run_command' => l10n.toolRunCommandName,
-            'get_environment' => l10n.toolGetEnvironmentName,
-            'calendar' => l10n.toolCalendarName,
-            'reminders' => l10n.toolRemindersName,
-            'notes' => l10n.toolNotesName,
-            'tasks' => l10n.toolTasksName,
-            'download' => l10n.toolDownloadName,
-            _ => t.name,
-          };
-          final description = switch (t.id) {
-            'fetch_web' => l10n.toolFetchWebDescription,
-            'current_time' => l10n.toolCurrentTimeDescription,
-            'ask_user' => l10n.toolAskUserDescription,
-            'run_command' => l10n.toolRunCommandDescription,
-            'get_environment' => l10n.toolGetEnvironmentDescription,
-            'calendar' => l10n.toolCalendarDescription,
-            'reminders' => l10n.toolRemindersDescription,
-            'notes' => l10n.toolNotesDescription,
-            'tasks' => l10n.toolTasksDescription,
-            'download' => l10n.toolDownloadDescription,
-            _ => t.description,
-          };
-          return Material(
-            color: context.surface,
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: active ? AppTheme.primary : context.appBorder,
-                  width: active ? 1.4 : 0.6,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.handyman_outlined,
-                      color: AppTheme.primary,
-                      size: 18,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          name,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          description,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: context.textSecondary,
-                            height: 1.4,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Switch(
-                    value: t.enabled,
-                    onChanged: (v) async {
-                      if (t.id == 'reminders' && v) {
-                        await _maybePromptForTodoCalendar(context);
-                      }
-                      if (context.mounted) {
-                        await settings.toggleTool(t.id, v);
-                      }
-                    },
-                  ),
-                ],
-              ),
+      body: Column(
+        children: [
+          _MasterSwitchCard(
+            enabled: settings.toolsEnabled,
+            onChanged: (v) => settings.setToolsEnabled(v),
+          ),
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(12, 2, 12, 24),
+              itemCount: tools.length,
+              separatorBuilder: (_, _) => SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final t = tools[index];
+                final active = settings.activeToolIds.contains(t.id);
+                final name = switch (t.id) {
+                  'fetch_web' => l10n.toolFetchWebName,
+                  'current_time' => l10n.toolCurrentTimeName,
+                  'ask_user' => l10n.toolAskUserName,
+                  'run_command' => l10n.toolRunCommandName,
+                  'get_environment' => l10n.toolGetEnvironmentName,
+                  'calendar' => l10n.toolCalendarName,
+                  'reminders' => l10n.toolRemindersName,
+                  'notes' => l10n.toolNotesName,
+                  'tasks' => l10n.toolTasksName,
+                  'download' => l10n.toolDownloadName,
+                  _ => t.name,
+                };
+                final description = switch (t.id) {
+                  'fetch_web' => l10n.toolFetchWebDescription,
+                  'current_time' => l10n.toolCurrentTimeDescription,
+                  'ask_user' => l10n.toolAskUserDescription,
+                  'run_command' => l10n.toolRunCommandDescription,
+                  'get_environment' => l10n.toolGetEnvironmentDescription,
+                  'calendar' => l10n.toolCalendarDescription,
+                  'reminders' => l10n.toolRemindersDescription,
+                  'notes' => l10n.toolNotesDescription,
+                  'tasks' => l10n.toolTasksDescription,
+                  'download' => l10n.toolDownloadDescription,
+                  _ => t.description,
+                };
+                return _ToolCard(
+                  tool: t,
+                  active: active,
+                  name: name,
+                  description: description,
+                  masterEnabled: settings.toolsEnabled,
+                  onToggle: (v) async {
+                    if (t.id == 'reminders' && v) {
+                      await _maybePromptForTodoCalendar(context);
+                    }
+                    if (context.mounted) {
+                      await settings.toggleTool(t.id, v);
+                    }
+                  },
+                );
+              },
             ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }
@@ -299,6 +259,175 @@ class _ErrorState extends StatelessWidget {
           const SizedBox(height: 12),
           TextButton(onPressed: onRetry, child: Text(l10n.commonConfirm)),
         ],
+      ),
+    );
+  }
+}
+
+/// Master "use tools" switch rendered at the top of the Tools tab.
+/// When off, the whole tool stack is disabled (no schemas sent to
+/// the model, no tool-related guidance in the system prompt, and
+/// every per-tool card below is dimmed + non-interactive). Each
+/// tool's individual switch is preserved so flipping the master
+/// back on restores the previous selection.
+class _MasterSwitchCard extends StatelessWidget {
+  const _MasterSwitchCard({required this.enabled, required this.onChanged});
+
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+      decoration: BoxDecoration(
+        color: context.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: enabled ? AppTheme.primary : context.appBorder,
+          width: enabled ? 1.4 : 0.6,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              enabled ? Icons.handyman_outlined : Icons.do_disturb_alt_outlined,
+              color: AppTheme.primary,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.toolsMasterSwitchTitle,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  enabled
+                      ? l10n.toolsMasterSwitchDescription
+                      : l10n.toolsMasterOffHint,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textSecondary,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(value: enabled, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
+/// One row in the tool list. Reflects the per-tool `enabled` flag
+/// in its switch, but locks the switch (and greys the row) when
+/// the master switch above is off, so the user has to re-enable
+/// tools globally before they can flip individual tools.
+class _ToolCard extends StatelessWidget {
+  const _ToolCard({
+    required this.tool,
+    required this.active,
+    required this.name,
+    required this.description,
+    required this.masterEnabled,
+    required this.onToggle,
+  });
+
+  final AgentTool tool;
+  final bool active;
+  final String name;
+  final String description;
+  final bool masterEnabled;
+  final ValueChanged<bool> onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final dimmed = !masterEnabled;
+    return Opacity(
+      opacity: dimmed ? 0.55 : 1.0,
+      child: IgnorePointer(
+        ignoring: dimmed,
+        child: Material(
+          color: context.surface,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: active && masterEnabled
+                    ? AppTheme.primary
+                    : context.appBorder,
+                width: active && masterEnabled ? 1.4 : 0.6,
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.handyman_outlined,
+                    color: AppTheme.primary,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        description,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textSecondary,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: tool.enabled,
+                  onChanged: dimmed ? null : onToggle,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
