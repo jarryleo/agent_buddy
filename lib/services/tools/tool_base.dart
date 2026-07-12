@@ -1,12 +1,16 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, protected;
+import 'package:flutter/services.dart'
+    show MissingPluginException, PlatformException;
+
+import '../tool_service.dart';
 
 /// Base class for all built-in tools.
 ///
 /// Each subclass defines its own identity (id, name, description),
-/// platform support rules, and the OpenAI-style function schema
-/// used to tell the model about this tool.
+/// platform support rules, the OpenAI-style function schema, and
+/// the execution logic in [execute].
 abstract class ToolBase {
   /// Unique snake_case identifier (e.g. `'fetch_web'`).
   String get id;
@@ -25,6 +29,39 @@ abstract class ToolBase {
   /// this tool, or `null` if the tool is not supported on the
   /// current platform.
   Map<String, dynamic> buildSchema();
+
+  /// Execute this tool with the given [args] (from the model's
+  /// function-call arguments) and [services] (the shared service
+  /// container). Returns a JSON string that the model can parse.
+  Future<String> execute(Map<String, dynamic> args, ToolService services);
+
+  /// Wraps platform-specific exceptions ([UnsupportedError],
+  /// [MissingPluginException], [PlatformException]) into a
+  /// [ToolException] with a friendly message for the model.
+  @protected
+  Future<String> wrapPlatformExceptions(
+    Future<String> Function() fn,
+    String toolName,
+  ) async {
+    try {
+      return await fn();
+    } on ToolException {
+      rethrow;
+    } on UnsupportedError catch (e) {
+      throw ToolException('${e.message} ($toolName)');
+    } on MissingPluginException {
+      throw ToolException(
+        '$toolName is not available: native bridge not registered',
+      );
+    } on PlatformException catch (e) {
+      if (e.code == 'PERMISSION_DENIED') {
+        throw ToolException(
+          '$toolName permission denied; please grant it in system settings',
+        );
+      }
+      throw ToolException('$toolName error: ${e.code}: ${e.message}');
+    }
+  }
 }
 
 /// Convenience helpers for common platform checks.

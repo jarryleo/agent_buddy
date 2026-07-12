@@ -364,19 +364,11 @@ class ChatProvider extends ChangeNotifier {
     final name = toolCall['name'] as String? ?? '';
     final args =
         (toolCall['arguments'] as Map?)?.cast<String, dynamic>() ?? const {};
+
+    // Special cases that need ChatProvider state (ask_user, download,
+    // load_skill) are handled directly. Everything else delegates to
+    // the tool's own execute method via the registry.
     switch (name) {
-      case 'fetch_web':
-        final url = args['url'] as String? ?? '';
-        if (url.isEmpty) {
-          throw ToolException('url is required');
-        }
-        return await _tools.fetchWeb(
-          url,
-          linkText: args['link_text'] as String?,
-          includeLinks: args['include_links'] as bool? ?? false,
-        );
-      case 'current_time':
-        return await _tools.currentTime();
       case 'ask_user':
         final question = args['question'] as String? ?? '';
         final options = (args['options'] as List?)?.cast<String>() ?? const [];
@@ -388,9 +380,6 @@ class ChatProvider extends ChangeNotifier {
         if (options.length < 2) {
           throw ToolException('at least 2 options are required');
         }
-        // Stash the question/options on the tool call so the chat
-        // bubble can render the inline option chips. The stream is
-        // paused on the `await` below until the user picks.
         final s = _activeSession;
         if (s != null) {
           _replaceMessages([
@@ -421,38 +410,17 @@ class ChatProvider extends ChangeNotifier {
         } finally {
           _pendingAskUser.remove(toolId);
         }
-      case 'run_command':
-        final command = args['command'] as String? ?? '';
-        final cwd = args['cwd'] as String?;
-        final timeout = (args['timeout_seconds'] as int?) ?? 30;
-        if (command.trim().isEmpty) {
-          throw ToolException('command is required');
-        }
-        return await _tools.runCommand(
-          command: command,
-          cwd: cwd,
-          timeoutSeconds: timeout,
-        );
-      case 'get_environment':
-        return await _tools.getEnvironment();
-      case 'calendar':
-        return await _tools.runCalendar(args);
-      case 'reminders':
-        return await _tools.runReminders(args);
-      case 'notes':
-        return await _tools.runNotes(args);
-      case 'tasks':
-        return await _tools.runTasks(args);
-      case 'memory':
-        return await _tools.runMemory(args);
-      case 'location':
-        return await _tools.runLocation(args);
       case 'download':
         return await _runDownload(context, toolCall, assistantId, args);
       case 'load_skill':
         return await _loadSkill(args);
-      default:
-        throw ToolException('unknown tool: $name');
+      default: {
+        final tool = ToolRegistry.byId(name);
+        if (tool == null || !tool.isSupportedOnCurrentPlatform) {
+          throw ToolException('unknown or unavailable tool: $name');
+        }
+        return await tool.execute(args, _tools);
+      }
     }
   }
 

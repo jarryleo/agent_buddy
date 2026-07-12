@@ -1,15 +1,18 @@
 import 'dart:convert';
 
 import 'package:agent_buddy/services/tool_service.dart';
+import 'package:agent_buddy/services/tools/fetch_web_tool.dart';
+import 'package:agent_buddy/services/tools/tool_registry.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
   group('ToolService.fetchWeb', () {
-    // Speed up retry backoff for tests.
+    // Speed up retry backoff and clear the shared cache for tests.
     setUp(() {
-      ToolService.backoffBaseMs = 1;
+      FetchWebTool.backoffBaseMs = 1;
+      (ToolRegistry.byId('fetch_web') as FetchWebTool).clearCache();
     });
 
     test('returns a JSON envelope with title + text + link_count, '
