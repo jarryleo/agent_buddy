@@ -269,6 +269,7 @@ class ChatProvider extends ChangeNotifier {
           '没头绪就先 list。\n'
           '- location(位置):获取当前位置,别主动问用户。\n'
           '- ask_user(问用户):需要用户选择或确认时用。\n'
+          '- file(文件):读/写/删/改名/列目录/查属性。给绝对路径。\n'
           '- 其他工具按参数说明用就行。';
     }
 
