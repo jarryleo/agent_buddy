@@ -605,20 +605,17 @@ class _ToolCallCardState extends State<_ToolCallCard> {
                   borderRadius: BorderRadius.circular(4),
                   border: Border.all(color: context.codeBlockBorder),
                 ),
-                child: Scrollbar(
-                  thumbVisibility: false,
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(6),
-                    child: Text(
-                      hasArgs
-                          ? _prettyJson(tc.arguments)
-                          : l10n.toolCallNoArguments,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontFamily: 'monospace',
-                        color: context.textPrimary,
-                        height: 1.4,
-                      ),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(6),
+                  child: Text(
+                    hasArgs
+                        ? _prettyJson(tc.arguments)
+                        : l10n.toolCallNoArguments,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      color: context.textPrimary,
+                      height: 1.4,
                     ),
                   ),
                 ),
@@ -649,22 +646,19 @@ class _ToolCallCardState extends State<_ToolCallCard> {
                         : context.codeBlockBorder,
                   ),
                 ),
-                child: Scrollbar(
-                  thumbVisibility: false,
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(6),
-                    child: Text(
-                      (tc.result ?? '').isEmpty
-                          ? l10n.toolCallNoResult
-                          : tc.result!,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontFamily: 'monospace',
-                        color: tc.isFailed
-                            ? context.errorText
-                            : context.textPrimary,
-                        height: 1.4,
-                      ),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(6),
+                  child: Text(
+                    (tc.result ?? '').isEmpty
+                        ? l10n.toolCallNoResult
+                        : tc.result!,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      color: tc.isFailed
+                          ? context.errorText
+                          : context.textPrimary,
+                      height: 1.4,
                     ),
                   ),
                 ),
@@ -800,9 +794,17 @@ class _StreamingMarkdownState extends State<_StreamingMarkdown>
     super.dispose();
   }
 
+  static int _safeSubstringEnd(String s, int end) {
+    if (end <= 0 || end >= s.length) return end;
+    final cu = s.codeUnitAt(end - 1);
+    if (cu >= 0xD800 && cu <= 0xDBFF) return end - 1;
+    return end;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final visible = _rendered.substring(0, _visibleLength);
+    final safeLength = _safeSubstringEnd(_rendered, _visibleLength);
+    final visible = _rendered.substring(0, safeLength);
     final text = visible.isEmpty ? ' ' : visible;
     // The streaming typewriter advances `_visibleLength` only
     // every ~33ms (driven by the AnimationController). Wrapping
