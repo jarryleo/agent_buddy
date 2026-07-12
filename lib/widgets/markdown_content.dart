@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:markdown/markdown.dart' as md;
@@ -123,69 +126,67 @@ class MarkdownContent extends StatelessWidget {
         }
       },
       imageBuilder: (uri, title, alt) {
-        final isNetwork = uri.scheme == 'http' || uri.scheme == 'https';
-        final image = isNetwork
-            ? Image.network(
-                uri.toString(),
-                fit: BoxFit.contain,
-                loadingBuilder: (context, child, progress) {
-                  if (progress == null) return child;
-                  return Container(
-                    constraints: const BoxConstraints(maxHeight: 200),
-                    alignment: Alignment.center,
-                    child: SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        value: progress.expectedTotalBytes != null
-                            ? progress.cumulativeBytesLoaded /
-                                  (progress.expectedTotalBytes ?? 1)
-                            : null,
-                      ),
-                    ),
-                  );
-                },
-                errorBuilder: (context, error, stack) => Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: context.bg,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: context.appBorder),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.broken_image_outlined,
-                        size: 18,
-                        color: context.textSecondary,
-                      ),
-                      SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          alt ?? uri.toString(),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: context.textSecondary,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
+        final scheme = uri.scheme;
+        final isNetwork = scheme == 'http' || scheme == 'https';
+        final isFile = scheme == 'file';
+        final isData = scheme == 'data';
+
+        Widget image;
+        if (isNetwork) {
+          image = Image.network(
+            uri.toString(),
+            fit: BoxFit.contain,
+            loadingBuilder: (context, child, progress) {
+              if (progress == null) return child;
+              return Container(
+                constraints: const BoxConstraints(maxHeight: 200),
+                alignment: Alignment.center,
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    value: progress.expectedTotalBytes != null
+                        ? progress.cumulativeBytesLoaded /
+                              (progress.expectedTotalBytes ?? 1)
+                        : null,
                   ),
                 ),
-              )
-            : Image.asset(uri.toString(), fit: BoxFit.contain);
+              );
+            },
+            errorBuilder: (context, error, stack) => _imageError(context, alt ?? uri.toString()),
+          );
+        } else if (isFile) {
+          final filePath = uri.toFilePath();
+          image = Image.file(
+            File(filePath),
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stack) => _imageError(context, alt ?? uri.toString()),
+          );
+        } else if (isData) {
+          image = _buildDataImage(context, uri, alt);
+        } else {
+          // Fallback: try as a local file path or relative path.
+          final path = Uri.decodeComponent(uri.toString());
+          try {
+            image = Image.file(
+              File(path),
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stack) => _imageError(context, alt ?? path),
+            );
+          } catch (_) {
+            image = _imageError(context, alt ?? path);
+          }
+        }
+
         return GestureDetector(
-          onTap: isNetwork
-              ? () => ImagePreviewPage.showNetwork(
-                  context,
-                  uri.toString(),
-                  title: title,
-                )
-              : null,
+          onTap: () {
+            if (isNetwork) {
+              ImagePreviewPage.showNetwork(context, uri.toString(), title: title);
+            } else if (isFile) {
+              ImagePreviewPage.showLocal(context, uri.toFilePath(), title: title);
+            }
+          },
           child: ClipRRect(
             borderRadius: BorderRadius.circular(6),
             child: ConstrainedBox(
@@ -200,6 +201,51 @@ class MarkdownContent extends StatelessWidget {
       },
       builders: {'pre': _CodeBlockBuilder()},
     );
+  }
+}
+
+/// Shared error widget for broken images (network, file, data).
+Widget _imageError(BuildContext context, String label) {
+  return Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: context.bg,
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: context.appBorder),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.broken_image_outlined, size: 18, color: context.textSecondary),
+        SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 12, color: context.textSecondary),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Build an image widget from a `data:` URI (e.g. `data:image/png;base64,...`).
+Widget _buildDataImage(BuildContext context, Uri uri, String? alt) {
+  try {
+    final data = uri.toString();
+    final comma = data.indexOf(',');
+    if (comma == -1) return _imageError(context, alt ?? data);
+    final raw = data.substring(comma + 1);
+    final decoded = base64Decode(raw);
+    return Image.memory(
+      decoded,
+      fit: BoxFit.contain,
+      errorBuilder: (context, error, stack) => _imageError(context, alt ?? data),
+    );
+  } catch (_) {
+    return _imageError(context, alt ?? uri.toString());
   }
 }
 
