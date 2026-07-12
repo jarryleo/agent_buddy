@@ -1,7 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
-
-import 'package:flutter/foundation.dart' show kIsWeb;
 
 enum BuiltinTool {
   fetchWeb,
@@ -18,6 +15,9 @@ enum BuiltinTool {
   download,
 }
 
+/// Minimal extension: only provides the snake_case [id].
+/// Name, description, platform rules live on [ToolBase] subclasses
+/// in `lib/services/tools/`.
 extension BuiltinToolX on BuiltinTool {
   String get id {
     switch (this) {
@@ -45,96 +45,6 @@ extension BuiltinToolX on BuiltinTool {
         return 'location';
       case BuiltinTool.download:
         return 'download';
-    }
-  }
-
-  String get name {
-    switch (this) {
-      case BuiltinTool.fetchWeb:
-        return 'Fetch Web';
-      case BuiltinTool.currentTime:
-        return 'Current Time';
-      case BuiltinTool.askUser:
-        return 'Ask User';
-      case BuiltinTool.runCommand:
-        return 'Run Command';
-      case BuiltinTool.getEnvironment:
-        return 'Get Environment';
-      case BuiltinTool.calendar:
-        return 'Calendar';
-      case BuiltinTool.reminders:
-        return 'Reminders';
-      case BuiltinTool.notes:
-        return 'Notes';
-      case BuiltinTool.tasks:
-        return 'Tasks';
-      case BuiltinTool.memory:
-        return 'Memory';
-      case BuiltinTool.location:
-        return 'Location';
-      case BuiltinTool.download:
-        return 'Download';
-    }
-  }
-
-  String get description {
-    switch (this) {
-      case BuiltinTool.fetchWeb:
-        return '获取指定网址的内容,返回网页的纯文本。要进入下一级页面,'
-            '用 link_text 参数把页面上看到的链接文字传进去即可取到对应 URL,'
-            '不必把整个页面的链接列表都拉回来。';
-      case BuiltinTool.currentTime:
-        return '获取当前日期与时间,返回本地时间、ISO 8601 与 Unix 时间戳。';
-      case BuiltinTool.askUser:
-        return '向用户提出一个多选或单选问题,用户作答后把结果回传给模型。';
-      case BuiltinTool.runCommand:
-        return '在主机上执行 shell 命令,返回 stdout、stderr 与退出码。仅桌面端 (Windows / macOS / Linux) 可用。';
-      case BuiltinTool.getEnvironment:
-        return '获取本机环境信息(OS、架构、用户、主目录、shell、内核版本),供模型在执行 run_command 前判断平台特定命令。仅桌面端 (Windows / macOS / Linux) 可用。';
-      case BuiltinTool.calendar:
-        return '管理手机系统日历(读取 / 创建 / 修改 / 删除 / 列出事件)。需要日历读取/写入权限。仅 Android / iOS 可用。';
-      case BuiltinTool.reminders:
-        return '管理提醒事项与待办(iOS: Reminders;Android: 日历全天事件)。需要提醒/日历写入权限。仅 Android / iOS 可用。';
-      case BuiltinTool.notes:
-        return '管理 Agent Buddy 内置笔记(数据存于本机 Hive,无需系统权限)。';
-      case BuiltinTool.tasks:
-        return '管理 Agent Buddy 内置任务清单(数据存于本机 Hive,无需系统权限)。Android 上作为"待办"的回退通路。';
-      case BuiltinTool.memory:
-        return '管理 AI 长期记忆:list / search(多关键词 OR 模糊查询,支持 keywords[] + tags 过滤) / create / get / update / delete / delete_batch。写入时尽量多列几个 tags 关键词,便于后续模糊查找;查询时尽量用 keywords[] 一次给多个相关词,以提高召回。';
-      case BuiltinTool.location:
-        return '获取用户当前的大致位置(经纬度 + 行政区划 + 时区)。移动端用 GPS 定位(需要授权),桌面/Web 用 IP 反查城市与时区。仅在用户问到天气、附近、本地时区等明确场景时调用,不要主动询问。';
-      case BuiltinTool.download:
-        return '从指定 URL 下载文件到 APP 临时目录(用户须在气泡上点"保存"才能把文件真正落到磁盘上,文件类型 / 格式由 URL 决定)。返回 JSON 信封包含 action / id / url / filename / size_bytes。每次调用下载一个文件,需要下载多个文件就连续调用多次。移动端 / 桌面端可用,Web 不可用(没有文件系统)。';
-    }
-  }
-
-  /// True on platforms that can actually run this tool. Used to skip
-  /// the schema and the settings backfill on platforms where the
-  /// underlying API isn't available.
-  bool get isSupportedOnCurrentPlatform {
-    switch (this) {
-      case BuiltinTool.fetchWeb:
-      case BuiltinTool.currentTime:
-      case BuiltinTool.askUser:
-      case BuiltinTool.notes:
-      case BuiltinTool.tasks:
-      case BuiltinTool.memory:
-      case BuiltinTool.location:
-        return true;
-      case BuiltinTool.runCommand:
-      case BuiltinTool.getEnvironment:
-        if (kIsWeb) return false;
-        return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
-      case BuiltinTool.download:
-        // Web has no real filesystem and no temp dir, so
-        // path_provider's getTemporaryDirectory throws
-        // UnsupportedError. Hide the tool there.
-        if (kIsWeb) return false;
-        return true;
-      case BuiltinTool.calendar:
-      case BuiltinTool.reminders:
-        if (kIsWeb) return false;
-        return Platform.isAndroid || Platform.isIOS;
     }
   }
 }

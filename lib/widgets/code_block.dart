@@ -120,9 +120,7 @@ class _CodeBlockState extends State<CodeBlock> {
       ),
     };
     final muted = context.textSecondary;
-    final success = isDark
-        ? const Color(0xFF3FB950)
-        : const Color(0xFF1A7F37);
+    final success = isDark ? const Color(0xFF3FB950) : const Color(0xFF1A7F37);
     final blockBg = context.codeBlockBg;
     final blockBorder = context.codeBlockBorder;
 
@@ -141,7 +139,9 @@ class _CodeBlockState extends State<CodeBlock> {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             decoration: BoxDecoration(
               color: blockBg,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(8),
+              ),
               border: Border(bottom: BorderSide(color: blockBorder)),
             ),
             child: Row(

@@ -96,10 +96,9 @@ class GgufMetadataReader {
         if (key == null) break;
         final valueTypeBytes = await raf.read(4);
         if (valueTypeBytes.length < 4) break;
-        final valueType = ByteData.sublistView(valueTypeBytes).getUint32(
-          0,
-          Endian.little,
-        );
+        final valueType = ByteData.sublistView(
+          valueTypeBytes,
+        ).getUint32(0, Endian.little);
 
         final result = await _skipOrReadValue(raf, valueType, (v) {
           final kind = _matchKey(key);
@@ -211,10 +210,9 @@ class GgufMetadataReader {
         final len = ByteData.sublistView(lenBytes).getUint64(0, Endian.little);
         final subTypeBytes = await raf.read(4);
         if (subTypeBytes.length < 4) return false;
-        final subType = ByteData.sublistView(subTypeBytes).getUint32(
-          0,
-          Endian.little,
-        );
+        final subType = ByteData.sublistView(
+          subTypeBytes,
+        ).getUint32(0, Endian.little);
         final elemSize = _scalarSize(subType);
         if (elemSize == null) return false; // variable-size element type
         if (len > 64 * 1024 * 1024) return false;

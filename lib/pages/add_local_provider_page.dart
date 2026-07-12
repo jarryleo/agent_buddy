@@ -882,7 +882,9 @@ class _BatchSizeSlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final safeValue = presets.contains(value) ? value : LocalProvider.kDefaultBatchSize;
+    final safeValue = presets.contains(value)
+        ? value
+        : LocalProvider.kDefaultBatchSize;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -973,7 +975,9 @@ class _MemoryEstimateCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: context.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: context.textSecondary.withValues(alpha: 0.15)),
+        border: Border.all(
+          color: context.textSecondary.withValues(alpha: 0.15),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -999,13 +1003,20 @@ class _MemoryEstimateCard extends StatelessWidget {
               style: TextStyle(fontSize: 11, color: context.textSecondary),
             ),
           ] else ...[
-            _row(context, totalLabel, formatBytes(_breakdown.totalBytes),
-                emphasize: true),
+            _row(
+              context,
+              totalLabel,
+              formatBytes(_breakdown.totalBytes),
+              emphasize: true,
+            ),
             const SizedBox(height: 4),
             _row(context, modelLabel, formatBytes(_breakdown.modelFileBytes)),
             _row(context, kvLabel, formatBytes(_breakdown.kvCacheBytes)),
-            _row(context, computeLabel,
-                formatBytes(_breakdown.computeBufferBytes)),
+            _row(
+              context,
+              computeLabel,
+              formatBytes(_breakdown.computeBufferBytes),
+            ),
           ],
         ],
       ),
@@ -1023,8 +1034,12 @@ class _MemoryEstimateCard extends StatelessWidget {
     );
   }
 
-  Widget _row(BuildContext context, String label, String value,
-      {bool emphasize = false}) {
+  Widget _row(
+    BuildContext context,
+    String label,
+    String value, {
+    bool emphasize = false,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: Row(

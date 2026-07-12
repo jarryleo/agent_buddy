@@ -71,7 +71,10 @@ class MemoryEstimator {
     final valLen = arch.valueLength ?? arch.headDim!;
     final bytesK = bytesPerKvElement(cacheTypeK);
     final bytesV = bytesPerKvElement(cacheTypeV);
-    return (contextSize * layers * kvHeads * (keyLen * bytesK + valLen * bytesV))
+    return (contextSize *
+            layers *
+            kvHeads *
+            (keyLen * bytesK + valLen * bytesV))
         .round();
   }
 
@@ -161,10 +164,10 @@ class MemoryEstimator {
     );
     // +10% overhead covers tokenizer state, sampler state, and
     // llama.cpp's internal bookkeeping that the above doesn't.
-    final overhead = ((modelFileBytes + kvBytes + computeBytes + flashBytes) *
-            0.10)
-        .round();
-    final total = modelFileBytes + kvBytes + computeBytes + flashBytes + overhead;
+    final overhead =
+        ((modelFileBytes + kvBytes + computeBytes + flashBytes) * 0.10).round();
+    final total =
+        modelFileBytes + kvBytes + computeBytes + flashBytes + overhead;
     return MemoryBreakdown(
       modelFileBytes: modelFileBytes,
       kvCacheBytes: kvBytes,

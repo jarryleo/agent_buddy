@@ -7,6 +7,7 @@ import '../models/tool.dart';
 import '../providers/settings_provider.dart';
 import '../services/platform/reminders_service_io.dart';
 import '../services/tool_service.dart';
+import '../services/tools/tool_registry.dart';
 import '../theme/app_theme.dart';
 import 'settings_page.dart';
 
@@ -40,32 +41,9 @@ class ToolsTab extends StatelessWidget {
               itemBuilder: (context, index) {
                 final t = tools[index];
                 final active = settings.activeToolIds.contains(t.id);
-                final name = switch (t.id) {
-                  'fetch_web' => l10n.toolFetchWebName,
-                  'current_time' => l10n.toolCurrentTimeName,
-                  'ask_user' => l10n.toolAskUserName,
-                  'run_command' => l10n.toolRunCommandName,
-                  'get_environment' => l10n.toolGetEnvironmentName,
-                  'calendar' => l10n.toolCalendarName,
-                  'reminders' => l10n.toolRemindersName,
-                  'notes' => l10n.toolNotesName,
-                  'tasks' => l10n.toolTasksName,
-                  'download' => l10n.toolDownloadName,
-                  _ => t.name,
-                };
-                final description = switch (t.id) {
-                  'fetch_web' => l10n.toolFetchWebDescription,
-                  'current_time' => l10n.toolCurrentTimeDescription,
-                  'ask_user' => l10n.toolAskUserDescription,
-                  'run_command' => l10n.toolRunCommandDescription,
-                  'get_environment' => l10n.toolGetEnvironmentDescription,
-                  'calendar' => l10n.toolCalendarDescription,
-                  'reminders' => l10n.toolRemindersDescription,
-                  'notes' => l10n.toolNotesDescription,
-                  'tasks' => l10n.toolTasksDescription,
-                  'download' => l10n.toolDownloadDescription,
-                  _ => t.description,
-                };
+                final toolDef = ToolRegistry.byId(t.id);
+                final name = toolDef?.name ?? t.name;
+                final description = toolDef?.description ?? t.description;
                 return _ToolCard(
                   tool: t,
                   active: active,

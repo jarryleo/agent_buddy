@@ -8,9 +8,7 @@ void main() {
   group('GgufMetadataReader', () {
     test('returns null for missing files', () async {
       final reader = const GgufMetadataReader();
-      final result = await reader.read(
-        'D:/this/path/does/not/exist.gguf',
-      );
+      final result = await reader.read('D:/this/path/does/not/exist.gguf');
       expect(result, isNull);
     });
 
@@ -32,18 +30,20 @@ void main() {
       final dir = await Directory.systemTemp.createTemp('gguf_test_');
       final path = '${dir.path}/good.gguf';
       final f = File(path);
-      await f.writeAsBytes(_buildMinimalGguf(
-        version: 3,
-        kv: [
-          _Kv('llama.embedding_length', 4, _u32(2560)),
-          _Kv('llama.block_count', 4, _u32(26)),
-          _Kv('llama.attention.head_count_kv', 4, _u32(8)),
-          _Kv('llama.attention.key_length', 4, _u32(256)),
-          _Kv('llama.attention.value_length', 4, _u32(256)),
-          _Kv('llama.vocab_size', 4, _u32(256000)),
-          _Kv('llama.context_length', 4, _u32(131072)),
-        ],
-      ));
+      await f.writeAsBytes(
+        _buildMinimalGguf(
+          version: 3,
+          kv: [
+            _Kv('llama.embedding_length', 4, _u32(2560)),
+            _Kv('llama.block_count', 4, _u32(26)),
+            _Kv('llama.attention.head_count_kv', 4, _u32(8)),
+            _Kv('llama.attention.key_length', 4, _u32(256)),
+            _Kv('llama.attention.value_length', 4, _u32(256)),
+            _Kv('llama.vocab_size', 4, _u32(256000)),
+            _Kv('llama.context_length', 4, _u32(131072)),
+          ],
+        ),
+      );
       try {
         final reader = const GgufMetadataReader();
         final result = await reader.read(path);
@@ -66,15 +66,17 @@ void main() {
       final dir = await Directory.systemTemp.createTemp('gguf_test_');
       final path = '${dir.path}/gemma.gguf';
       final f = File(path);
-      await f.writeAsBytes(_buildMinimalGguf(
-        version: 3,
-        kv: [
-          _Kv('gemma3.embedding_length', 4, _u32(2560)),
-          _Kv('gemma3.block_count', 4, _u32(26)),
-          _Kv('gemma3.attention.head_count_kv', 4, _u32(4)),
-          _Kv('gemma3.attention.key_length', 4, _u32(256)),
-        ],
-      ));
+      await f.writeAsBytes(
+        _buildMinimalGguf(
+          version: 3,
+          kv: [
+            _Kv('gemma3.embedding_length', 4, _u32(2560)),
+            _Kv('gemma3.block_count', 4, _u32(26)),
+            _Kv('gemma3.attention.head_count_kv', 4, _u32(4)),
+            _Kv('gemma3.attention.key_length', 4, _u32(256)),
+          ],
+        ),
+      );
       try {
         final reader = const GgufMetadataReader();
         final result = await reader.read(path);
@@ -94,12 +96,12 @@ void main() {
       final dir = await Directory.systemTemp.createTemp('gguf_test_');
       final path = '${dir.path}/partial.gguf';
       final f = File(path);
-      await f.writeAsBytes(_buildMinimalGguf(
-        version: 3,
-        kv: [
-          _Kv('llama.embedding_length', 4, _u32(4096)),
-        ],
-      ));
+      await f.writeAsBytes(
+        _buildMinimalGguf(
+          version: 3,
+          kv: [_Kv('llama.embedding_length', 4, _u32(4096))],
+        ),
+      );
       try {
         final reader = const GgufMetadataReader();
         final result = await reader.read(path);
@@ -118,13 +120,15 @@ void main() {
       final f = File(path);
       // Put an unknown STRING KV (llama.name) BEFORE the
       // block_count entry, so the parser has to skip it first.
-      await f.writeAsBytes(_buildMinimalGguf(
-        version: 3,
-        kv: [
-          _Kv('llama.name', 8, _string('Tiny Test Model')),
-          _Kv('llama.block_count', 4, _u32(12)),
-        ],
-      ));
+      await f.writeAsBytes(
+        _buildMinimalGguf(
+          version: 3,
+          kv: [
+            _Kv('llama.name', 8, _string('Tiny Test Model')),
+            _Kv('llama.block_count', 4, _u32(12)),
+          ],
+        ),
+      );
       try {
         final reader = const GgufMetadataReader();
         final result = await reader.read(path);
@@ -162,10 +166,7 @@ Uint8List _u64(int v) {
   return bd.buffer.asUint8List();
 }
 
-Uint8List _buildMinimalGguf({
-  required int version,
-  required List<_Kv> kv,
-}) {
+Uint8List _buildMinimalGguf({required int version, required List<_Kv> kv}) {
   // Header: magic(4) + version(4) + tensor_count(8) + kv_count(8)
   final builder = BytesBuilder();
   builder.add([0x47, 0x47, 0x55, 0x46]); // GGUF

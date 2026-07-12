@@ -7,6 +7,7 @@ import '../models/role.dart';
 import '../models/skill.dart';
 import '../models/tool.dart';
 import '../services/storage_service.dart';
+import '../services/tools/tool_registry.dart';
 
 class SettingsProvider extends ChangeNotifier {
   SettingsProvider(this._storage);
@@ -101,14 +102,15 @@ class SettingsProvider extends ChangeNotifier {
     // get every builtin; existing installs hit the second branch which
     // back-fills any builtin that's missing (e.g. a user upgrading
     // from a build that didn't have `current_time`).
+    // Name and description come from the ToolBase subclass.
     if (_tools.isEmpty) {
       _tools = [
-        for (final b in BuiltinTool.values)
-          if (b.isSupportedOnCurrentPlatform)
+        for (final t in ToolRegistry.all)
+          if (t.isSupportedOnCurrentPlatform)
             AgentTool(
-              id: b.id,
-              name: b.name,
-              description: b.description,
+              id: t.id,
+              name: t.name,
+              description: t.description,
               enabled: true,
             ),
       ];
@@ -116,15 +118,15 @@ class SettingsProvider extends ChangeNotifier {
     } else {
       final existingIds = _tools.map((t) => t.id).toSet();
       var changed = false;
-      for (final b in BuiltinTool.values) {
-        if (!b.isSupportedOnCurrentPlatform) continue;
-        if (!existingIds.contains(b.id)) {
+      for (final t in ToolRegistry.all) {
+        if (!t.isSupportedOnCurrentPlatform) continue;
+        if (!existingIds.contains(t.id)) {
           _tools = [
             ..._tools,
             AgentTool(
-              id: b.id,
-              name: b.name,
-              description: b.description,
+              id: t.id,
+              name: t.name,
+              description: t.description,
               enabled: true,
             ),
           ];
@@ -162,16 +164,16 @@ class SettingsProvider extends ChangeNotifier {
     // from a build that didn't have `current_time`) is enabled.
     if (_activeToolIds.isEmpty) {
       _activeToolIds = {
-        for (final b in BuiltinTool.values)
-          if (b.isSupportedOnCurrentPlatform) b.id,
+        for (final t in ToolRegistry.all)
+          if (t.isSupportedOnCurrentPlatform) t.id,
       };
       await _storage.setActiveToolIds(_activeToolIds.toList());
     } else {
       var changed = false;
-      for (final b in BuiltinTool.values) {
-        if (!b.isSupportedOnCurrentPlatform) continue;
-        if (!_activeToolIds.contains(b.id)) {
-          _activeToolIds.add(b.id);
+      for (final t in ToolRegistry.all) {
+        if (!t.isSupportedOnCurrentPlatform) continue;
+        if (!_activeToolIds.contains(t.id)) {
+          _activeToolIds.add(t.id);
           changed = true;
         }
       }
