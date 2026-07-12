@@ -9,8 +9,8 @@ class FetchWebTool extends ToolBase {
 
   @override
   String get description =>
-      '抓取网页内容。看到有用链接就点进去继续看——把链接文字填到 link_text 参数,'
-      '拿到新 URL 再抓一次。多级深入是正常操作,别只看首页。';
+      '抓取网页。填入 link_text 会直接返回匹配的链接 URL,不返回页面内容——'
+      '你需要再调一次 fetch_web 来抓那个链接的页面。多级深入是正常操作,别只看首页。';
 
   @override
   bool get isSupportedOnCurrentPlatform => true;
@@ -22,8 +22,8 @@ class FetchWebTool extends ToolBase {
       'function': {
         'name': 'fetch_web',
         'description':
-            '抓取网页返回 {url, title, text, link_count}。看到有用链接就把文字填到 link_text,'
-            '工具返回 link_url,你再抓一次就能看到详情。一直深入直到找到答案。'
+            '抓取网页。不填 link_text 时返回 {url, title, text, link_count}。'
+            '填 link_text 后只返回匹配的链接 URL + 提示——你需要再调一次 fetch_web 去抓那个链接的页面。'
             'include_links=true 是最后手段(最多 50 条),默认关闭省 token。',
         'parameters': {
           'type': 'object',
@@ -35,8 +35,8 @@ class FetchWebTool extends ToolBase {
             'link_text': {
               'type': 'string',
               'description':
-                  '填页面上看到的链接文字,工具会找到对应链接并返回 URL。'
-                  '不区分大小写,先精确匹配再模糊匹配。拿到 URL 后继续 fetch_web 深入。',
+                  '填页面上看到的链接文字,工具会找到链接并返回 URL(不返回页面内容)。'
+                  '不区分大小写,先精确匹配再模糊匹配。拿到 URL 后还得再调一次 fetch_web 抓内容。',
             },
             'include_links': {
               'type': 'boolean',

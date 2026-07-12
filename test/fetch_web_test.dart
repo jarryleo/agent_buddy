@@ -40,7 +40,7 @@ void main() {
     });
 
     test(
-      'link_text resolves the matching anchor and returns its URL',
+      'link_text matched: returns only link info (no page text/title)',
       () async {
         final client = MockClient((req) async {
           return http.Response(
@@ -61,6 +61,12 @@ void main() {
         final json = jsonDecode(raw) as Map<String, dynamic>;
         expect(json['link_text_matched'], 'Documentation');
         expect(json['link_url'], 'https://example.com/docs/index.html');
+        // Should NOT return page content — model must call fetch_web again.
+        expect(json.containsKey('title'), isFalse);
+        expect(json.containsKey('text'), isFalse);
+        expect(json.containsKey('link_count'), isFalse);
+        expect(json['note'], contains('call fetch_web'));
+        expect(json['note'], contains('/docs/index.html'));
       },
     );
 
@@ -81,6 +87,8 @@ void main() {
       );
       final json = jsonDecode(raw) as Map<String, dynamic>;
       expect(json['link_url'], 'https://example.com/docs');
+      expect(json.containsKey('text'), isFalse);
+      expect(json['note'], contains('call fetch_web'));
     });
 
     test('link_text falls back from exact to substring match', () async {
@@ -103,12 +111,16 @@ void main() {
       );
       final json = jsonDecode(raw) as Map<String, dynamic>;
       expect(json['link_url'], 'https://example.com/contact');
+      expect(json.containsKey('text'), isFalse);
+      expect(json['note'], contains('call fetch_web'));
     });
 
-    test('link_text returns link_error when no link matches', () async {
+    test('link_text returns link_error + full page content when no match',
+        () async {
       final client = MockClient((req) async {
         return http.Response(
-          '<html><body><a href="/a">A</a><a href="/b">B</a></body></html>',
+          '<html><head><title>Test</title></head>'
+          '<body><a href="/a">A</a><a href="/b">B</a></body></html>',
           200,
           headers: {'content-type': 'text/html'},
         );
@@ -122,6 +134,10 @@ void main() {
       expect(json.containsKey('link_url'), isFalse);
       expect(json['link_error'], contains('no link with text matching'));
       expect(json['link_error'], contains('NonExistent'));
+      // Falls back to full page content so the model can find the right text.
+      expect(json['title'], 'Test');
+      expect(json['text'], isNotEmpty);
+      expect(json['link_count'], 2);
     });
 
     test(

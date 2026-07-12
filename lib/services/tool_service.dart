@@ -126,25 +126,26 @@ class ToolService {
 
   /// Fetches the content of [url] and returns a JSON envelope string.
   ///
-  /// Default behavior: returns the page's title, plain text, and the
-  /// number of links on the page. Link URLs are NOT included in the
-  /// response (saves tokens). To navigate to a sub-page, pass
-  /// [linkText] with the visible text of the link you want to follow
-  /// — the tool resolves it against the page's `<a>` tags and adds
-  /// the resolved URL to the response so the model can call
-  /// `fetch_web(that_url)` to follow it.
+  /// Default behavior (no [linkText]): returns the page's title, plain
+  /// text, and link count. Link URLs are NOT included (saves tokens).
+  ///
+  /// When [linkText] is set and a matching `<a>` is found: returns
+  /// ONLY the link URL + a note — no page text/title. The model must
+  /// call `fetch_web(matched_url)` again to get the actual content.
+  /// This avoids confusion where small models mistake the returned
+  /// page content for the linked page's content.
+  ///
+  /// When [linkText] is set but nothing matches: falls back to the
+  /// full page content with a `link_error` field so the model can
+  /// find the right text.
   ///
   /// Parameters:
   ///   [url]          absolute URL to fetch
-  ///   [linkText]     optional. If set, the tool looks up the first
-  ///                  `<a>` on the page whose visible text matches
+  ///   [linkText]     optional. Link text to find on the page
   ///                  (case-insensitive, normalized whitespace,
-  ///                  exact match first, then substring) and adds
-  ///                  `link_url` + `link_text_matched` to the
-  ///                  response. Use this for multi-level navigation:
-  ///                  `fetch_web(A)` → read text → `fetch_web(A,
-  ///                  link_text='X')` → get URL for link X →
-  ///                  `fetch_web(that_url)` → read sub-page.
+  ///                  exact match first, then substring). When
+  ///                  matched, only the link URL is returned — the
+  ///                  model must call fetch_web again on that URL.
   ///   [includeLinks] optional, default false. If true, an
   ///                  additional `links[]` array of `{text, url}`
   ///                  pairs is included (capped at 50). Use
@@ -245,9 +246,25 @@ class ToolService {
       }
     }
 
-    // Build the response envelope. Text is truncated per maxLength
-    // (caching the full text lets us re-truncate at a different
-    // length on a later call without re-fetching).
+    // When link_text is provided and a link matches, return ONLY the
+    // link URL + a note — no page text/title. This avoids the
+    // confusion where small models think the returned content is
+    // from the linked page. The model must call fetch_web again
+    // on the link_url to get the actual content.
+    if (linkText != null) {
+      final match = _findLinkByText(page.links, linkText);
+      if (match != null) {
+        return jsonEncode({
+          'url': page.url,
+          'link_url': match.url,
+          'link_text_matched': match.text,
+          'note':
+              'link found! call fetch_web with url="${match.url}" to get the linked page content',
+        });
+      }
+    }
+
+    // Full page response (no link_text, or link_text didn't match).
     var text = page.cleanedText;
     final truncated = text.length > maxLength;
     if (truncated) {
@@ -266,14 +283,10 @@ class ToolService {
     };
 
     if (linkText != null) {
-      final match = _findLinkByText(page.links, linkText);
-      if (match != null) {
-        payload['link_url'] = match.url;
-        payload['link_text_matched'] = match.text;
-      } else {
-        payload['link_error'] =
-            'no link with text matching "$linkText" was found on this page';
-      }
+      // link_text was provided but no match found — include the full
+      // content so the model can find the right link text.
+      payload['link_error'] =
+          'no link with text matching "$linkText" was found on this page';
     }
 
     if (includeLinks) {
