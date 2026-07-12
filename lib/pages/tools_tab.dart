@@ -257,61 +257,74 @@ class _MasterSwitchCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-      decoration: BoxDecoration(
-        color: context.surface,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+      child: Material(
+        color: enabled
+            ? AppTheme.primary.withValues(alpha: 0.08)
+            : context.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: enabled ? AppTheme.primary : context.appBorder,
-          width: enabled ? 1.4 : 0.6,
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => onChanged(!enabled),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(12, 12, 10, 12),
             decoration: BoxDecoration(
-              color: AppTheme.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: enabled
+                    ? AppTheme.primary.withValues(alpha: 0.25)
+                    : context.appBorder,
+                width: enabled ? 1.0 : 0.6,
+              ),
             ),
-            child: Icon(
-              enabled ? Icons.handyman_outlined : Icons.do_disturb_alt_outlined,
-              color: AppTheme.primary,
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Text(
-                  l10n.toolsMasterSwitchTitle,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: enabled ? AppTheme.primary : context.appBorder,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    enabled ? Icons.handyman : Icons.do_disturb_alt_outlined,
+                    color: Colors.white,
+                    size: 18,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  enabled
-                      ? l10n.toolsMasterSwitchDescription
-                      : l10n.toolsMasterOffHint,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: context.textSecondary,
-                    height: 1.4,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.toolsMasterSwitchTitle,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: enabled ? AppTheme.primary : null,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        enabled
+                            ? l10n.toolsMasterSwitchDescription
+                            : l10n.toolsMasterOffHint,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textSecondary,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+                Switch(value: enabled, onChanged: onChanged),
               ],
             ),
           ),
-          Switch(value: enabled, onChanged: onChanged),
-        ],
+        ),
       ),
     );
   }
