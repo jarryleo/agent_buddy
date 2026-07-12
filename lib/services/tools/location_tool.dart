@@ -9,9 +9,7 @@ class LocationTool extends ToolBase {
 
   @override
   String get description =>
-      '获取用户当前的大致位置(经纬度 + 行政区划 + 时区)。'
-      '移动端用 GPS 定位(需要授权),桌面/Web 用 IP 反查城市与时区。'
-      '仅在用户问到天气、附近、本地时区等明确场景时调用,不要主动询问。';
+      '获取当前位置(经纬度+城市+时区)。手机用 GPS(需授权),电脑/Web 靠 IP。';
 
   @override
   bool get isSupportedOnCurrentPlatform => true;
@@ -29,7 +27,7 @@ class LocationTool extends ToolBase {
             'action': {
               'type': 'string',
               'enum': ['get'],
-              'description': '操作类型,固定 get',
+              'description': '固定 get',
             },
             'timeout_ms': {
               'type': 'integer',

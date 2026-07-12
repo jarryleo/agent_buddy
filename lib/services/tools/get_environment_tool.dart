@@ -9,8 +9,7 @@ class GetEnvironmentTool extends ToolBase {
 
   @override
   String get description =>
-      '获取本机环境信息(OS、架构、用户、主目录、shell、内核版本),'
-      '供模型在执行 run_command 前判断平台特定命令。仅桌面端 (Windows / macOS / Linux) 可用。';
+      '查看本机系统信息(系统类型、架构、用户名等)。执行命令前先看看环境。仅桌面端可用。';
 
   @override
   bool get isSupportedOnCurrentPlatform => isDesktop();

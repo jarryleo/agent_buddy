@@ -9,10 +9,8 @@ class MemoryTool extends ToolBase {
 
   @override
   String get description =>
-      '管理 AI 长期记忆:list / search(多关键词 OR 模糊查询,支持 keywords[] + tags 过滤) / '
-      'create / get / update / delete / delete_batch。'
-      '写入时尽量多列几个 tags 关键词,便于后续模糊查找;'
-      '查询时尽量用 keywords[] 一次给多个相关词,以提高召回。';
+      '管理长期记忆。写入时多给 tags 关键词;'
+      '查找时用 keywords[] 给多个相关词,命中一个就返回。';
 
   @override
   bool get isSupportedOnCurrentPlatform => true;
@@ -38,40 +36,38 @@ class MemoryTool extends ToolBase {
                 'delete',
                 'delete_batch',
               ],
-              'description': '操作类型',
+              'description': '操作: list/search/get/create/update/delete/delete_batch',
             },
             'id': {'type': 'string', 'description': 'get/update/delete 时必填'},
             'keywords': {
               'type': 'array',
               'items': {'type': 'string'},
               'description':
-                  'search 时首选字段。多个关键词任一命中 content 或 tags 即返回(OR 语义)。',
+                  'search 首选:多个关键词任一个匹配内容或 tags 即返回',
             },
             'keyword': {
               'type': 'string',
-              'description': 'search 时单关键词的兼容写法(等价于 keywords=["…"])',
+              'description': 'search 单关键词(等价于 keywords=["…"])',
             },
             'tags': {
               'type': 'array',
               'items': {'type': 'string'},
               'description':
-                  'search 时附加过滤:只返回 tags 与此列表有任一交集的记忆;'
-                  'create/update 时是写入的关键词标签,便于后续模糊查找。',
+                  'search 时按标签过滤;create/update 时写入标签便于后续查找',
             },
             'content': {
               'type': 'string',
               'description':
-                  'create 时必填,尽量生成多个关键词,便于读取记忆模糊匹配;'
-                  'update 时可选(同时改 content 时填)',
+                  'create 必填,update 可选。写的时候多提炼关键词',
             },
             'ids': {
               'type': 'array',
               'items': {'type': 'string'},
-              'description': 'delete_batch 时必填,记忆 id 列表',
+              'description': 'delete_batch 时必填,要删的 id 列表',
             },
             'max': {
               'type': 'integer',
-              'description': 'list/search 时最多返回条数,默认 20',
+              'description': 'list/search 最多返回条数,默认 20',
               'default': 20,
             },
           },

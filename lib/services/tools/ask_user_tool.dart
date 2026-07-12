@@ -8,7 +8,7 @@ class AskUserTool extends ToolBase {
   String get name => '询问用户';
 
   @override
-  String get description => '向用户提出一个多选或单选问题,用户作答后把结果回传给模型。';
+  String get description => '向用户提问,用户回答后把结果给你。需要用户确认或选择时用。';
 
   @override
   bool get isSupportedOnCurrentPlatform => true;
@@ -23,16 +23,16 @@ class AskUserTool extends ToolBase {
         'parameters': {
           'type': 'object',
           'properties': {
-            'question': {'type': 'string', 'description': '要向用户提出的问题'},
+            'question': {'type': 'string', 'description': '要问用户的问题'},
             'options': {
               'type': 'array',
               'items': {'type': 'string'},
-              'description': '用户可选择的选项(至少 2 个)',
+              'description': '给用户选的选项,至少 2 个',
               'minItems': 2,
             },
             'multi_select': {
               'type': 'boolean',
-              'description': '是否允许多选,默认 false (单选)',
+              'description': '允许多选?默认 false(单选)',
               'default': false,
             },
           },

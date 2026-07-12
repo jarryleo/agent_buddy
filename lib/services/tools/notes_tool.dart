@@ -8,7 +8,7 @@ class NotesTool extends ToolBase {
   String get name => '笔记';
 
   @override
-  String get description => '管理 Agent Buddy 内置笔记(数据存于本机 Hive,无需系统权限)。';
+  String get description => '管理笔记(增删改查),数据存本地,所有平台可用。';
 
   @override
   bool get isSupportedOnCurrentPlatform => true;
@@ -26,15 +26,15 @@ class NotesTool extends ToolBase {
             'action': {
               'type': 'string',
               'enum': ['list', 'get', 'create', 'update', 'delete'],
-              'description': '操作类型',
+              'description': '操作: list/get/create/update/delete',
             },
             'id': {'type': 'string', 'description': 'get/update/delete 时必填'},
-            'title': {'type': 'string', 'description': 'create/update 时标题'},
-            'content': {'type': 'string', 'description': 'create/update 时正文'},
-            'keyword': {'type': 'string', 'description': 'list 时可选的标题/内容关键词'},
+            'title': {'type': 'string', 'description': 'create/update 的标题'},
+            'content': {'type': 'string', 'description': 'create/update 的正文'},
+            'keyword': {'type': 'string', 'description': 'list 时按关键词筛选'},
             'max': {
               'type': 'integer',
-              'description': 'list 时最多返回条数,默认 50',
+              'description': 'list 最多返回条数,默认 50',
               'default': 50,
             },
           },

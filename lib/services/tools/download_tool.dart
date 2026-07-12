@@ -9,12 +9,8 @@ class DownloadTool extends ToolBase {
 
   @override
   String get description =>
-      '从指定 URL 下载文件到 APP 临时目录'
-      '(用户须在气泡上点"保存"才能把文件真正落到磁盘上,'
-      '文件类型 / 格式由 URL 决定)。'
-      '返回 JSON 信封包含 action / id / url / filename / size_bytes。'
-      '每次调用下载一个文件,需要下载多个文件就连续调用多次。'
-      '移动端 / 桌面端可用,Web 不可用(没有文件系统)。';
+      '从网址下载文件到临时目录,用户得在界面上点"保存"才能存到磁盘。'
+      '一次下载一个文件,多个文件就连续调用。手机和电脑可用,Web 不行。';
 
   @override
   bool get isSupportedOnCurrentPlatform => notWeb();
@@ -32,12 +28,12 @@ class DownloadTool extends ToolBase {
           'properties': {
             'url': {
               'type': 'string',
-              'description': '要下载的文件的 URL,必须包含协议 (http:// 或 https://)。',
+              'description': '文件下载地址,带 http:// 或 https://',
             },
             'filename': {
               'type': 'string',
               'description':
-                  '可选。保存时使用的文件名。若不传,工具会从 URL 路径或 Content-Disposition 头推断。',
+                  '可选。保存的文件名,不传就从 URL 自动推断。',
             },
           },
           'required': ['url'],

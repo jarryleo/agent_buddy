@@ -9,7 +9,7 @@ class RunCommandTool extends ToolBase {
 
   @override
   String get description =>
-      '在主机上执行 shell 命令,返回 stdout、stderr 与退出码。仅桌面端 (Windows / macOS / Linux) 可用。';
+      '在电脑上执行命令,返回输出结果和退出码。仅 Windows / macOS / Linux 可用。';
 
   @override
   bool get isSupportedOnCurrentPlatform => isDesktop();
@@ -27,12 +27,12 @@ class RunCommandTool extends ToolBase {
           'properties': {
             'command': {
               'type': 'string',
-              'description': '要执行的 shell 命令(通过系统 shell 运行)',
+              'description': '要执行的命令(通过系统 shell 运行)',
             },
-            'cwd': {'type': 'string', 'description': '工作目录,可选,默认当前目录'},
+            'cwd': {'type': 'string', 'description': '工作目录,可选,默认当前'},
             'timeout_seconds': {
               'type': 'integer',
-              'description': '超时秒数,默认 30,超时后进程会被 kill',
+              'description': '超时秒数,默认 30,超时自动杀掉',
               'default': 30,
               'minimum': 1,
               'maximum': 600,
