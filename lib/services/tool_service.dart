@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter/services.dart'
     show MissingPluginException, PlatformException;
 import 'package:hive_ce/hive.dart';
@@ -124,6 +125,45 @@ class ToolService {
   static const int _fetchCacheMaxEntries = 16;
   final Map<String, _FetchedPage> _fetchCache = <String, _FetchedPage>{};
 
+  /// Rotating list of realistic browser User-Agent strings. Picked
+  /// round-robin so repeated calls from the same session look like
+  /// different browsers / OSes — makes it harder to fingerprint.
+  static const List<String> _userAgents = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  ];
+
+  /// Simple round-robin counter for UA rotation.
+  static int _uaIndex = 0;
+
+  /// Builds a realistic browser header set for the given [uri]. The
+  /// User-Agent is rotated on each call to reduce fingerprinting.
+  Map<String, String> _browserHeaders(Uri uri) {
+    final ua = _userAgents[_uaIndex % _userAgents.length];
+    _uaIndex++;
+    return {
+      'User-Agent': ua,
+      'Accept':
+          'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Cache-Control': 'max-age=0',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Upgrade-Insecure-Requests': '1',
+      'DNT': '1',
+      'Connection': 'keep-alive',
+    };
+  }
+
+  /// Random generator used for pre-request jitter and retry backoff.
+  static final Random _rng = Random.secure();
+
   /// Fetches the content of [url] and returns a JSON envelope string.
   ///
   /// Default behavior (no [linkText]): returns the page's title, plain
@@ -178,26 +218,57 @@ class ToolService {
     // non-cached because they're typically not navigable.
     _FetchedPage? page = _fetchCache[cacheKey];
     if (page == null) {
-      final http.Response resp;
-      try {
-        resp = await _client
-            .get(
-              uri,
-              headers: {
-                'User-Agent':
-                    'Mozilla/5.0 (compatible; AgentBuddy/1.0; +https://agent.buddy)',
-                'Accept':
-                    'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-              },
-            )
-            .timeout(const Duration(seconds: 20));
-      } on ToolException {
-        rethrow;
-      } catch (e) {
-        throw ToolException(e.toString());
-      }
-      if (resp.statusCode < 200 || resp.statusCode >= 300) {
-        throw ToolException('HTTP ${resp.statusCode}');
+      // Small random jitter before the first request (50–250ms) so
+      // repeated calls don't produce a clockwork pattern that CDNs
+      // flag as a bot.
+      await Future.delayed(
+        Duration(milliseconds: 50 + _rng.nextInt(201)),
+      );
+
+      http.Response resp;
+      int attempts = 0;
+      const maxAttempts = 3;
+      while (true) {
+        attempts++;
+        try {
+          resp = await _client
+              .get(uri, headers: _browserHeaders(uri))
+              .timeout(const Duration(seconds: 20));
+        } on TimeoutException {
+          if (attempts < maxAttempts) {
+            await _backoff(attempts);
+            continue;
+          }
+          throw ToolException('request timed out after $maxAttempts attempts');
+        } catch (e) {
+          // Network errors (SocketException, TLS error, DNS failure)
+          // are worth retrying — transient blips often resolve.
+          if (attempts < maxAttempts && _isTransientError(e)) {
+            await _backoff(attempts);
+            continue;
+          }
+          throw ToolException(e.toString());
+        }
+        if (resp.statusCode == 429) {
+          // Rate-limited — backoff and retry.
+          if (attempts < maxAttempts) {
+            await _backoff(attempts);
+            continue;
+          }
+          throw ToolException('HTTP 429 (rate limited after $maxAttempts attempts)');
+        }
+        if (resp.statusCode >= 500) {
+          // Server error — worth a retry.
+          if (attempts < maxAttempts) {
+            await _backoff(attempts);
+            continue;
+          }
+          throw ToolException('HTTP ${resp.statusCode} (after $maxAttempts attempts)');
+        }
+        if (resp.statusCode < 200 || resp.statusCode >= 300) {
+          throw ToolException('HTTP ${resp.statusCode}');
+        }
+        break;
       }
       final contentType = resp.headers['content-type'] ?? '';
       if (contentType.contains('application/json')) {
@@ -398,6 +469,29 @@ class ToolService {
       if (l.text.toLowerCase().contains(q)) return l;
     }
     return null;
+  }
+
+  /// Base delay (ms) for exponential backoff. Override in tests for speed.
+  @visibleForTesting
+  static int backoffBaseMs = 1000;
+
+  /// Waits with exponential backoff + jitter for retry [attempt]
+  /// (1-indexed). Base delays: ~1s, ~2s, ~4s.
+  static Future<void> _backoff(int attempt) {
+    final baseMs = (backoffBaseMs * pow(2, attempt - 1)).toInt();
+    final jitter = _rng.nextInt(500);
+    return Future.delayed(Duration(milliseconds: baseMs + jitter));
+  }
+
+  /// Returns true for exceptions that are likely transient network
+  /// failures (socket errors, DNS resolution failures, TLS errors).
+  static bool _isTransientError(Object e) {
+    if (e is SocketException) return true;
+    if (e is HttpException) return true;
+    if (e is TlsException) return true;
+    // Dart http package wraps some errors as HandshakeException.
+    if (e is HandshakeException) return true;
+    return false;
   }
 
   void dispose() {

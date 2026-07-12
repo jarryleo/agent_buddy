@@ -7,6 +7,11 @@ import 'package:http/testing.dart';
 
 void main() {
   group('ToolService.fetchWeb', () {
+    // Speed up retry backoff for tests.
+    setUp(() {
+      ToolService.backoffBaseMs = 1;
+    });
+
     test('returns a JSON envelope with title + text + link_count, '
         'and omits the link list by default', () async {
       final client = MockClient((req) async {
@@ -353,6 +358,122 @@ void main() {
         expect(json['text'], contains('"world"'));
         expect(json['link_count'], 0);
         expect(json['title'], isNull);
+      },
+    );
+
+    test(
+      'retries on 429 (rate limited) and succeeds on third attempt',
+      () async {
+        var calls = 0;
+        final client = MockClient((req) async {
+          calls++;
+          if (calls < 3) {
+            return http.Response('', 429);
+          }
+          return http.Response(
+            '<html><head><title>Retried</title></head><body>OK</body></html>',
+            200,
+            headers: {'content-type': 'text/html'},
+          );
+        });
+        final tools = ToolService(httpClient: client);
+        final raw = await tools.fetchWeb('https://example.com/');
+        final json = jsonDecode(raw) as Map<String, dynamic>;
+        expect(json['title'], 'Retried');
+        expect(json['text'], 'OK');
+        expect(calls, 3);
+      },
+    );
+
+    test(
+      'gives up after 3 retries on persistent 429',
+      () async {
+        var calls = 0;
+        final client = MockClient((req) async {
+          calls++;
+          return http.Response('', 429);
+        });
+        final tools = ToolService(httpClient: client);
+        await expectLater(
+          tools.fetchWeb('https://example.com/'),
+          throwsA(
+            isA<ToolException>().having(
+              (e) => e.message,
+              'message',
+              contains('rate limited'),
+            ),
+          ),
+        );
+        expect(calls, 3);
+      },
+    );
+
+    test(
+      'retries on 5xx and succeeds on second attempt',
+      () async {
+        var calls = 0;
+        final client = MockClient((req) async {
+          calls++;
+          if (calls == 1) {
+            return http.Response('', 502);
+          }
+          return http.Response(
+            '<html><body>Recovered</body></html>',
+            200,
+            headers: {'content-type': 'text/html'},
+          );
+        });
+        final tools = ToolService(httpClient: client);
+        final raw = await tools.fetchWeb('https://example.com/');
+        final json = jsonDecode(raw) as Map<String, dynamic>;
+        expect(json['text'], 'Recovered');
+        expect(calls, 2);
+      },
+    );
+
+    test(
+      'gives up after 3 retries on persistent 5xx',
+      () async {
+        var calls = 0;
+        final client = MockClient((req) async {
+          calls++;
+          return http.Response('', 503);
+        });
+        final tools = ToolService(httpClient: client);
+        await expectLater(
+          tools.fetchWeb('https://example.com/'),
+          throwsA(
+            isA<ToolException>().having(
+              (e) => e.message,
+              'message',
+              contains('503'),
+            ),
+          ),
+        );
+        expect(calls, 3);
+      },
+    );
+
+    test(
+      'sends realistic browser headers',
+      () async {
+        http.BaseRequest? capturedReq;
+        final client = MockClient((req) async {
+          capturedReq = req;
+          return http.Response(
+            '<html><body>OK</body></html>',
+            200,
+            headers: {'content-type': 'text/html'},
+          );
+        });
+        final tools = ToolService(httpClient: client);
+        await tools.fetchWeb('https://example.com/');
+        expect(capturedReq, isNotNull);
+        // Must NOT use the old bot-like User-Agent.
+        final ua = capturedReq!.headers['user-agent'];
+        expect(ua, isNot(contains('AgentBuddy')));
+        expect(ua, startsWith('Mozilla/5.0'));
+        expect(capturedReq!.headers['accept-language'], contains('zh-CN'));
       },
     );
 
