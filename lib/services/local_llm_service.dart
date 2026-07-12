@@ -92,7 +92,7 @@ class LocalLlmService extends ChangeNotifier {
 
   Stream<StreamEvent> streamChat({
     required LocalProvider provider,
-    required String systemPrompt,
+    required List<String> systemPrompts,
     required List<ChatRequestMessage> messages,
     required List<Map<String, dynamic>> tools,
     Future<String> Function(Map<String, dynamic> toolCall)? onToolCall,
@@ -126,12 +126,15 @@ class LocalLlmService extends ChangeNotifier {
     // changes (or is null). Same-session turns keep the engine's
     // KV cache hot, so each new turn only does the prefill for
     // the new user message + decode — not the entire history.
+    final joinedPrompt = systemPrompts.isNotEmpty
+        ? systemPrompts.join('\n\n')
+        : '';
     final sameSession =
         boundSessionId != null &&
         _boundSessionId != null &&
         _boundSessionId == boundSessionId;
     if (!sameSession) {
-      session.systemPrompt = systemPrompt.isEmpty ? null : systemPrompt;
+      session.systemPrompt = joinedPrompt.isEmpty ? null : joinedPrompt;
       session.reset(keepSystemPrompt: true);
       final historyMessages = messages.length > 1
           ? messages.sublist(0, messages.length - 1)
@@ -143,7 +146,7 @@ class LocalLlmService extends ChangeNotifier {
       // Same session, follow-up turn: the system prompt may have
       // changed (user switched role mid-conversation). Llama's
       // ChatSession re-applies it as a soft slot, no reset needed.
-      session.systemPrompt = systemPrompt.isEmpty ? null : systemPrompt;
+      session.systemPrompt = joinedPrompt.isEmpty ? null : joinedPrompt;
     }
 
     final llamaTools = _buildTools(tools);

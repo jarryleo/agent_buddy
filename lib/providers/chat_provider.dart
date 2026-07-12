@@ -228,98 +228,92 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  String _buildSystemPrompt() {
-    final buffer = StringBuffer();
+  /// Returns up to 3 system prompt parts: [baseSystem, rolePrompt, skillsPrompt].
+  /// Empty strings are filtered out so the caller only gets non-empty parts.
+  List<String> _buildSystemPrompts() {
+    String? rolePrompt;
     final role = _settings.activeRole;
     if (role != null && role.systemPrompt.isNotEmpty) {
-      buffer.writeln(role.systemPrompt);
-      buffer.writeln();
+      rolePrompt = role.systemPrompt;
     }
+
+    String? skillsPrompt;
     final skills = _settings.activeSkills;
     if (skills.isNotEmpty) {
-      buffer.writeln('你可以参考以下技能:');
+      final sb = StringBuffer();
+      sb.writeln('你可以参考以下技能:');
       for (final s in skills) {
-        buffer.writeln('## ${s.name}');
-        if (s.description.isNotEmpty) buffer.writeln(s.description);
-        if (s.content.isNotEmpty) buffer.writeln(s.content);
-        buffer.writeln();
+        sb.writeln('## ${s.name}');
+        if (s.description.isNotEmpty) sb.writeln(s.description);
+        if (s.content.isNotEmpty) sb.writeln(s.content);
+        sb.writeln();
       }
+      skillsPrompt = sb.toString().trim();
     }
-    // Tool-related blocks below are only useful when the model can
-    // actually call tools. When the user has turned off the master
-    // "use tools" switch (pure chat mode, token-saving), skip all
-    // of them so the system prompt stays small and the model
-    // doesn't burn tokens re-reading rules it can't act on.
-    if (!_settings.toolsEnabled) {
-      return buffer.toString().trim();
+
+    String? baseSystem;
+    if (_settings.toolsEnabled) {
+      final sb = StringBuffer();
+      sb.writeln(
+        '当工具返回错误结果(例如命令退出码非零、网络请求失败、'
+        '抛出的异常)时,务必在回复中向用户说明错误原因,'
+        '并在合适时给出替代方案。不要在工具出错后直接结束本轮。',
+      );
+      sb.writeln(
+        '【工具调用规则】当用户提出只能通过工具获取的信息时(例如:'
+        '当前时间、抓取某个网页、执行某条命令、获取本地环境、向用户提问),'
+        '你必须直接调用对应的工具来获取结果,不要在文字中假装调用、'
+        '也不要凭印象回答。同一回合内可以连续调用多个工具,'
+        '所有工具结果回来后再综合回答用户。'
+        '在文本中描述"我现在要调用 X"而没有真正发出对应的工具调用,'
+        '等同于协议错误,会导致回复被截断。',
+      );
+      sb.writeln(
+        '【长期记忆】你拥有一个 memory 工具,用于跨会话保留对用户有用的信息。'
+        '判断标准是"这条信息对未来的对话是否仍有用":'
+        '用户的长期偏好、明确表达的禁忌、个人背景、项目信息、用户主动要求记住的内容,'
+        '适合写入(create);单次会话的临时指令、上下文噪音、明显是一次性需求的内容,'
+        '不要写入。\n'
+        '——【写入技巧】create / update 时除 content 外,务必额外给一个 tags: string[] 参数,'
+        '尽量多列 3~6 个相关关键词(中英文同义词、别名、上位词、可能用户后续会怎么搜),'
+        '这样未来用 search 模糊查询时召回率才高。tags 越丰富,search 越准。\n'
+        '——【查询技巧】search 时优先用 keywords: string[] 一次传多个相关词(OR 语义:'
+        '任一关键词命中 content 或 tags 即返回),不要只传一个关键词;'
+        '可以再叠加 tags: string[] 进一步收窄。如果你完全没线索,先用 list 看一眼。\n'
+        '——【其它】content 写成简洁一句话;用户可以在设置页查看 / 编辑 / 删除所有记忆,'
+        '因此你不承担"绝不遗忘"的责任。',
+      );
+      sb.writeln(
+        '【位置】你有一个 location 工具用于获取用户当前位置(经纬度、城市、省份、'
+        '国家、时区)。仅在用户问到天气、附近、本地时区、当地信息等明确需要位置的'
+        '场景时调用,不要主动询问。移动端用 GPS(需要授权),桌面/Web 用 IP 反查'
+        '(城市级精度,无授权)。结果里带 source 字段( gps / ip )表示来源。',
+      );
+      sb.writeln(
+        '【网页抓取与多级跳转】fetch_web 返回一个 JSON 信封,字段为 url / '
+        'title / text(页面正文) / link_count(页面上的链接数)。默认不返回链接'
+        '列表,以节约 token。要进入下一级页面,不要盲目把 include_links 设成 '
+        'true 把所有链接都拉回来——而是用 link_text 把你看到的链接文字传进去,'
+        '工具会从页面里查出对应 URL 并以 link_url 字段返回,你再用那个 URL 调'
+        '一次 fetch_web 即可。这样可以多级跳转,每一级都只看到自己关心的链接,'
+        '不会把无关链接也喂给上下文。典型流程:\n'
+        '  1) fetch_web("https://example.com") → 看到正文里提到"文档"链接;\n'
+        '  2) fetch_web("https://example.com", link_text="文档") → 拿到 '
+        'link_url = "https://example.com/docs";\n'
+        '  3) fetch_web("https://example.com/docs") → 进入下一级。\n'
+        'link_text 是大小写不敏感、空白已归一化的匹配:先按完整文字精确匹配,'
+        '找不到再退回到子串匹配;匹配不到时返回 link_error,这时再考虑换成 '
+        'include_links=true 看一眼所有链接(尽量少用)。同一 URL 多次调用不会'
+        '重复抓取,内部会缓存。',
+      );
+      baseSystem = sb.toString().trim();
     }
-    // Encourage the model not to silently end the turn after a
-    // tool returns an error result. Without this hint, some
-    // (especially reasoning) models treat "the tool answered
-    // with stderr" as "I have nothing to add" and emit [DONE]
-    // with an empty content delta, which the user sees as a
-    // hang or an unhelpful "no response".
-    buffer.writeln(
-      '当工具返回错误结果(例如命令退出码非零、网络请求失败、'
-      '抛出的异常)时,务必在回复中向用户说明错误原因,'
-      '并在合适时给出替代方案。不要在工具出错后直接结束本轮。',
-    );
-    // Hard rule: when the user asks for information only a tool can
-    // provide, actually invoke the tool — never paraphrase what the
-    // tool would have said. The orchestrator loops, so it's safe to
-    // call multiple tools per turn; you don't need to bundle them
-    // into one giant call. The system surfaces tool calls as
-    // structured function invocations; "I'll call X now" without a
-    // matching function call is treated as a protocol violation by
-    // the chat UI.
-    buffer.writeln(
-      '【工具调用规则】当用户提出只能通过工具获取的信息时(例如:'
-      '当前时间、抓取某个网页、执行某条命令、获取本地环境、向用户提问),'
-      '你必须直接调用对应的工具来获取结果,不要在文字中假装调用、'
-      '也不要凭印象回答。同一回合内可以连续调用多个工具,'
-      '所有工具结果回来后再综合回答用户。'
-      '在文本中描述"我现在要调用 X"而没有真正发出对应的工具调用,'
-      '等同于协议错误,会导致回复被截断。',
-    );
-    buffer.writeln(
-      '【长期记忆】你拥有一个 memory 工具,用于跨会话保留对用户有用的信息。'
-      '判断标准是"这条信息对未来的对话是否仍有用":'
-      '用户的长期偏好、明确表达的禁忌、个人背景、项目信息、用户主动要求记住的内容,'
-      '适合写入(create);单次会话的临时指令、上下文噪音、明显是一次性需求的内容,'
-      '不要写入。\n'
-      '——【写入技巧】create / update 时除 content 外,务必额外给一个 tags: string[] 参数,'
-      '尽量多列 3~6 个相关关键词(中英文同义词、别名、上位词、可能用户后续会怎么搜),'
-      '这样未来用 search 模糊查询时召回率才高。tags 越丰富,search 越准。\n'
-      '——【查询技巧】search 时优先用 keywords: string[] 一次传多个相关词(OR 语义:'
-      '任一关键词命中 content 或 tags 即返回),不要只传一个关键词;'
-      '可以再叠加 tags: string[] 进一步收窄。如果你完全没线索,先用 list 看一眼。\n'
-      '——【其它】content 写成简洁一句话;用户可以在设置页查看 / 编辑 / 删除所有记忆,'
-      '因此你不承担"绝不遗忘"的责任。',
-    );
-    buffer.writeln(
-      '【位置】你有一个 location 工具用于获取用户当前位置(经纬度、城市、省份、'
-      '国家、时区)。仅在用户问到天气、附近、本地时区、当地信息等明确需要位置的'
-      '场景时调用,不要主动询问。移动端用 GPS(需要授权),桌面/Web 用 IP 反查'
-      '(城市级精度,无授权)。结果里带 source 字段( gps / ip )表示来源。',
-    );
-    buffer.writeln(
-      '【网页抓取与多级跳转】fetch_web 返回一个 JSON 信封,字段为 url / '
-      'title / text(页面正文) / link_count(页面上的链接数)。默认不返回链接'
-      '列表,以节约 token。要进入下一级页面,不要盲目把 include_links 设成 '
-      'true 把所有链接都拉回来——而是用 link_text 把你看到的链接文字传进去,'
-      '工具会从页面里查出对应 URL 并以 link_url 字段返回,你再用那个 URL 调'
-      '一次 fetch_web 即可。这样可以多级跳转,每一级都只看到自己关心的链接,'
-      '不会把无关链接也喂给上下文。典型流程:\n'
-      '  1) fetch_web("https://example.com") → 看到正文里提到"文档"链接;\n'
-      '  2) fetch_web("https://example.com", link_text="文档") → 拿到 '
-      'link_url = "https://example.com/docs";\n'
-      '  3) fetch_web("https://example.com/docs") → 进入下一级。\n'
-      'link_text 是大小写不敏感、空白已归一化的匹配:先按完整文字精确匹配,'
-      '找不到再退回到子串匹配;匹配不到时返回 link_error,这时再考虑换成 '
-      'include_links=true 看一眼所有链接(尽量少用)。同一 URL 多次调用不会'
-      '重复抓取,内部会缓存。',
-    );
-    return buffer.toString().trim();
+
+    return [
+      if (baseSystem != null && baseSystem.isNotEmpty) baseSystem,
+      if (rolePrompt != null && rolePrompt.isNotEmpty) rolePrompt,
+      if (skillsPrompt != null && skillsPrompt.isNotEmpty) skillsPrompt,
+    ];
   }
 
   /// True on platforms where desktop-only tools (run_command,
@@ -1322,7 +1316,7 @@ class ChatProvider extends ChangeNotifier {
       );
     }
 
-    final systemPrompt = _buildSystemPrompt();
+    final systemPrompts = _buildSystemPrompts();
     final tools = _buildToolsSchema();
 
     bool updated = false;
@@ -1333,7 +1327,7 @@ class ChatProvider extends ChangeNotifier {
     final stream = useLocal
         ? _localLlm.streamChat(
             provider: localProvider!,
-            systemPrompt: systemPrompt,
+            systemPrompts: systemPrompts,
             messages: requestMessages,
             tools: tools,
             onToolCall: (tc) => _onToolCall(context, tc, assistantId),
@@ -1347,7 +1341,7 @@ class ChatProvider extends ChangeNotifier {
                 provider.selectedModel ??
                 (provider.models.isNotEmpty ? provider.models.first : ''),
             messages: requestMessages,
-            systemPrompt: systemPrompt.isEmpty ? null : systemPrompt,
+            systemPrompts: systemPrompts.isEmpty ? null : systemPrompts,
             tools: tools.isEmpty ? null : tools,
             onToolCall: (tc) => _onToolCall(context, tc, assistantId),
             orchestrator: _orchestrator,

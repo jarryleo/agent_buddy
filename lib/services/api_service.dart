@@ -212,7 +212,7 @@ class ApiService {
     required ModelProvider provider,
     required String model,
     required List<ChatRequestMessage> messages,
-    String? systemPrompt,
+    List<String>? systemPrompts,
     List<Map<String, dynamic>>? tools,
     Future<String> Function(Map<String, dynamic> toolCall)? onToolCall,
     ToolOrchestrator? orchestrator,
@@ -225,7 +225,7 @@ class ApiService {
         provider: provider,
         model: model,
         messages: messages,
-        systemPrompt: systemPrompt,
+        systemPrompts: systemPrompts,
         tools: tools,
       );
       return;
@@ -248,7 +248,7 @@ class ApiService {
             provider: provider,
             model: model,
             history: h,
-            systemPrompt: systemPrompt,
+            systemPrompts: systemPrompts,
             tools: tools,
           );
         case ProviderProtocol.anthropic:
@@ -256,7 +256,7 @@ class ApiService {
             provider: provider,
             model: model,
             history: h,
-            systemPrompt: systemPrompt,
+            systemPrompts: systemPrompts,
             tools: tools,
           );
       }
@@ -320,7 +320,7 @@ class ApiService {
     required ModelProvider provider,
     required String model,
     required List<ChatRequestMessage> messages,
-    String? systemPrompt,
+    List<String>? systemPrompts,
     List<Map<String, dynamic>>? tools,
   }) async* {
     switch (provider.protocol) {
@@ -329,7 +329,7 @@ class ApiService {
           provider: provider,
           model: model,
           messages: messages,
-          systemPrompt: systemPrompt,
+          systemPrompts: systemPrompts,
           tools: tools,
         );
         break;
@@ -338,7 +338,7 @@ class ApiService {
           provider: provider,
           model: model,
           messages: messages,
-          systemPrompt: systemPrompt,
+          systemPrompts: systemPrompts,
           tools: tools,
         );
         break;
@@ -349,7 +349,7 @@ class ApiService {
     required ModelProvider provider,
     required String model,
     required List<ChatRequestMessage> messages,
-    String? systemPrompt,
+    List<String>? systemPrompts,
     List<Map<String, dynamic>>? tools,
   }) async* {
     // Backward-compat wrapper: run a single turn, ignore any tool
@@ -360,7 +360,7 @@ class ApiService {
       provider: provider,
       model: model,
       history: messages,
-      systemPrompt: systemPrompt,
+      systemPrompts: systemPrompts,
       tools: tools,
     )) {
       if (ev.kind == OrchestratorEventKind.turnDone) {
@@ -389,13 +389,13 @@ class ApiService {
     required ModelProvider provider,
     required String model,
     required List<ChatRequestMessage> history,
-    required String? systemPrompt,
+    required List<String>? systemPrompts,
     required List<Map<String, dynamic>>? tools,
   }) async* {
     final payload = <String, dynamic>{
       'model': model,
       'stream': true,
-      'messages': _buildOpenAIMessages(history, systemPrompt),
+      'messages': _buildOpenAIMessages(history, systemPrompts),
     };
     if (tools != null && tools.isNotEmpty) {
       payload['tools'] = tools;
@@ -577,7 +577,7 @@ class ApiService {
     required ModelProvider provider,
     required String model,
     required List<ChatRequestMessage> messages,
-    String? systemPrompt,
+    List<String>? systemPrompts,
     List<Map<String, dynamic>>? tools,
   }) async* {
     // Backward-compat wrapper: run a single turn, ignore any tool
@@ -588,7 +588,7 @@ class ApiService {
       provider: provider,
       model: model,
       history: messages,
-      systemPrompt: systemPrompt,
+      systemPrompts: systemPrompts,
       tools: tools,
     )) {
       if (ev.kind == OrchestratorEventKind.turnDone) {
@@ -614,7 +614,7 @@ class ApiService {
     required ModelProvider provider,
     required String model,
     required List<ChatRequestMessage> history,
-    required String? systemPrompt,
+    required List<String>? systemPrompts,
     required List<Map<String, dynamic>>? tools,
   }) async* {
     final payload = <String, dynamic>{
@@ -623,8 +623,10 @@ class ApiService {
       'max_tokens': 4096,
       'messages': _buildAnthropicMessages(history),
     };
-    if (systemPrompt != null && systemPrompt.isNotEmpty) {
-      payload['system'] = systemPrompt;
+    if (systemPrompts != null && systemPrompts.isNotEmpty) {
+      payload['system'] = systemPrompts
+          .map((p) => {'type': 'text', 'text': p})
+          .toList();
     }
     if (tools != null && tools.isNotEmpty) {
       payload['tools'] = tools;
@@ -804,11 +806,15 @@ class ApiService {
 
   List<Map<String, dynamic>> _buildOpenAIMessages(
     List<ChatRequestMessage> messages,
-    String? systemPrompt,
+    List<String>? systemPrompts,
   ) {
     final out = <Map<String, dynamic>>[];
-    if (systemPrompt != null && systemPrompt.isNotEmpty) {
-      out.add({'role': 'system', 'content': systemPrompt});
+    if (systemPrompts != null) {
+      for (final p in systemPrompts) {
+        if (p.isNotEmpty) {
+          out.add({'role': 'system', 'content': p});
+        }
+      }
     }
     for (final m in messages) {
       switch (m.role) {
@@ -906,7 +912,7 @@ class ApiService {
           }
           break;
         case MessageRole.system:
-          // Anthropic uses top-level system; caller should pass via systemPrompt.
+          // Anthropic uses top-level system; caller should pass via systemPrompts.
           out.add({'role': 'user', 'content': m.content});
           break;
         case MessageRole.tool:
