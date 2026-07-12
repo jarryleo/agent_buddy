@@ -8,6 +8,7 @@ import '../l10n/app_localizations.dart';
 import '../models/chat_session.dart';
 import '../models/download.dart';
 import '../models/message.dart';
+import '../models/skill.dart';
 import '../services/api_service.dart';
 import '../services/download_service.dart';
 import '../services/image_service.dart';
@@ -240,13 +241,13 @@ class ChatProvider extends ChangeNotifier {
     final skills = _settings.activeSkills;
     if (skills.isNotEmpty) {
       final sb = StringBuffer();
-      sb.writeln('你可以参考以下技能:');
+      sb.writeln('可用技能(仅名称+简介,完整内容需用工具加载):');
       for (final s in skills) {
-        sb.writeln('## ${s.name}');
-        if (s.description.isNotEmpty) sb.writeln(s.description);
-        if (s.content.isNotEmpty) sb.writeln(s.content);
-        sb.writeln();
+        sb.writeln('- ${s.name}${s.description.isNotEmpty ? ': ${s.description}' : ''}');
       }
+      sb.writeln();
+      sb.writeln('需要完整技能内容时,调用 load_skill 工具:');
+      sb.writeln('load_skill(skill_name: "技能名称")  # 返回完整内容');
       skillsPrompt = sb.toString().trim();
     }
 
@@ -286,6 +287,14 @@ class ChatProvider extends ChangeNotifier {
       if (tool == null || !tool.isSupportedOnCurrentPlatform) continue;
       final schema = tool.buildSchema();
       if (schema.isNotEmpty) list.add(schema);
+    }
+    // auto-include load_skill when there are active skills
+    if (_settings.activeSkills.isNotEmpty) {
+      final ls = ToolRegistry.byId('load_skill');
+      if (ls != null && ls.isSupportedOnCurrentPlatform) {
+        final schema = ls.buildSchema();
+        if (schema.isNotEmpty) list.add(schema);
+      }
     }
     return list;
   }
@@ -440,9 +449,48 @@ class ChatProvider extends ChangeNotifier {
         return await _tools.runLocation(args);
       case 'download':
         return await _runDownload(context, toolCall, assistantId, args);
+      case 'load_skill':
+        return await _loadSkill(args);
       default:
         throw ToolException('unknown tool: $name');
     }
+  }
+
+  Future<String> _loadSkill(Map<String, dynamic> args) async {
+    final name = (args['skill_name'] as String? ?? '').trim();
+    if (name.isEmpty) {
+      throw ToolException('请指定 skill_name');
+    }
+    final skills = _settings.activeSkills;
+    // exact match first
+    Skill? match;
+    for (final s in skills) {
+      if (s.name == name) {
+        match = s;
+        break;
+      }
+    }
+    // fallback: case-insensitive
+    if (match == null) {
+      final lower = name.toLowerCase();
+      for (final s in skills) {
+        if (s.name.toLowerCase() == lower) {
+          match = s;
+          break;
+        }
+      }
+    }
+    if (match == null) {
+      final names = skills.map((s) => '"${s.name}"').join(', ');
+      throw ToolException(
+        '未找到技能"$name"。可用技能: $names',
+      );
+    }
+    final sb = StringBuffer();
+    sb.writeln('## ${match.name}');
+    if (match.description.isNotEmpty) sb.writeln(match.description);
+    if (match.content.isNotEmpty) sb.writeln(match.content);
+    return sb.toString().trim();
   }
 
   /// Backs the `download` tool. Spawns a [DownloadItem] on the

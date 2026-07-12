@@ -11,6 +11,7 @@ import 'tasks_tool.dart';
 import 'memory_tool.dart';
 import 'location_tool.dart';
 import 'download_tool.dart';
+import 'load_skill_tool.dart';
 
 /// Central registry that maps tool [id] to [ToolBase] instances.
 ///
@@ -42,5 +43,6 @@ class ToolRegistry {
     MemoryTool(),
     LocationTool(),
     DownloadTool(),
+    LoadSkillTool(),
   ];
 }
