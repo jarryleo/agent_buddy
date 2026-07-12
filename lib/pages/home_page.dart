@@ -375,6 +375,7 @@ class _ChatInputArea extends StatelessWidget {
       enabled: ready && !sending,
       sending: sending,
       imageService: context.read<ImageService>(),
+      onStop: () => chat.stopGeneration(),
       onSend: (text, imagePaths) {
         // Mark the next auto-scroll as "force" so the latest
         // message comes into view even if the user had

@@ -46,6 +46,10 @@ class ChatProvider extends ChangeNotifier {
   /// app lifetime.
   final ToolOrchestrator _orchestrator = ToolOrchestrator();
 
+  /// Tracks the active stream subscription so [stopGeneration] can
+  /// cancel it immediately.
+  StreamSubscription<StreamEvent>? _streamSub;
+
   /// The currently active session (the conversation whose messages
   /// are visible in the chat list). Null when the user has just
   /// opened the app and no session is selected yet.
@@ -858,6 +862,7 @@ class ChatProvider extends ChangeNotifier {
             orchestrator: _orchestrator,
           );
 
+    _streamSub = sub;
     sub = stream.listen(
       (event) {
         if (event.type == 'toolStart') {
@@ -961,7 +966,7 @@ class ChatProvider extends ChangeNotifier {
           }
           if (!completer.isCompleted) completer.complete();
         } else if (event.type == 'done') {
-          completer.complete();
+          if (!completer.isCompleted) completer.complete();
         }
       },
       onError: (e) {
@@ -1024,6 +1029,46 @@ class ChatProvider extends ChangeNotifier {
       await _storage.sessions.save(cur);
     }
     refreshSessionList();
+    if (!_disposed) notifyListeners();
+  }
+
+  /// Stops the current generation immediately. Cancels the stream
+  /// subscription, aborts any in-flight tool calls, terminates the
+  /// orchestrator loop, and resets to the user-sendable state.
+  void stopGeneration() {
+    if (!_sending) return;
+    // Abort the orchestrator so it doesn't start new rounds / execute
+    // more tools.
+    _orchestrator.cancel();
+    // Resolve pending ask_user completers so the orchestrator's
+    // tool-execution awaits don't hang forever.
+    for (final c in _pendingAskUser.values) {
+      if (!c.isCompleted) {
+        c.completeError(ToolException('generation stopped by user'));
+      }
+    }
+    _pendingAskUser.clear();
+    // Cancel the stream subscription — no more events will be
+    // processed by ChatProvider.
+    _streamSub?.cancel();
+    _streamSub = null;
+    // Mark the in-flight assistant message as done (remove streaming
+    // flag, add a truncated marker).
+    final s = _activeSession;
+    if (s != null && s.messages.isNotEmpty) {
+      final last = s.messages.last;
+      if (last.role == MessageRole.assistant && last.streaming) {
+        final truncated = last.content.isEmpty ? '' : '${last.content}\n\n*(stopped)*';
+        _replaceMessages([
+          for (var i = 0; i < s.messages.length; i++)
+            if (i == s.messages.length - 1)
+              last.copyWith(content: truncated, streaming: false)
+            else
+              s.messages[i],
+        ]);
+      }
+    }
+    _sending = false;
     if (!_disposed) notifyListeners();
   }
 

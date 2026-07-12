@@ -189,6 +189,16 @@ class ToolOrchestrator {
 
   ToolOrchestrator({this.maxToolRounds = 30});
 
+  /// Set to true by [cancel] so the [run] generator can stop early.
+  bool _cancelled = false;
+
+  /// Signals the [run] loop to stop at the next checkpoint. Pending
+  /// tool executions already in flight will still complete, but no
+  /// new rounds are started.
+  void cancel() {
+    _cancelled = true;
+  }
+
   /// Drives the loop. The callback [runOneTurn] receives the current
   /// message history (including any prior assistant turns and tool
   /// results) and must return a `Stream<OrchestratorEvent>` of live
@@ -214,9 +224,16 @@ class ToolOrchestrator {
     required ToolCallExecutor executor,
     required void Function(List<ChatRequestMessage>) onTurnCommitted,
   }) async* {
+    // Reset cancellation flag for this run so a previous
+    // [cancel] call doesn't immediately abort the new loop.
+    _cancelled = false;
     var history = List<ChatRequestMessage>.from(initialHistory);
 
     for (var round = 0; round < maxToolRounds; round++) {
+      if (_cancelled) {
+        yield OrchestratorEvent.error('Generation stopped by user');
+        return;
+      }
       // Run one round: live-forward every event; the final
       // `turnDone` carries the parsed [TurnResult].
       TurnResult? turn;
@@ -268,6 +285,10 @@ class ToolOrchestrator {
       // events, and collect the outcomes.
       final toolResults = <ChatRequestMessage>[];
       for (final call in turn.toolCalls) {
+        if (_cancelled) {
+          yield OrchestratorEvent.error('Generation stopped by user');
+          return;
+        }
         yield OrchestratorEvent.toolStart(
           id: call.id,
           name: call.name,

@@ -18,11 +18,13 @@ class ChatInput extends StatefulWidget {
     required this.enabled,
     required this.imageService,
     this.sending = false,
+    this.onStop,
   });
 
   final void Function(String text, List<String> imagePaths) onSend;
   final bool enabled;
   final bool sending;
+  final VoidCallback? onStop;
   final ImageService imageService;
 
   @override
@@ -344,22 +346,37 @@ class _ChatInputState extends State<ChatInput> {
                 const SizedBox(width: 8),
                 SizedBox(
                   height: 40,
-                  child: ElevatedButton(
-                    onPressed: widget.enabled ? _send : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      disabledBackgroundColor: AppTheme.primary.withValues(
-                        alpha: 0.4,
-                      ),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      elevation: 0,
-                    ),
-                    child: const Icon(Icons.send_rounded, size: 18),
-                  ),
+                  child: widget.sending
+                      ? ElevatedButton(
+                          onPressed: widget.onStop,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            elevation: 0,
+                          ),
+                          child: const Icon(Icons.stop_rounded, size: 18),
+                        )
+                      : ElevatedButton(
+                          onPressed: widget.enabled ? _send : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            disabledBackgroundColor: AppTheme.primary.withValues(
+                              alpha: 0.4,
+                            ),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 16),
+                            elevation: 0,
+                          ),
+                          child: const Icon(Icons.send_rounded, size: 18),
+                        ),
                 ),
               ],
             ),
