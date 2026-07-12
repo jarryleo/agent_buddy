@@ -30,12 +30,36 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("../keystore/key.jks")
+            storePassword = "123456"
+            keyAlias = "123456"
+            keyPassword = "123456"
+            enableV2Signing = true
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
         }
+    }
+    //控制输出apk的名称
+    applicationVariants.all {
+        val variant = this
+        variant.outputs
+            .filterIsInstance<com.android.build.gradle.internal.api.BaseVariantOutputImpl>()
+            .forEach { output ->
+                val apkName = "AgentBuddy"
+                val buildType = variant.buildType.name
+                val fileName =
+                    "${apkName}_${versionName}_${variant.flavorName}_${buildType}.apk"
+                output.outputFileName = fileName
+            }
     }
 }
 
