@@ -136,6 +136,15 @@ class SettingsProvider extends ChangeNotifier {
       if (changed) await _storage.saveTools(_tools);
     }
 
+    // Sort tools to match registry order for consistent display.
+    {
+      final order = <String, int>{};
+      for (var i = 0; i < ToolRegistry.all.length; i++) {
+        order[ToolRegistry.all[i].id] = i;
+      }
+      _tools.sort((a, b) => (order[a.id] ?? 999).compareTo(order[b.id] ?? 999));
+    }
+
     // Default active provider = first enabled
     if (_activeProviderId == null && _providers.isNotEmpty) {
       final enabled = _providers.firstWhere(

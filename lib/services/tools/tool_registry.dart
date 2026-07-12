@@ -32,19 +32,28 @@ class ToolRegistry {
   static ToolBase? byId(String id) => _all[id];
 
   static List<ToolBase> _buildAll() => [
-    FetchWebTool(),
+    // Core context & memory — AI self-awareness, most impactful
+    MemoryTool(),
     CurrentTimeTool(),
+    LocationTool(),
+
+    // Information gathering
+    FetchWebTool(),
     AskUserTool(),
-    RunCommandTool(),
-    GetEnvironmentTool(),
-    CalendarTool(),
-    RemindersTool(),
+
+    // Personal data management
     NotesTool(),
     TasksTool(),
-    MemoryTool(),
-    LocationTool(),
+    CalendarTool(),
+    RemindersTool(),
+
+    // Utilities
     DownloadTool(),
+    RunCommandTool(),
     FileTool(),
+    GetEnvironmentTool(),
+
+    // System (auto / not user-facing)
     LoadSkillTool(),
   ];
 }
