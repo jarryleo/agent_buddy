@@ -112,39 +112,40 @@ class SkillsTab extends StatelessWidget {
                             value: s.enabled,
                             onChanged: (v) => settings.toggleSkill(s.id, v),
                           ),
-                          IconButton(
-                            onPressed: () async {
-                              final confirm = await showDialog<bool>(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  title: Text(l10n.skillDeleteTitle),
-                                  content: Text(
-                                    l10n.skillDeleteConfirm(s.name),
+                          if (!s.isBuiltin)
+                            IconButton(
+                              onPressed: () async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: Text(l10n.skillDeleteTitle),
+                                    content: Text(
+                                      l10n.skillDeleteConfirm(s.name),
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, false),
+                                        child: Text(l10n.commonCancel),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx, true),
+                                        child: Text(l10n.commonDelete),
+                                      ),
+                                    ],
                                   ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(ctx, false),
-                                      child: Text(l10n.commonCancel),
-                                    ),
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(ctx, true),
-                                      child: Text(l10n.commonDelete),
-                                    ),
-                                  ],
-                                ),
-                              );
-                              if (confirm == true) {
-                                await settings.deleteSkill(s.id);
-                              }
-                            },
-                            icon: Icon(
-                              Icons.delete_outline,
-                              size: 18,
-                              color: Colors.redAccent,
+                                );
+                                if (confirm == true) {
+                                  await settings.deleteSkill(s.id);
+                                }
+                              },
+                              icon: Icon(
+                                Icons.delete_outline,
+                                size: 18,
+                                color: Colors.redAccent,
+                              ),
+                              visualDensity: VisualDensity.compact,
                             ),
-                            visualDensity: VisualDensity.compact,
-                          ),
                         ],
                       ),
                     ),

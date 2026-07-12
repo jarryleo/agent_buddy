@@ -22,6 +22,35 @@ class MessageBubble extends StatefulWidget {
 
   @override
   State<MessageBubble> createState() => _MessageBubbleState();
+
+  /// Produces one `ValueKey`-friendly string per `ToolCall` in
+  /// [calls], disambiguating duplicates by appending `#<n>` to
+  /// the 2nd, 3rd, … occurrence of the same id. The first
+  /// occurrence keeps the bare `tool_<id>` form so a single
+  /// non-colliding call still matches the key the rest of the
+  /// codebase (retry / `resolveAskUser`) looks up by.
+  ///
+  /// This is the last line of defense against the
+  /// "Duplicate keys found" crash: the chat provider already
+  /// mints unique ids upstream, and `LocalLlmService` always
+  /// synthesizes a fresh one, but a stale / replayed message,
+  /// or any future code path that forgets the rule, would
+  /// still crash the Column without this pass.
+  @visibleForTesting
+  static List<String> disambiguateToolCallKeys(List<ToolCall> calls) {
+    final seenIds = <String, int>{};
+    return [
+      for (final tc in calls) ...[
+        () {
+          final occurrence = seenIds[tc.id] ?? 0;
+          seenIds[tc.id] = occurrence + 1;
+          return occurrence == 0
+              ? 'tool_${tc.id}'
+              : 'tool_${tc.id}#$occurrence';
+        }(),
+      ],
+    ];
+  }
 }
 
 class _MessageBubbleState extends State<MessageBubble> {
@@ -358,25 +387,26 @@ class _MessageBubbleState extends State<MessageBubble> {
   Widget _buildToolCalls(BuildContext context, List<ToolCall> calls) {
     final chat = context.read<ChatProvider>();
     final assistantId = widget.message.id;
+    final keys = MessageBubble.disambiguateToolCallKeys(calls);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final tc in calls) ...[
+        for (var i = 0; i < calls.length; i++) ...[
           _ToolCallCard(
-            key: ValueKey('tool_${tc.id}'),
-            toolCall: tc,
+            key: ValueKey(keys[i]),
+            toolCall: calls[i],
             assistantId: assistantId,
-            onRetry: tc.isFailed
-                ? () => chat.retryToolCall(context, assistantId, tc.id)
+            onRetry: calls[i].isFailed
+                ? () => chat.retryToolCall(context, assistantId, calls[i].id)
                 : null,
           ),
-          if (tc.question != null && tc.options != null) ...[
+          if (calls[i].question != null && calls[i].options != null) ...[
             const SizedBox(height: 4),
             _AskUserOptions(
-              key: ValueKey('ask_user_${tc.id}'),
-              toolCall: tc,
+              key: ValueKey('ask_user_${calls[i].id}'),
+              toolCall: calls[i],
               onSubmit: (selection) {
-                chat.resolveAskUser(tc.id, selection);
+                chat.resolveAskUser(calls[i].id, selection);
               },
             ),
           ],

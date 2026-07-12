@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:llamadart/llamadart.dart';
+import 'package:uuid/uuid.dart';
 
 import '../models/local_provider.dart';
 import '../models/message.dart';
@@ -21,6 +22,16 @@ class LocalLlmService extends ChangeNotifier {
   /// to skip the reset+seed cycle on follow-up turns of the same
   /// session so llama.cpp's KV cache stays hot.
   Object? _boundSessionId;
+
+  /// Counter for synthesizing unique tool-call ids when llamadart
+  /// returns an empty/null id (most local chat templates don't
+  /// emit an id field). The UI in `ChatProvider` matches
+  /// `toolStart` / `toolDone` events to in-message `ToolCall`
+  /// bubbles by id, so a missing id lets a single failure on tool
+  /// #3 stamp "failed" onto tool #1 and #2 as well. See the
+  /// regression test in `test/local_llm_service_test.dart`.
+  int _localToolCallSeq = 0;
+  static const _uuid = Uuid();
 
   bool get isReady => _engine != null && _session != null;
   bool get isLoading => _loading;
@@ -444,8 +455,35 @@ class LocalLlmService extends ChangeNotifier {
       if (msg.role != LlamaChatRole.assistant) continue;
       for (final part in msg.parts) {
         if (part is LlamaToolCallContent) {
+          // Always mint a fresh id for the local-LLM path, even
+          // when llamadart already gave us a non-empty one.
+          // Rationale:
+          //   1. Many local chat templates don't emit an id at
+          //      all — llamadart hands us `null` or `''`. If we
+          //      passed that through, every tool call in a turn
+          //      would share the same empty id, and the chat
+          //      provider's toolDone handler would stamp a single
+          //      failure onto all of them (regression: a 404 on
+          //      the last tool call painted "failed 404" onto
+          //      every previous tool call in the same turn).
+          //   2. The templates that *do* emit an id (Hermes
+          //      handler in llamadart 0.8.14 uses
+          //      `call_$toolCalls.length`, other handlers have
+          //      similar index-based schemes) can still collide
+          //      when the model itself emits a literal
+          //      `{"id": "call_0", ...}` for every tool call —
+          //      which is exactly what Hermes-style models do.
+          //      Two sibling tool calls in the same assistant
+          //      turn then both arrive as `id: "call_0"`, and
+          //      Flutter's `ValueKey('tool_call_0')` collides in
+          //      the MessageBubble Column.
+          //   3. The id is opaque to llama.cpp — it just round-
+          //      trips through `LlamaToolResultContent.id` and
+          //      the engine tracks tool calls by their position
+          //      in the conversation, not by id. So synthesizing
+          //      locally is safe.
           out.add({
-            'id': part.id,
+            'id': resolveToolCallId(part.id),
             'name': part.name,
             'arguments': part.rawJson,
             'argsMap': part.arguments,
@@ -454,6 +492,28 @@ class LocalLlmService extends ChangeNotifier {
       }
     }
     return out;
+  }
+
+  /// Returns a non-empty, unique id for a tool call produced by
+  /// the local model. Always synthesizes a fresh id, even when
+  /// llamadart already supplied a non-empty one. The raw id is
+  /// unreliable for two reasons:
+  ///   1. Most local chat templates don't emit a tool-call id
+  ///      at all (the value comes back as `null` or `''`).
+  ///   2. Templates that *do* emit an id (Hermes, functionary,
+  ///      …) typically use a per-turn `call_$index` scheme, and
+  ///      the model itself can also emit a literal
+  ///      `{"id": "call_0", ...}` for every tool call — so
+  ///      sibling tool calls in the same assistant turn can
+  ///      collide on the same id (e.g. two `call_0`s), which
+  ///      blows up the `ValueKey('tool_${tc.id}')` in
+  ///      `MessageBubble._buildToolCalls`.
+  /// The synthesized id is opaque to llama.cpp — the engine
+  /// tracks tool calls by their position in the conversation,
+  /// not by id, so generating one locally is safe.
+  @visibleForTesting
+  String resolveToolCallId(String? rawId) {
+    return 'local-${_localToolCallSeq++}-${_uuid.v4()}';
   }
 
   static KvCacheType _parseCacheType(String raw) {

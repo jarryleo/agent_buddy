@@ -180,7 +180,17 @@ class AgentBuddyApp extends StatelessWidget {
             ],
             supportedLocales: const [Locale('en'), Locale('zh')],
             builder: (ctx, child) {
+              // The `Key` here is load-bearing: `MaterialApp.builder`
+              // is invoked on every `Consumer<SettingsProvider>`
+              // rebuild (e.g. theme flip), and the framework has a
+              // known assertion (`_InactiveElements.remove` — "is not
+              // true") when an `AnnotatedRegion` is updated in-place
+              // around a navigator child. A value-keyed element lets
+              // Flutter dispose the old element and build a fresh
+              // one on theme change instead of trying to retake an
+              // inactive element that's no longer in the set.
               return AnnotatedRegion<SystemUiOverlayStyle>(
+                key: ValueKey('system-ui-overlay-$isDark'),
                 value: SystemUiOverlayStyle(
                   statusBarColor: Colors.transparent,
                   statusBarIconBrightness: isDark

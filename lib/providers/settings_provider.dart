@@ -191,9 +191,36 @@ class SettingsProvider extends ChangeNotifier {
       }
     }
 
+    // Seed built-in skills. Mirrors the tool loop above: fresh
+    // installs get every built-in added and enabled; existing
+    // installs get any new built-in back-filled (so a user
+    // upgrading from a build that didn't have `news` / `weather`
+    // picks them up automatically and they start out active).
+    // User-added skills are never touched by this loop.
+    if (_skills.isEmpty) {
+      _skills = [for (final s in BuiltinSkills.all) s.toSkill()];
+    } else {
+      final existingIds = _skills.map((s) => s.id).toSet();
+      var added = false;
+      for (final s in BuiltinSkills.all) {
+        if (!existingIds.contains(s.id)) {
+          _skills = [..._skills, s.toSkill()];
+          added = true;
+        }
+      }
+      if (added) {
+        await _storage.saveSkills(_skills);
+      }
+    }
+
+    // Auto-enable any new built-in (and re-enable any existing
+    // built-in the user previously toggled on). Built-ins start
+    // active; a user can still toggle them off, and that choice
+    // sticks across launches because we only `add`, never
+    // blindly `clear` here.
     var skillsChanged = false;
     for (final s in _skills) {
-      if (s.enabled && !_activeSkillIds.contains(s.id)) {
+      if (s.isBuiltin && s.enabled && !_activeSkillIds.contains(s.id)) {
         _activeSkillIds.add(s.id);
         skillsChanged = true;
       }
@@ -450,6 +477,11 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   Future<void> deleteSkill(String id) async {
+    // Built-in skills are part of the app — refuse to delete them
+    // so the next launch doesn't silently re-seed what the user
+    // just removed. The UI hides the delete button for built-ins;
+    // this guard is a belt-and-suspenders defense.
+    if (id.startsWith(Skill.builtinIdPrefix)) return;
     _skills = _skills.where((s) => s.id != id).toList();
     _activeSkillIds.remove(id);
     await _storage.saveSkills(_skills);

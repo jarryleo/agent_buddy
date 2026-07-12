@@ -78,6 +78,43 @@ class ChatProvider extends ChangeNotifier {
   /// streaming `await`.
   final Map<String, Completer<String>> _pendingAskUser = {};
 
+  /// Maps an assistant message id → (transport tool-call id →
+  /// synthesized UI tool-call id). Populated in the `toolStart`
+  /// branch when the transport id is non-empty but collides with
+  /// an existing bubble id — in that case the UI bubble gets a
+  /// fresh uuid, and the matching `toolDone` event (which still
+  /// carries the original transport id) looks the synthesized id
+  /// up here. Entries are removed as soon as the corresponding
+  /// `toolDone` arrives, so the map stays small.
+  final Map<String, Map<String, String>> _transportToUiToolCallId = {};
+
+  /// Pure helper that decides what id to use for a new
+  /// `ToolCall` bubble in [MessageBubble]. Three failure modes
+  /// to defend against (see the `toolStart` branch of
+  /// `sendMessage` for the full rationale):
+  ///   1. `incomingId` is `null`/`''` → synthesize.
+  ///   2. `incomingId` collides with an existing bubble on the
+  ///      same message (Hermes-style models emit `call_0` for
+  ///      every tool call) → synthesize.
+  ///   3. `incomingId` is unique → use as-is.
+  /// Extracted as a `@visibleForTesting` static so the resolution
+  /// rules can be unit-tested without standing up the full
+  /// provider / stream pipeline.
+  @visibleForTesting
+  static String resolveToolCallBubbleId({
+    required String incomingId,
+    required List<ToolCall> existingToolCalls,
+    Uuid? uuid,
+  }) {
+    final collision = incomingId.isNotEmpty &&
+        existingToolCalls.any((tc) => tc.id == incomingId);
+    if (incomingId.isEmpty || collision) {
+      final u = uuid ?? const Uuid();
+      return 'local-${u.v4()}';
+    }
+    return incomingId;
+  }
+
   // -------- Public read API --------
 
   /// The currently visible messages. Empty when no session is
@@ -868,7 +905,38 @@ class ChatProvider extends ChangeNotifier {
         if (event.type == 'toolStart') {
           final s = _activeSession;
           if (s != null) {
-            final toolId = event.toolId ?? '';
+            // The id hygiene here is load-bearing. Three failure
+            // modes we have to defend against:
+            //   1. The transport (e.g. llamadart + Hermes) hands
+            //      us `id: null` or `''`. Two siblings in the
+            //      same turn would share the empty id and the
+            //      Column in `MessageBubble` would throw
+            //      "Duplicate keys found".
+            //   2. The transport hands us a NON-empty id that
+            //      *collides* with one already on this message
+            //      — Hermes-style models emit `{"id": "call_0",
+            //      ...}` for every tool call, so a 3-tool-call
+            //      turn arrives as three `call_0`s.
+            //   3. The transport hands us a non-empty id that
+            //      collides *across* turns (the per-turn
+            //      `call_$index` counter resets). That doesn't
+            //      break the Column in a single message, but it
+            //      would make `toolDone` for a later turn
+            //      re-update an older message's ToolCall.
+            // We always mint a fresh, unique id for the UI
+            // bubble and record the mapping back to the
+            // transport id so the matching `toolDone` event
+            // (which still carries the transport id) can find
+            // the right bubble.
+            final incoming = event.toolId ?? '';
+            final assistant = s.messages.firstWhere(
+              (m) => m.id == assistantId,
+              orElse: () => s.messages.first,
+            );
+            final toolId = resolveToolCallBubbleId(
+              incomingId: incoming,
+              existingToolCalls: assistant.toolCalls,
+            );
             _replaceMessages([
               for (final mm in s.messages)
                 if (mm.id == assistantId)
@@ -886,12 +954,60 @@ class ChatProvider extends ChangeNotifier {
                 else
                   mm,
             ]);
+            // Record the transport→UI id mapping so `toolDone`
+            // can find the right bubble even if we synthesized
+            // a new id (see the `toolDone` branch below).
+            if (incoming.isNotEmpty && incoming != toolId) {
+              _transportToUiToolCallId[assistantId] ??= <String, String>{};
+              _transportToUiToolCallId[assistantId]![incoming] = toolId;
+            }
             controller.add(null);
           }
         } else if (event.type == 'toolDone') {
           final s = _activeSession;
           if (s != null) {
-            final toolId = event.toolId ?? '';
+            // Resolve which `ToolCall` this `toolDone` event
+            // corresponds to. Three cases, in priority order:
+            //   1. The transport id maps to a synthesized UI id
+            //      we minted in the matching `toolStart` event
+            //      (because the transport id collided with an
+            //      existing bubble).
+            //   2. The transport id matches a `ToolCall` directly
+            //      (the common case — server-generated unique
+            //      ids, or the local LLM path after
+            //      `resolveToolCallId`).
+            //   3. Fallback: the orchestrator processes tool
+            //      calls sequentially, so the `toolDone` event
+            //      updates the *last running* `ToolCall` on the
+            //      assistant message. This is what catches the
+            //      case where the transport emitted a completely
+            //      empty id AND we somehow lost the mapping.
+            final rawId = event.toolId ?? '';
+            final mapping = _transportToUiToolCallId[assistantId];
+            String toolId = (mapping != null && mapping.containsKey(rawId))
+                ? mapping[rawId]!
+                : (rawId.isNotEmpty ? rawId : '');
+            if (toolId.isEmpty ||
+                !s.messages
+                    .firstWhere(
+                      (m) => m.id == assistantId,
+                      orElse: () => s.messages.first,
+                    )
+                    .toolCalls
+                    .any((tc) => tc.id == toolId)) {
+              final assistant = s.messages.firstWhere(
+                (m) => m.id == assistantId,
+                orElse: () => s.messages.first,
+              );
+              final lastRunning = assistant.toolCalls.lastWhere(
+                (tc) => tc.isRunning,
+                orElse: () => assistant.toolCalls.isEmpty
+                    ? ToolCall(id: '', name: '', arguments: '')
+                    : assistant.toolCalls.last,
+              );
+              toolId = lastRunning.id;
+              if (toolId.isEmpty) toolId = _uuid.v4();
+            }
             final now = DateTime.now();
             _replaceMessages([
               for (final mm in s.messages)
@@ -915,6 +1031,10 @@ class ChatProvider extends ChangeNotifier {
                 else
                   mm,
             ]);
+            // Drop the mapping entry once the tool call is
+            // terminal so the map doesn't grow without bound
+            // across long sessions.
+            mapping?.remove(rawId);
             controller.add(null);
           }
         } else if (event.type == 'reasoning' && event.thinkingDelta != null) {
