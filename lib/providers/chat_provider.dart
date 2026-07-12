@@ -289,8 +289,10 @@ class ChatProvider extends ChangeNotifier {
       final schema = tool.buildSchema();
       if (schema.isNotEmpty) list.add(schema);
     }
-    // auto-include load_skill when there are active skills
-    if (_settings.activeSkills.isNotEmpty) {
+    // auto-include load_skill when there are active skills (skip if
+    // already present to avoid duplicate function names).
+    if (_settings.activeSkills.isNotEmpty &&
+        !list.any((s) => s['function']?['name'] == 'load_skill')) {
       final ls = ToolRegistry.byId('load_skill');
       if (ls != null && ls.isSupportedOnCurrentPlatform) {
         final schema = ls.buildSchema();
