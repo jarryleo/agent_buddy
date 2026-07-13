@@ -1,0 +1,15 @@
+# Test runner config.
+#
+# Manual / smoke tests (under `test/manual/`) are tagged
+# `manual` and have real platform side effects (e.g. popping
+# a Windows toast). To opt out of running them in your local
+# `flutter test` invocation, pass the tag selector:
+#
+#   flutter test --exclude-tags=manual
+#
+# The default behavior is to run them alongside the unit tests
+# — they're gated by `Platform.isWindows` internally, so on
+# other platforms they're cheap no-ops. See `test/manual/`
+# for the full list.
+tags:
+  manual: {}

@@ -107,8 +107,8 @@ void main() {
       // spells the type as 'boolean'; stay there.
       final t = TimerTool();
       final schema = t.buildSchema();
-      final props = (schema['function'] as Map)['parameters']
-          as Map<String, dynamic>;
+      final props =
+          (schema['function'] as Map)['parameters'] as Map<String, dynamic>;
       final parameters = jsonEncode(props);
       expect(parameters, contains('"boolean"'));
       expect(parameters, isNot(contains("'bool'")));
