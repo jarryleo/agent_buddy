@@ -1250,6 +1250,12 @@ abstract class AppLocalizations {
   /// **'Retry this tool call'**
   String get toolCallRetryFailed;
 
+  /// No description provided for @toolGroupSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} tool calls'**
+  String toolGroupSummary(int count);
+
   /// No description provided for @toolCallRetryNote.
   ///
   /// In en, this message translates to:

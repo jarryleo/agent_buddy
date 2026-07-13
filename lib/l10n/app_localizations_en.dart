@@ -646,6 +646,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolCallRetryFailed => 'Retry this tool call';
 
   @override
+  String toolGroupSummary(int count) {
+    return '$count tool calls';
+  }
+
+  @override
   String toolCallRetryNote(String tool, String result) {
     return '[Retry of $tool] The tool returned the following new result. Please use it to continue or correct your previous answer:\n\n$result';
   }

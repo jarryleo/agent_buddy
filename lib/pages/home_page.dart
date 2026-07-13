@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/message.dart';
 import '../providers/chat_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/image_service.dart';
@@ -73,6 +74,37 @@ class _HomePageState extends State<HomePage> {
     } else {
       _autoScroll.markUserNotAtBottom();
     }
+  }
+
+  /// Groups consecutive assistant messages that are tool-only (have
+  /// tool calls but no content and no thinking) into a single list
+  /// for the [MessageBubble] to render as a collapsed group.
+  /// Non-tool-only messages are returned as-is.
+  bool _isToolOnly(ChatMessage m) {
+    return m.role == MessageRole.assistant &&
+        m.toolCalls.isNotEmpty &&
+        m.content.isEmpty &&
+        m.thinking.isEmpty;
+  }
+
+  List<Object> _groupedMessages(List<ChatMessage> messages) {
+    final result = <Object>[];
+    List<ChatMessage>? currentGroup;
+    for (final m in messages) {
+      if (_isToolOnly(m)) {
+        (currentGroup ??= []).add(m);
+      } else {
+        if (currentGroup != null) {
+          result.add(currentGroup);
+          currentGroup = null;
+        }
+        result.add(m);
+      }
+    }
+    if (currentGroup != null) {
+      result.add(currentGroup);
+    }
+    return result;
   }
 
   @override
@@ -242,9 +274,32 @@ class _HomePageState extends State<HomePage> {
                         // bubble). Disable it; we don't rely on
                         // out-of-view widgets staying alive.
                         addAutomaticKeepAlives: false,
-                        itemCount: messages.length,
+                        itemCount: _groupedMessages(messages).length,
                         itemBuilder: (context, index) {
-                          final m = messages[index];
+                          final item = _groupedMessages(messages)[index];
+                          if (item is List<ChatMessage>) {
+                            return MessageBubble(
+                              key: ValueKey(
+                                'tool_group_${item.first.id}_${item.length}',
+                              ),
+                              message: item.first,
+                              groupedToolMessages: item,
+                              onCopy: (text) async {
+                                await Clipboard.setData(
+                                  ClipboardData(text: text),
+                                );
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(l10n.homeCopied),
+                                      duration: Duration(milliseconds: 1200),
+                                    ),
+                                  );
+                                }
+                              },
+                            );
+                          }
+                          final m = item as ChatMessage;
                           return MessageBubble(
                             // Stable key: the State (and its
                             // ScrollController) must be tied to

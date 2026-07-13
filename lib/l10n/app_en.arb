@@ -299,6 +299,12 @@
   "toolCallCollapse": "Hide details",
   "toolCallRetry": "Retry",
   "toolCallRetryFailed": "Retry this tool call",
+  "toolGroupSummary": "{count} tool calls",
+  "@toolGroupSummary": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "toolCallRetryNote": "[Retry of {tool}] The tool returned the following new result. Please use it to continue or correct your previous answer:\n\n{result}",
   "@toolCallRetryNote": {
     "placeholders": {

@@ -628,6 +628,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolCallRetryFailed => '重新执行该工具调用';
 
   @override
+  String toolGroupSummary(int count) {
+    return '调用了 $count 个工具';
+  }
+
+  @override
   String toolCallRetryNote(String tool, String result) {
     return '[重试 $tool] 工具返回了新的结果,请基于此继续或修正之前的回答:\n\n$result';
   }

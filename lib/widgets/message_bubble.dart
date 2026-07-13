@@ -15,10 +15,20 @@ import 'download_card.dart';
 import 'markdown_content.dart';
 
 class MessageBubble extends StatefulWidget {
-  const MessageBubble({super.key, required this.message, required this.onCopy});
+  const MessageBubble({
+    super.key,
+    required this.message,
+    required this.onCopy,
+    this.groupedToolMessages,
+  });
 
   final ChatMessage message;
   final ValueChanged<String> onCopy;
+
+  /// When non-null, this bubble renders a collapsed group of
+  /// consecutive tool-role messages instead of the normal message
+  /// layout. The [message] field is used for the copy callback.
+  final List<ChatMessage>? groupedToolMessages;
 
   @override
   State<MessageBubble> createState() => _MessageBubbleState();
@@ -55,6 +65,7 @@ class MessageBubble extends StatefulWidget {
 
 class _MessageBubbleState extends State<MessageBubble> {
   bool _thinkingExpanded = false;
+  bool _toolCallsExpanded = false;
   static const int _thinkingCollapsedLines = 3;
   static const int _thinkingExpandedLines = 10;
   static const double _autoScrollBottomTolerance = 24;
@@ -113,6 +124,9 @@ class _MessageBubbleState extends State<MessageBubble> {
     // message so the model can react, but the UI skips it so the
     // user just sees the AI's reminder response.
     if (m.hidden) return const SizedBox.shrink();
+    if (widget.groupedToolMessages != null) {
+      return _buildGroupedToolCalls(context, widget.groupedToolMessages!);
+    }
     final body = m.role == MessageRole.user
         ? _buildUser(context, m)
         : _buildAssistant(context, m);
@@ -279,6 +293,18 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
+  Widget _buildGroupedToolCalls(BuildContext context, List<ChatMessage> messages) {
+    final allCalls = <ToolCall>[];
+    for (final m in messages) {
+      allCalls.addAll(m.toolCalls);
+    }
+    return _GroupedToolCalls(
+      messages: messages,
+      allCalls: allCalls,
+      onCopy: widget.onCopy,
+    );
+  }
+
   Widget _buildAssistant(BuildContext context, ChatMessage m) {
     final hasThinking = m.thinking.isNotEmpty;
     final hasTools = m.toolCalls.isNotEmpty;
@@ -288,7 +314,8 @@ class _MessageBubbleState extends State<MessageBubble> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (hasThinking) _buildThinking(context, m),
-          if (hasTools) _buildToolCalls(context, m.toolCalls),
+          if (hasTools)
+            _buildToolCallsSection(context, m),
           if (m.content.isNotEmpty || m.streaming)
             Container(
               margin: EdgeInsets.only(top: (hasThinking || hasTools) ? 6 : 0),
@@ -343,6 +370,101 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
+  Widget _buildToolCallsSection(BuildContext context, ChatMessage m) {
+    final l10n = AppLocalizations.of(context);
+    final count = m.toolCalls.length;
+    final successCount =
+        m.toolCalls.where((c) => c.status == ToolCallStatus.success).length;
+    final failedCount =
+        m.toolCalls.where((c) => c.status == ToolCallStatus.failed).length;
+    final runningCount = m.toolCalls
+        .where((c) => c.status == ToolCallStatus.running)
+        .length;
+    return Container(
+      decoration: BoxDecoration(
+        color: context.toolCallBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.toolCallBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () =>
+                setState(() => _toolCallsExpanded = !_toolCallsExpanded),
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.build_outlined,
+                    size: 14,
+                    color: context.textSecondary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      l10n.toolGroupSummary(count),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: context.textPrimary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (runningCount > 0)
+                    SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.6,
+                        valueColor:
+                            AlwaysStoppedAnimation(AppTheme.primary),
+                      ),
+                    )
+                  else ...[
+                    if (failedCount > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Text(
+                          '$failedCount/$count',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: context.errorText,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    if (successCount == count)
+                      Icon(
+                        Icons.check_circle_outline_rounded,
+                        size: 14,
+                        color: const Color(0xFF1F883D),
+                      ),
+                  ],
+                  const SizedBox(width: 4),
+                  Icon(
+                    _toolCallsExpanded
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                    size: 16,
+                    color: context.textSecondary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_toolCallsExpanded) ...[
+            const SizedBox(height: 6),
+            _buildToolCalls(context, m.toolCalls),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildThinking(BuildContext context, ChatMessage m) {
     final l10n = AppLocalizations.of(context);
     final lineCount = '\n'.allMatches(m.thinking).length + 1;
@@ -350,11 +472,6 @@ class _MessageBubbleState extends State<MessageBubble> {
         ? _thinkingExpandedLines
         : _thinkingCollapsedLines;
     final overflow = lineCount > maxLines;
-    // Toggle is available when:
-    //  - collapsed and the content doesn't fit (▼ to expand), or
-    //  - expanded (▲ to collapse, even if the content already fits in
-    //    the expanded view). Without this second clause, the user
-    //    can't collapse once expanded if lineCount <= expanded limit.
     final canToggle = _thinkingExpanded || overflow;
     return Container(
       decoration: BoxDecoration(
@@ -445,6 +562,146 @@ class _MessageBubbleState extends State<MessageBubble> {
               },
             ),
           ],
+          SizedBox(height: 6),
+        ],
+      ],
+    );
+  }
+}
+
+/// Renders a collapsed group of consecutive tool-role messages.
+/// Shows a summary badge ("调用了 N 个工具") that expands to reveal
+/// each individual tool call card.
+class _GroupedToolCalls extends StatefulWidget {
+  const _GroupedToolCalls({
+    required this.messages,
+    required this.allCalls,
+    required this.onCopy,
+  });
+
+  final List<ChatMessage> messages;
+  final List<ToolCall> allCalls;
+  final ValueChanged<String> onCopy;
+
+  @override
+  State<_GroupedToolCalls> createState() => _GroupedToolCallsState();
+}
+
+class _GroupedToolCallsState extends State<_GroupedToolCalls> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final count = widget.allCalls.length;
+    final successCount =
+        widget.allCalls.where((c) => c.status == ToolCallStatus.success).length;
+    final failedCount =
+        widget.allCalls.where((c) => c.status == ToolCallStatus.failed).length;
+    final runningCount =
+        widget.allCalls.where((c) => c.status == ToolCallStatus.running).length;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 48, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: context.toolCallBg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: context.toolCallBorder),
+            ),
+            child: InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              borderRadius: BorderRadius.circular(10),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.build_outlined,
+                      size: 14,
+                      color: context.textSecondary,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        l10n.toolGroupSummary(count),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (runningCount > 0)
+                      SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.6,
+                          valueColor: AlwaysStoppedAnimation(AppTheme.primary),
+                        ),
+                      )
+                    else ...[
+                      if (failedCount > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Text(
+                            '$failedCount/$count',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: context.errorText,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      if (successCount == count)
+                        Icon(
+                          Icons.check_circle_outline_rounded,
+                          size: 14,
+                          color: const Color(0xFF1F883D),
+                        ),
+                    ],
+                    const SizedBox(width: 4),
+                    Icon(
+                      _expanded
+                          ? Icons.expand_less_rounded
+                          : Icons.expand_more_rounded,
+                      size: 16,
+                      color: context.textSecondary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (_expanded) ...[
+            const SizedBox(height: 6),
+            for (final m in widget.messages) ...[
+              if (m.toolCalls.isNotEmpty)
+                _buildToolCalls(context, m.toolCalls),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToolCalls(BuildContext context, List<ToolCall> calls) {
+    final keys = MessageBubble.disambiguateToolCallKeys(calls);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < calls.length; i++) ...[
+          _ToolCallCard(
+            key: ValueKey(keys[i]),
+            toolCall: calls[i],
+            assistantId: '',
+            onRetry: null,
+          ),
           SizedBox(height: 6),
         ],
       ],

@@ -212,6 +212,12 @@
   "toolCallCollapse": "收起详情",
   "toolCallRetry": "重试",
   "toolCallRetryFailed": "重新执行该工具调用",
+  "toolGroupSummary": "调用了 {count} 个工具",
+  "@toolGroupSummary": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "toolCallRetryNote": "[重试 {tool}] 工具返回了新的结果,请基于此继续或修正之前的回答:\n\n{result}",
   "@toolCallRetryNote": {
     "placeholders": {
