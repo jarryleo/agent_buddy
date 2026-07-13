@@ -91,16 +91,10 @@ void main() {
       await settings.load();
 
       // User skill survives.
-      expect(
-        settings.skills.where((s) => s.id == userSkill.id).length,
-        1,
-      );
+      expect(settings.skills.where((s) => s.id == userSkill.id).length, 1);
       // And every built-in gets back-filled.
       for (final builtin in BuiltinSkills.all) {
-        expect(
-          settings.skills.map((s) => s.id).toSet(),
-          contains(builtin.id),
-        );
+        expect(settings.skills.map((s) => s.id).toSet(), contains(builtin.id));
         expect(settings.activeSkillIds, contains(builtin.id));
       }
     });
@@ -132,8 +126,10 @@ void main() {
       final settings2 = SettingsProvider(storage);
       await settings2.load();
       expect(settings2.activeSkillIds.contains(builtinId), isFalse);
-      expect(settings2.skills.firstWhere((s) => s.id == builtinId).enabled,
-          isFalse);
+      expect(
+        settings2.skills.firstWhere((s) => s.id == builtinId).enabled,
+        isFalse,
+      );
     });
 
     test('user edits to a built-in persist across load()', () async {
@@ -142,10 +138,9 @@ void main() {
       final builtinId = BuiltinSkills.all.first.id;
 
       final original = settings.skills.firstWhere((s) => s.id == builtinId);
-      await settings.updateSkill(original.copyWith(
-        name: 'Custom name',
-        content: 'My own content',
-      ));
+      await settings.updateSkill(
+        original.copyWith(name: 'Custom name', content: 'My own content'),
+      );
 
       final settings2 = SettingsProvider(storage);
       await settings2.load();

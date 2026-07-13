@@ -3,8 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('LocalLlmService.resolveToolCallId', () {
-    test('always synthesizes a non-empty id, even when raw is non-empty',
-        () {
+    test('always synthesizes a non-empty id, even when raw is non-empty', () {
       // The raw id from llamadart is unreliable: it can be
       // null, empty, or — most importantly — collide across
       // sibling tool calls in the same turn (Hermes-style
@@ -38,8 +37,11 @@ void main() {
       final ids = <String>{
         for (var i = 0; i < 3; i++) svc.resolveToolCallId(''),
       };
-      expect(ids.length, 3,
-          reason: 'three empty ids must produce three distinct ids');
+      expect(
+        ids.length,
+        3,
+        reason: 'three empty ids must produce three distinct ids',
+      );
     });
 
     test('synthesizes distinct ids even when raw ids collide', () {
@@ -54,12 +56,14 @@ void main() {
       final ids = <String>{
         for (var i = 0; i < 3; i++) svc.resolveToolCallId('call_0'),
       };
-      expect(ids.length, 3,
-          reason: 'three identical raw ids must produce three distinct ids');
+      expect(
+        ids.length,
+        3,
+        reason: 'three identical raw ids must produce three distinct ids',
+      );
     });
 
-    test('synthesized ids are stable across the lifetime of the service',
-        () {
+    test('synthesized ids are stable across the lifetime of the service', () {
       final svc = LocalLlmService();
       // Counter must be monotonic within a service so callers
       // can rely on distinct ids.
@@ -71,8 +75,7 @@ void main() {
       expect(first, isNot(equals(third)));
     });
 
-    test('a sequence simulating a 3-tool-call turn produces 3 unique ids',
-        () {
+    test('a sequence simulating a 3-tool-call turn produces 3 unique ids', () {
       // Mirrors the user's reported scenario: load_skill,
       // location, fetch_web — all three arriving with the
       // same Hermes-style `call_0` id from the model.
@@ -84,8 +87,11 @@ void main() {
       ];
       expect(ids.toSet().length, 3);
       for (final id in ids) {
-        expect(id, isNot('call_0'),
-            reason: 'synthesized id must not leak the colliding raw value');
+        expect(
+          id,
+          isNot('call_0'),
+          reason: 'synthesized id must not leak the colliding raw value',
+        );
         expect(id, startsWith('local-'));
       }
     });

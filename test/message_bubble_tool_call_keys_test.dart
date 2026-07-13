@@ -31,10 +31,16 @@ void main() {
       ];
       final keys = MessageBubble.disambiguateToolCallKeys(calls);
       expect(keys, hasLength(3));
-      expect(keys.toSet().length, 3,
-          reason: 'three identical ids must produce three distinct keys');
-      expect(keys[0], 'tool_call_0',
-          reason: 'first occurrence keeps the bare form for retry/lookup');
+      expect(
+        keys.toSet().length,
+        3,
+        reason: 'three identical ids must produce three distinct keys',
+      );
+      expect(
+        keys[0],
+        'tool_call_0',
+        reason: 'first occurrence keeps the bare form for retry/lookup',
+      );
       expect(keys[1], 'tool_call_0#1');
       expect(keys[2], 'tool_call_0#2');
     });

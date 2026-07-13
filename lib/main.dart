@@ -23,11 +23,14 @@ import 'services/download_service.dart';
 import 'services/image_service.dart';
 import 'services/local_llm_service.dart';
 import 'services/memory_repository.dart';
+import 'services/notification_service.dart';
 import 'services/platform/notes_service.dart';
 import 'services/platform/tasks_service.dart';
 import 'services/storage_service.dart';
+import 'services/timer_service.dart';
 import 'services/tool_service.dart';
 import 'theme/app_theme.dart';
+import 'widgets/notification_host.dart';
 import 'widgets/phone_frame.dart';
 
 Future<void> main() async {
@@ -54,6 +57,12 @@ Future<void> main() async {
   final memoryRepo = MemoryRepository()..open(preopened: memoriesBox);
   final storage = StorageService();
   await storage.init();
+  // Notification / timer services own no platform channels at
+  // startup. NotificationService.initialize() is best-effort and
+  // called on first show(); TimerService just holds an in-memory
+  // queue.
+  await NotificationService.instance.initialize();
+  final timerService = TimerService();
   runApp(
     AgentBuddyApp(
       storage: storage,
@@ -61,6 +70,7 @@ Future<void> main() async {
       tasksBox: tasksBox,
       memoriesBox: memoriesBox,
       memoryRepo: memoryRepo,
+      timerService: timerService,
     ),
   );
 }
@@ -102,12 +112,14 @@ class AgentBuddyApp extends StatelessWidget {
     required this.tasksBox,
     required this.memoriesBox,
     required this.memoryRepo,
+    required this.timerService,
   });
   final StorageService storage;
   final Box<Note> notesBox;
   final Box<Task> tasksBox;
   final Box<Memory> memoriesBox;
   final MemoryRepository memoryRepo;
+  final TimerService timerService;
 
   @override
   Widget build(BuildContext context) {
@@ -117,11 +129,13 @@ class AgentBuddyApp extends StatelessWidget {
           create: (_) => SettingsProvider(storage)..load(),
         ),
         Provider<ApiService>(create: (_) => ApiService()),
+        ChangeNotifierProvider<TimerService>.value(value: timerService),
         Provider<ToolService>(
           create: (_) => ToolService(
             notesBox: notesBox,
             tasksBox: tasksBox,
             memoriesBox: memoriesBox,
+            timerService: timerService,
           ),
         ),
         Provider<ImageService>(create: (_) => ImageService()),
@@ -189,22 +203,31 @@ class AgentBuddyApp extends StatelessWidget {
               // Flutter dispose the old element and build a fresh
               // one on theme change instead of trying to retake an
               // inactive element that's no longer in the set.
-              return AnnotatedRegion<SystemUiOverlayStyle>(
-                key: ValueKey('system-ui-overlay-$isDark'),
-                value: SystemUiOverlayStyle(
-                  statusBarColor: Colors.transparent,
-                  statusBarIconBrightness: isDark
-                      ? Brightness.light
-                      : Brightness.dark,
-                  systemNavigationBarColor: isDark
-                      ? const Color(0xFF0F1115)
-                      : const Color(0xFFF6F7F9),
-                  systemNavigationBarIconBrightness: isDark
-                      ? Brightness.light
-                      : Brightness.dark,
-                  systemNavigationBarDividerColor: Colors.transparent,
+              //
+              // The `NotificationHost` wraps the navigator with a
+              // bottom-right toast overlay so the desktop / web
+              // notification path has a place to render. On mobile
+              // the overlay is a no-op (real OS notifications are
+              // used), but we still mount it so the wire-up is
+              // identical across platforms.
+              return NotificationHost(
+                child: AnnotatedRegion<SystemUiOverlayStyle>(
+                  key: ValueKey('system-ui-overlay-$isDark'),
+                  value: SystemUiOverlayStyle(
+                    statusBarColor: Colors.transparent,
+                    statusBarIconBrightness: isDark
+                        ? Brightness.light
+                        : Brightness.dark,
+                    systemNavigationBarColor: isDark
+                        ? const Color(0xFF0F1115)
+                        : const Color(0xFFF6F7F9),
+                    systemNavigationBarIconBrightness: isDark
+                        ? Brightness.light
+                        : Brightness.dark,
+                    systemNavigationBarDividerColor: Colors.transparent,
+                  ),
+                  child: child ?? const SizedBox.shrink(),
                 ),
-                child: child ?? const SizedBox.shrink(),
               );
             },
             home: PhoneFrame(child: HomePage()),

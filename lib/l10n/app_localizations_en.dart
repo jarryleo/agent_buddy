@@ -797,4 +797,131 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get locationTimeout => 'Location request timed out. Please try again.';
+
+  @override
+  String get settingsTabTimers => 'Timers';
+
+  @override
+  String get timerListEmpty =>
+      'No timers set.\nThe AI can use the \"timer\" tool to schedule a reminder that comes back to itself.';
+
+  @override
+  String get timerListEmptyFilter => 'No timers match the filter.';
+
+  @override
+  String get timerAddTitle => 'Add timer';
+
+  @override
+  String get timerEditTitle => 'Edit timer';
+
+  @override
+  String get timerFieldLabel => 'Label';
+
+  @override
+  String get timerFieldLabelHint => 'e.g. Drink water';
+
+  @override
+  String get timerFieldLabelRequired => 'Please enter a label';
+
+  @override
+  String get timerFieldDelay => 'Delay (seconds)';
+
+  @override
+  String get timerFieldDelayHint => 'e.g. 300 = 5 minutes';
+
+  @override
+  String get timerFieldDelayInvalid => 'Delay must be a non-negative integer';
+
+  @override
+  String get timerFieldPrompt => 'Reminder body';
+
+  @override
+  String get timerFieldPromptHint =>
+      'Optional. Becomes the notification body and is fed back to the AI when the timer fires.';
+
+  @override
+  String get timerFieldActionHint => 'AI hint';
+
+  @override
+  String get timerFieldActionHintHint =>
+      'Optional. Tells the AI what to do when the timer fires (e.g. \"Call the notification tool\").';
+
+  @override
+  String get timerFieldFireAt => 'Fire at (ISO 8601)';
+
+  @override
+  String get timerFieldFireAtHint =>
+      'Optional. Absolute time to fire (overrides delay).';
+
+  @override
+  String get timerStatusPending => 'Pending';
+
+  @override
+  String get timerStatusFired => 'Fired';
+
+  @override
+  String get timerStatusCancelled => 'Cancelled';
+
+  @override
+  String get timerActionEdit => 'Edit';
+
+  @override
+  String get timerActionCancel => 'Cancel';
+
+  @override
+  String get timerActionDelete => 'Delete';
+
+  @override
+  String get timerActionRestore => 'Re-activate';
+
+  @override
+  String get timerCancelConfirmTitle => 'Cancel timer?';
+
+  @override
+  String timerCancelConfirmMessage(Object label) {
+    return 'The pending timer \"$label\" will be cancelled and won\'t fire.';
+  }
+
+  @override
+  String get timerDeleteConfirmTitle => 'Delete timer?';
+
+  @override
+  String get timerDeleteConfirmMessage =>
+      'The timer record will be removed from the list. This action cannot be undone.';
+
+  @override
+  String get timerShowAll => 'Show all (including fired / cancelled)';
+
+  @override
+  String get timerHideTerminal => 'Hide fired / cancelled';
+
+  @override
+  String timerFiresIn(String duration) {
+    return 'Fires in $duration';
+  }
+
+  @override
+  String timerFiredAt(String when) {
+    return 'Fired at $when';
+  }
+
+  @override
+  String get timerSourceAi => 'AI';
+
+  @override
+  String get timerSourceUser => 'User';
+
+  @override
+  String get timerNoteRuntime =>
+      'Timers only fire while the app is running. Background / killed apps will not see the reminder.';
+
+  @override
+  String foregroundTimerTitleOne(String label) {
+    return '1 active timer: $label';
+  }
+
+  @override
+  String foregroundTimerTitleMany(int count) {
+    return '$count active timers';
+  }
 }

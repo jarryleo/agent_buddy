@@ -771,4 +771,126 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get locationTimeout => '位置请求超时,请重试。';
+
+  @override
+  String get settingsTabTimers => '计时任务';
+
+  @override
+  String get timerListEmpty => '暂无计时任务\n让 AI 用 \"timer\" 工具设置一个稍后回来的提醒';
+
+  @override
+  String get timerListEmptyFilter => '没有匹配的计时任务';
+
+  @override
+  String get timerAddTitle => '新增计时';
+
+  @override
+  String get timerEditTitle => '编辑计时';
+
+  @override
+  String get timerFieldLabel => '标题';
+
+  @override
+  String get timerFieldLabelHint => '例如: 喝水';
+
+  @override
+  String get timerFieldLabelRequired => '请输入标题';
+
+  @override
+  String get timerFieldDelay => '延迟(秒)';
+
+  @override
+  String get timerFieldDelayHint => '例如: 300 = 5 分钟';
+
+  @override
+  String get timerFieldDelayInvalid => '延迟必须是非负整数';
+
+  @override
+  String get timerFieldPrompt => '提醒正文';
+
+  @override
+  String get timerFieldPromptHint => '可选。会成为系统通知的正文,也会回传给 AI。';
+
+  @override
+  String get timerFieldActionHint => 'AI 提示';
+
+  @override
+  String get timerFieldActionHintHint =>
+      '可选。告诉 AI 触发时该做什么(例如: \"调用 notification 工具通知用户\")。';
+
+  @override
+  String get timerFieldFireAt => '触发时间 (ISO 8601)';
+
+  @override
+  String get timerFieldFireAtHint => '可选。绝对触发时刻(优先于延迟)。';
+
+  @override
+  String get timerStatusPending => '等待中';
+
+  @override
+  String get timerStatusFired => '已触发';
+
+  @override
+  String get timerStatusCancelled => '已取消';
+
+  @override
+  String get timerActionEdit => '编辑';
+
+  @override
+  String get timerActionCancel => '取消';
+
+  @override
+  String get timerActionDelete => '删除';
+
+  @override
+  String get timerActionRestore => '重新激活';
+
+  @override
+  String get timerCancelConfirmTitle => '取消计时?';
+
+  @override
+  String timerCancelConfirmMessage(Object label) {
+    return '待触发任务 \"$label\" 将被取消,不会响。';
+  }
+
+  @override
+  String get timerDeleteConfirmTitle => '删除计时?';
+
+  @override
+  String get timerDeleteConfirmMessage => '该计时记录将从列表中移除,且无法恢复。';
+
+  @override
+  String get timerShowAll => '显示全部(含已触发 / 已取消)';
+
+  @override
+  String get timerHideTerminal => '隐藏已触发 / 已取消';
+
+  @override
+  String timerFiresIn(String duration) {
+    return '$duration 后触发';
+  }
+
+  @override
+  String timerFiredAt(String when) {
+    return '$when 触发';
+  }
+
+  @override
+  String get timerSourceAi => 'AI';
+
+  @override
+  String get timerSourceUser => '用户';
+
+  @override
+  String get timerNoteRuntime => '计时器只在 App 运行期间有效;App 被杀或后台时不会响。';
+
+  @override
+  String foregroundTimerTitleOne(String label) {
+    return '1 个计时任务: $label';
+  }
+
+  @override
+  String foregroundTimerTitleMany(int count) {
+    return '$count 个计时任务';
+  }
 }

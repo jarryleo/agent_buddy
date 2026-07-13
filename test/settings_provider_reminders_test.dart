@@ -22,7 +22,9 @@ void main() {
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
-    tempDir = await Directory.systemTemp.createTemp('agent_buddy_settings_test_');
+    tempDir = await Directory.systemTemp.createTemp(
+      'agent_buddy_settings_test_',
+    );
     Hive.init(tempDir.path);
   });
 
@@ -40,8 +42,9 @@ void main() {
   }
 
   group('SettingsProvider.load() — reminders default off', () {
-    final remindersSupported = ToolRegistry.byId('reminders')!
-        .isSupportedOnCurrentPlatform;
+    final remindersSupported = ToolRegistry.byId(
+      'reminders',
+    )!.isSupportedOnCurrentPlatform;
 
     test(
       'fresh install: reminders is in the tool list (so the user '
@@ -57,92 +60,106 @@ void main() {
         }
         final reminders = p.tools.firstWhere((t) => t.id == 'reminders');
         expect(reminders, isNotNull);
-        expect(reminders.enabled, isFalse,
-            reason: 'tool card switch should start off');
-        expect(p.activeToolIds.contains('reminders'), isFalse,
-            reason: 'model should not see reminders before setup');
+        expect(
+          reminders.enabled,
+          isFalse,
+          reason: 'tool card switch should start off',
+        );
+        expect(
+          p.activeToolIds.contains('reminders'),
+          isFalse,
+          reason: 'model should not see reminders before setup',
+        );
       },
     );
 
-    test(
-      'fresh install: every other builtin tool IS in activeToolIds '
-      'and enabled (regression guard for the default-on behavior)',
-      () async {
-        final p = await loadProvider();
-        for (final t in ToolRegistry.all) {
-          if (t.id == 'reminders') continue;
-          if (!t.isSupportedOnCurrentPlatform) continue;
-          expect(p.activeToolIds.contains(t.id), isTrue,
-              reason: '${t.id} should default to active');
-          final card = p.tools.firstWhere((card) => card.id == t.id);
-          expect(card.enabled, isTrue,
-              reason: '${t.id} card switch should default to on');
-        }
-      },
-    );
+    test('fresh install: every other builtin tool IS in activeToolIds '
+        'and enabled (regression guard for the default-on behavior)', () async {
+      final p = await loadProvider();
+      for (final t in ToolRegistry.all) {
+        if (t.id == 'reminders') continue;
+        if (!t.isSupportedOnCurrentPlatform) continue;
+        expect(
+          p.activeToolIds.contains(t.id),
+          isTrue,
+          reason: '${t.id} should default to active',
+        );
+        final card = p.tools.firstWhere((card) => card.id == t.id);
+        expect(
+          card.enabled,
+          isTrue,
+          reason: '${t.id} card switch should default to on',
+        );
+      }
+    });
 
-    test(
-      'existing install: a stored activeToolIds that does NOT '
-      'include `reminders` is left alone (the backfill only adds '
-      'tools that default to on)',
-      () async {
-        if (!remindersSupported) return;
-        // Seed a previous-install state: a tool list with
-        // everything enabled and an activeToolIds set that
-        // intentionally excludes `reminders`.
-        final preExisting = [
-          for (final t in ToolRegistry.all)
-            if (t.isSupportedOnCurrentPlatform)
-              AgentTool(
-                id: t.id,
-                name: t.name,
-                description: t.description,
-                enabled: true,
-              ),
-        ];
-        final stored = preExisting.map((t) => t.toRawJson()).toList();
-        final activeIds = [
-          for (final t in ToolRegistry.all)
-            if (t.isSupportedOnCurrentPlatform && t.id != 'reminders')
-              t.id,
-        ];
-        SharedPreferences.setMockInitialValues({
-          'tools': stored,
-          'active_tool_ids': activeIds,
-        });
+    test('existing install: a stored activeToolIds that does NOT '
+        'include `reminders` is left alone (the backfill only adds '
+        'tools that default to on)', () async {
+      if (!remindersSupported) return;
+      // Seed a previous-install state: a tool list with
+      // everything enabled and an activeToolIds set that
+      // intentionally excludes `reminders`.
+      final preExisting = [
+        for (final t in ToolRegistry.all)
+          if (t.isSupportedOnCurrentPlatform)
+            AgentTool(
+              id: t.id,
+              name: t.name,
+              description: t.description,
+              enabled: true,
+            ),
+      ];
+      final stored = preExisting.map((t) => t.toRawJson()).toList();
+      final activeIds = [
+        for (final t in ToolRegistry.all)
+          if (t.isSupportedOnCurrentPlatform && t.id != 'reminders') t.id,
+      ];
+      SharedPreferences.setMockInitialValues({
+        'tools': stored,
+        'active_tool_ids': activeIds,
+      });
 
-        final p = await loadProvider();
-        expect(p.activeToolIds.contains('reminders'), isFalse,
-            reason: 'reminders must NOT be back-filled into activeToolIds');
-        // The other tools should still be there.
-        for (final t in ToolRegistry.all) {
-          if (t.id == 'reminders') continue;
-          if (!t.isSupportedOnCurrentPlatform) continue;
-          expect(p.activeToolIds.contains(t.id), isTrue,
-              reason: '${t.id} should still be active');
-        }
-      },
-    );
+      final p = await loadProvider();
+      expect(
+        p.activeToolIds.contains('reminders'),
+        isFalse,
+        reason: 'reminders must NOT be back-filled into activeToolIds',
+      );
+      // The other tools should still be there.
+      for (final t in ToolRegistry.all) {
+        if (t.id == 'reminders') continue;
+        if (!t.isSupportedOnCurrentPlatform) continue;
+        expect(
+          p.activeToolIds.contains(t.id),
+          isTrue,
+          reason: '${t.id} should still be active',
+        );
+      }
+    });
 
-    test(
-      'fresh install: the persisted active_tool_ids key actually '
-      'contains every supported builtin EXCEPT reminders, so a '
-      'restart keeps the same default-off state',
-      () async {
-        await loadProvider();
-        final prefs = await SharedPreferences.getInstance();
-        final stored = prefs.getStringList('active_tool_ids') ?? const [];
-        if (remindersSupported) {
-          expect(stored.contains('reminders'), isFalse,
-              reason: 'persisted state should not enable reminders');
-        }
-        for (final t in ToolRegistry.all) {
-          if (t.id == 'reminders') continue;
-          if (!t.isSupportedOnCurrentPlatform) continue;
-          expect(stored.contains(t.id), isTrue,
-              reason: '${t.id} should be persisted as active');
-        }
-      },
-    );
+    test('fresh install: the persisted active_tool_ids key actually '
+        'contains every supported builtin EXCEPT reminders, so a '
+        'restart keeps the same default-off state', () async {
+      await loadProvider();
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getStringList('active_tool_ids') ?? const [];
+      if (remindersSupported) {
+        expect(
+          stored.contains('reminders'),
+          isFalse,
+          reason: 'persisted state should not enable reminders',
+        );
+      }
+      for (final t in ToolRegistry.all) {
+        if (t.id == 'reminders') continue;
+        if (!t.isSupportedOnCurrentPlatform) continue;
+        expect(
+          stored.contains(t.id),
+          isTrue,
+          reason: '${t.id} should be persisted as active',
+        );
+      }
+    });
   });
 }

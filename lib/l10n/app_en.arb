@@ -386,5 +386,65 @@
   "locationPermissionDenied": "Location permission denied. Please grant it in system settings.",
   "locationPermanentlyDenied": "Location permission permanently denied. Open system settings to enable it.",
   "locationUnavailable": "Location unavailable. Make sure location services are on and try again.",
-  "locationTimeout": "Location request timed out. Please try again."
+  "locationTimeout": "Location request timed out. Please try again.",
+
+  "settingsTabTimers": "Timers",
+
+  "timerListEmpty": "No timers set.\nThe AI can use the \"timer\" tool to schedule a reminder that comes back to itself.",
+  "timerListEmptyFilter": "No timers match the filter.",
+  "timerAddTitle": "Add timer",
+  "timerEditTitle": "Edit timer",
+  "timerFieldLabel": "Label",
+  "timerFieldLabelHint": "e.g. Drink water",
+  "timerFieldLabelRequired": "Please enter a label",
+  "timerFieldDelay": "Delay (seconds)",
+  "timerFieldDelayHint": "e.g. 300 = 5 minutes",
+  "timerFieldDelayInvalid": "Delay must be a non-negative integer",
+  "timerFieldPrompt": "Reminder body",
+  "timerFieldPromptHint": "Optional. Becomes the notification body and is fed back to the AI when the timer fires.",
+  "timerFieldActionHint": "AI hint",
+  "timerFieldActionHintHint": "Optional. Tells the AI what to do when the timer fires (e.g. \"Call the notification tool\").",
+  "timerFieldFireAt": "Fire at (ISO 8601)",
+  "timerFieldFireAtHint": "Optional. Absolute time to fire (overrides delay).",
+  "timerStatusPending": "Pending",
+  "timerStatusFired": "Fired",
+  "timerStatusCancelled": "Cancelled",
+  "timerActionEdit": "Edit",
+  "timerActionCancel": "Cancel",
+  "timerActionDelete": "Delete",
+  "timerActionRestore": "Re-activate",
+  "timerCancelConfirmTitle": "Cancel timer?",
+  "timerCancelConfirmMessage": "The pending timer \"{label}\" will be cancelled and won't fire.",
+  "timerDeleteConfirmTitle": "Delete timer?",
+  "timerDeleteConfirmMessage": "The timer record will be removed from the list. This action cannot be undone.",
+  "timerShowAll": "Show all (including fired / cancelled)",
+  "timerHideTerminal": "Hide fired / cancelled",
+  "timerFiresIn": "Fires in {duration}",
+  "@timerFiresIn": {
+    "placeholders": {
+      "duration": { "type": "String" }
+    }
+  },
+  "timerFiredAt": "Fired at {when}",
+  "@timerFiredAt": {
+    "placeholders": {
+      "when": { "type": "String" }
+    }
+  },
+  "timerSourceAi": "AI",
+  "timerSourceUser": "User",
+  "timerNoteRuntime": "Timers only fire while the app is running. Background / killed apps will not see the reminder.",
+
+  "foregroundTimerTitleOne": "1 active timer: {label}",
+  "@foregroundTimerTitleOne": {
+    "placeholders": {
+      "label": { "type": "String" }
+    }
+  },
+  "foregroundTimerTitleMany": "{count} active timers",
+  "@foregroundTimerTitleMany": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  }
 }

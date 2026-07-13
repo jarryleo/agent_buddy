@@ -13,6 +13,8 @@ import 'location_tool.dart';
 import 'download_tool.dart';
 import 'file_tool.dart';
 import 'load_skill_tool.dart';
+import 'notification_tool.dart';
+import 'timer_tool.dart';
 
 /// Central registry that maps tool [id] to [ToolBase] instances.
 ///
@@ -55,5 +57,9 @@ class ToolRegistry {
 
     // System (auto / not user-facing)
     LoadSkillTool(),
+
+    // Push / scheduled callbacks to the user (runtime only).
+    NotificationTool(),
+    TimerTool(),
   ];
 }

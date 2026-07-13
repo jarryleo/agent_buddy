@@ -123,30 +123,32 @@ void main() {
       expect(json['note'], contains('call fetch_web'));
     });
 
-    test('link_text returns link_error + full page content when no match',
-        () async {
-      final client = MockClient((req) async {
-        return http.Response(
-          '<html><head><title>Test</title></head>'
-          '<body><a href="/a">A</a><a href="/b">B</a></body></html>',
-          200,
-          headers: {'content-type': 'text/html'},
+    test(
+      'link_text returns link_error + full page content when no match',
+      () async {
+        final client = MockClient((req) async {
+          return http.Response(
+            '<html><head><title>Test</title></head>'
+            '<body><a href="/a">A</a><a href="/b">B</a></body></html>',
+            200,
+            headers: {'content-type': 'text/html'},
+          );
+        });
+        final tools = ToolService(httpClient: client);
+        final raw = await tools.fetchWeb(
+          'https://example.com/',
+          linkText: 'NonExistent',
         );
-      });
-      final tools = ToolService(httpClient: client);
-      final raw = await tools.fetchWeb(
-        'https://example.com/',
-        linkText: 'NonExistent',
-      );
-      final json = jsonDecode(raw) as Map<String, dynamic>;
-      expect(json.containsKey('link_url'), isFalse);
-      expect(json['link_error'], contains('no link with text matching'));
-      expect(json['link_error'], contains('NonExistent'));
-      // Falls back to full page content so the model can find the right text.
-      expect(json['title'], 'Test');
-      expect(json['text'], isNotEmpty);
-      expect(json['link_count'], 2);
-    });
+        final json = jsonDecode(raw) as Map<String, dynamic>;
+        expect(json.containsKey('link_url'), isFalse);
+        expect(json['link_error'], contains('no link with text matching'));
+        expect(json['link_error'], contains('NonExistent'));
+        // Falls back to full page content so the model can find the right text.
+        expect(json['title'], 'Test');
+        expect(json['text'], isNotEmpty);
+        expect(json['link_count'], 2);
+      },
+    );
 
     test(
       'include_links=true returns the full anchor list, capped at 50',
@@ -388,97 +390,85 @@ void main() {
       },
     );
 
-    test(
-      'gives up after 3 retries on persistent 429',
-      () async {
-        var calls = 0;
-        final client = MockClient((req) async {
-          calls++;
-          return http.Response('', 429);
-        });
-        final tools = ToolService(httpClient: client);
-        await expectLater(
-          tools.fetchWeb('https://example.com/'),
-          throwsA(
-            isA<ToolException>().having(
-              (e) => e.message,
-              'message',
-              contains('rate limited'),
-            ),
+    test('gives up after 3 retries on persistent 429', () async {
+      var calls = 0;
+      final client = MockClient((req) async {
+        calls++;
+        return http.Response('', 429);
+      });
+      final tools = ToolService(httpClient: client);
+      await expectLater(
+        tools.fetchWeb('https://example.com/'),
+        throwsA(
+          isA<ToolException>().having(
+            (e) => e.message,
+            'message',
+            contains('rate limited'),
           ),
+        ),
+      );
+      expect(calls, 3);
+    });
+
+    test('retries on 5xx and succeeds on second attempt', () async {
+      var calls = 0;
+      final client = MockClient((req) async {
+        calls++;
+        if (calls == 1) {
+          return http.Response('', 502);
+        }
+        return http.Response(
+          '<html><body>Recovered</body></html>',
+          200,
+          headers: {'content-type': 'text/html'},
         );
-        expect(calls, 3);
-      },
-    );
+      });
+      final tools = ToolService(httpClient: client);
+      final raw = await tools.fetchWeb('https://example.com/');
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      expect(json['text'], 'Recovered');
+      expect(calls, 2);
+    });
 
-    test(
-      'retries on 5xx and succeeds on second attempt',
-      () async {
-        var calls = 0;
-        final client = MockClient((req) async {
-          calls++;
-          if (calls == 1) {
-            return http.Response('', 502);
-          }
-          return http.Response(
-            '<html><body>Recovered</body></html>',
-            200,
-            headers: {'content-type': 'text/html'},
-          );
-        });
-        final tools = ToolService(httpClient: client);
-        final raw = await tools.fetchWeb('https://example.com/');
-        final json = jsonDecode(raw) as Map<String, dynamic>;
-        expect(json['text'], 'Recovered');
-        expect(calls, 2);
-      },
-    );
-
-    test(
-      'gives up after 3 retries on persistent 5xx',
-      () async {
-        var calls = 0;
-        final client = MockClient((req) async {
-          calls++;
-          return http.Response('', 503);
-        });
-        final tools = ToolService(httpClient: client);
-        await expectLater(
-          tools.fetchWeb('https://example.com/'),
-          throwsA(
-            isA<ToolException>().having(
-              (e) => e.message,
-              'message',
-              contains('503'),
-            ),
+    test('gives up after 3 retries on persistent 5xx', () async {
+      var calls = 0;
+      final client = MockClient((req) async {
+        calls++;
+        return http.Response('', 503);
+      });
+      final tools = ToolService(httpClient: client);
+      await expectLater(
+        tools.fetchWeb('https://example.com/'),
+        throwsA(
+          isA<ToolException>().having(
+            (e) => e.message,
+            'message',
+            contains('503'),
           ),
-        );
-        expect(calls, 3);
-      },
-    );
+        ),
+      );
+      expect(calls, 3);
+    });
 
-    test(
-      'sends realistic browser headers',
-      () async {
-        http.BaseRequest? capturedReq;
-        final client = MockClient((req) async {
-          capturedReq = req;
-          return http.Response(
-            '<html><body>OK</body></html>',
-            200,
-            headers: {'content-type': 'text/html'},
-          );
-        });
-        final tools = ToolService(httpClient: client);
-        await tools.fetchWeb('https://example.com/');
-        expect(capturedReq, isNotNull);
-        // Must NOT use the old bot-like User-Agent.
-        final ua = capturedReq!.headers['user-agent'];
-        expect(ua, isNot(contains('AgentBuddy')));
-        expect(ua, startsWith('Mozilla/5.0'));
-        expect(capturedReq!.headers['accept-language'], contains('zh-CN'));
-      },
-    );
+    test('sends realistic browser headers', () async {
+      http.BaseRequest? capturedReq;
+      final client = MockClient((req) async {
+        capturedReq = req;
+        return http.Response(
+          '<html><body>OK</body></html>',
+          200,
+          headers: {'content-type': 'text/html'},
+        );
+      });
+      final tools = ToolService(httpClient: client);
+      await tools.fetchWeb('https://example.com/');
+      expect(capturedReq, isNotNull);
+      // Must NOT use the old bot-like User-Agent.
+      final ua = capturedReq!.headers['user-agent'];
+      expect(ua, isNot(contains('AgentBuddy')));
+      expect(ua, startsWith('Mozilla/5.0'));
+      expect(capturedReq!.headers['accept-language'], contains('zh-CN'));
+    });
 
     test(
       'truncates text to maxLength and reports the original length',

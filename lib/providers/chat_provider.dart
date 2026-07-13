@@ -9,11 +9,13 @@ import '../models/chat_session.dart';
 import '../models/download.dart';
 import '../models/message.dart';
 import '../models/skill.dart';
+import '../models/timer_task.dart';
 import '../services/api_service.dart';
 import '../services/download_service.dart';
 import '../services/image_service.dart';
 import '../services/local_llm_service.dart';
 import '../services/storage_service.dart';
+import '../services/timer_service.dart';
 import '../services/tool_orchestrator.dart';
 import '../services/tool_service.dart';
 import '../services/tools/tool_registry.dart';
@@ -30,6 +32,12 @@ class ChatProvider extends ChangeNotifier {
     this._downloads,
   ) {
     _restoreActiveSession();
+    // Wire the timer queue: when a task fires, the service calls
+    // back here so we can append a synthetic user message to the
+    // active session and trigger a new chat turn. The model then
+    // sees the reminder and (typically) calls the `notification`
+    // tool to surface a real notification.
+    _tools.timers.onTimerFired = _onTimerFired;
   }
 
   final StorageService _storage;
@@ -49,6 +57,13 @@ class ChatProvider extends ChangeNotifier {
   /// Tracks the active stream subscription so [stopGeneration] can
   /// cancel it immediately.
   StreamSubscription<StreamEvent>? _streamSub;
+
+  /// Most recent `BuildContext` from a [sendMessage] call. The
+  /// timer-driven flow needs *some* `BuildContext` to look up
+  /// l10n strings + drive tool-call overlays; we cache the
+  /// overlay navigator's context here on every user-initiated
+  /// turn. Stays valid as long as the home page is mounted.
+  BuildContext? _cachedContext;
 
   /// The currently active session (the conversation whose messages
   /// are visible in the chat list). Null when the user has just
@@ -106,7 +121,8 @@ class ChatProvider extends ChangeNotifier {
     required List<ToolCall> existingToolCalls,
     Uuid? uuid,
   }) {
-    final collision = incomingId.isNotEmpty &&
+    final collision =
+        incomingId.isNotEmpty &&
         existingToolCalls.any((tc) => tc.id == incomingId);
     if (incomingId.isEmpty || collision) {
       final u = uuid ?? const Uuid();
@@ -284,7 +300,9 @@ class ChatProvider extends ChangeNotifier {
       final sb = StringBuffer();
       sb.writeln('可用技能(仅名称+简介,完整内容需用工具加载):');
       for (final s in skills) {
-        sb.writeln('- ${s.name}${s.description.isNotEmpty ? ': ${s.description}' : ''}');
+        sb.writeln(
+          '- ${s.name}${s.description.isNotEmpty ? ': ${s.description}' : ''}',
+        );
       }
       sb.writeln();
       sb.writeln('需要完整技能内容时,调用 load_skill 工具:');
@@ -311,6 +329,12 @@ class ChatProvider extends ChangeNotifier {
           '- location(位置):获取当前位置,别主动问用户。\n'
           '- ask_user(问用户):需要用户选择或确认时用。\n'
           '- file(文件):读/写/删/改名/列目录/查属性。给绝对路径。\n'
+          '- timer(计时):用户说"X 分钟后提醒我 Y"就用这个。'
+          'create 时给 delay_seconds(或 fire_at_iso)、label 必填,'
+          'prompt 写提醒正文,action_hint 写"调用 notification 通知用户…"这种建议。'
+          '**只在程序运行时有效,App 被杀就不响了**,长时段务必先告知用户。\n'
+          '- notification(通知):给用户推一条本地通知(手机系统通知 / 电脑右下角弹窗)。'
+          '计时器到点时,如果用户正看着聊天,就由你来调它把提醒正式发出去。\n'
           '- 其他工具按参数说明用就行。';
     }
 
@@ -400,6 +424,29 @@ class ChatProvider extends ChangeNotifier {
     return assistantId;
   }
 
+  /// Appends a fresh empty assistant placeholder and returns its
+  /// id. Used by the timer-driven flow which has *already*
+  /// appended the user message and just needs an assistant
+  /// placeholder to stream the model's response into.
+  String _appendAssistantPlaceholder() {
+    final s = _activeSession;
+    if (s == null) {
+      // No session — same recovery as _appendUserAndAssistantPlaceholders.
+      final blank = _createBlankSessionInternal();
+      _setActiveSession(blank);
+      return _appendAssistantPlaceholder();
+    }
+    final assistantId = _uuid.v4();
+    final assistantMsg = ChatMessage(
+      id: assistantId,
+      role: MessageRole.assistant,
+      content: '',
+      streaming: true,
+    );
+    _replaceMessages([...s.messages, assistantMsg]);
+    return assistantId;
+  }
+
   Future<String> _onToolCall(
     BuildContext context,
     Map<String, dynamic> toolCall,
@@ -458,13 +505,14 @@ class ChatProvider extends ChangeNotifier {
         return await _runDownload(context, toolCall, assistantId, args);
       case 'load_skill':
         return await _loadSkill(args);
-      default: {
-        final tool = ToolRegistry.byId(name);
-        if (tool == null || !tool.isSupportedOnCurrentPlatform) {
-          throw ToolException('unknown or unavailable tool: $name');
+      default:
+        {
+          final tool = ToolRegistry.byId(name);
+          if (tool == null || !tool.isSupportedOnCurrentPlatform) {
+            throw ToolException('unknown or unavailable tool: $name');
+          }
+          return await tool.execute(args, _tools);
         }
-        return await tool.execute(args, _tools);
-      }
     }
   }
 
@@ -494,9 +542,7 @@ class ChatProvider extends ChangeNotifier {
     }
     if (match == null) {
       final names = skills.map((s) => '"${s.name}"').join(', ');
-      throw ToolException(
-        '未找到技能"$name"。可用技能: $names',
-      );
+      throw ToolException('未找到技能"$name"。可用技能: $names');
     }
     final sb = StringBuffer();
     sb.writeln('## ${match.name}');
@@ -760,6 +806,58 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  /// Callback bound to [TimerService.onTimerFired] (see the
+  /// constructor). The timer has already:
+  ///   1. transitioned the task to `fired` in the queue;
+  ///   2. surfaced an OS-level notification / desktop toast so
+  ///      the user is notified even before the AI responds.
+  /// Our job is to feed the reminder back to the model so it can
+  /// (typically) call the `notification` tool itself.
+  ///
+  /// Strategy: append a synthetic user message to the active
+  /// session with a short, machine-readable reminder, then
+  /// trigger a new chat turn via [continueWithLastUserMessage].
+  /// If a turn is already in flight we defer the kick-off until
+  /// it finishes — we don't interleave timer-driven and
+  /// user-driven turns.
+  void _onTimerFired(TimerTask task) {
+    if (_disposed) return;
+    final s = _activeSession;
+    if (s == null) return;
+    final text = _formatTimerFiredMessage(task);
+    final userMsg = ChatMessage(
+      id: _uuid.v4(),
+      role: MessageRole.user,
+      content: text,
+    );
+    _replaceMessages([...s.messages, userMsg]);
+    unawaited(_storage.sessions.save(_activeSession!));
+    notifyListeners();
+    if (_sending) return;
+    Future<void>.delayed(const Duration(milliseconds: 250), () {
+      if (_disposed || _sending) return;
+      // Reuse the last user-send context; if we never had one
+      // (e.g. cold start into a timer fire — shouldn't happen
+      // because timers are scheduled by the AI) just bail.
+      // ignore: use_build_context_synchronously
+      final ctx = _cachedContext;
+      if (ctx == null) return;
+      // ignore: use_build_context_synchronously
+      unawaited(continueWithLastUserMessage(ctx));
+    });
+  }
+
+  String _formatTimerFiredMessage(TimerTask task) {
+    final prompt = task.prompt.trim();
+    final hint = task.actionHint?.trim() ?? '';
+    final lines = <String>[
+      '[系统计时触发] ${task.label}',
+      if (prompt.isNotEmpty) '原提示:$prompt',
+      if (hint.isNotEmpty) '建议操作:$hint' else '建议操作:调用 notification 工具通知用户。',
+    ];
+    return lines.join('\n');
+  }
+
   Future<void> sendMessage(
     BuildContext context,
     String text, {
@@ -768,6 +866,7 @@ class ChatProvider extends ChangeNotifier {
     final l10n = AppLocalizations.of(context);
     final trimmed = text.trim();
     if ((trimmed.isEmpty && imagePaths.isEmpty) || _sending) return;
+    _cachedContext = context;
     final useLocal = _settings.useLocalModel;
     final provider = _settings.activeProvider;
     final localProvider = _settings.activeLocalProvider;
@@ -834,6 +933,54 @@ class ChatProvider extends ChangeNotifier {
     await _storage.sessions.save(_activeSession!);
     refreshSessionList();
     notifyListeners();
+    // ignore: use_build_context_synchronously
+    await _runAssistantTurn(context, assistantId);
+  }
+
+  /// Timer-driven entry point. The caller (TimerService) has
+  /// already appended a synthetic user message to the active
+  /// session. We append a fresh assistant placeholder, then run
+  /// the same streaming loop [sendMessage] uses. No-op if a turn
+  /// is already in flight (the timer callback will defer).
+  Future<void> continueWithLastUserMessage(BuildContext context) async {
+    if (_sending || _disposed) return;
+    if (_activeSession == null) return;
+    if (!_hasUsableProvider()) return;
+    _cachedContext = context;
+    final assistantId = _appendAssistantPlaceholder();
+    _sending = true;
+    refreshSessionList();
+    notifyListeners();
+    await _runAssistantTurn(context, assistantId);
+  }
+
+  /// Validates the user has selected a provider + model. Returns
+  /// true when the streaming path can proceed. Used by both
+  /// [sendMessage] and [continueWithLastUserMessage] to gate
+  /// the turn before we burn any tokens.
+  bool _hasUsableProvider() {
+    if (_settings.useLocalModel) {
+      return _settings.activeLocalProvider != null;
+    }
+    final p = _settings.activeProvider;
+    if (p == null) return false;
+    return p.selectedModel != null || p.models.isNotEmpty;
+  }
+
+  /// Shared streaming turn runner. Validates the provider / model,
+  /// builds the request list, kicks off the streamChat call, and
+  /// drives the listener that updates the in-place assistant
+  /// message with reasoning / content / tool-call deltas. Used by
+  /// both the user-initiated path ([sendMessage]) and the
+  /// timer-driven path ([continueWithLastUserMessage]).
+  Future<void> _runAssistantTurn(
+    BuildContext context,
+    String assistantId,
+  ) async {
+    final l10n = AppLocalizations.of(context);
+    final useLocal = _settings.useLocalModel;
+    final provider = _settings.activeProvider;
+    final localProvider = _settings.activeLocalProvider;
 
     // Build request messages, converting any local image paths to
     // base64 data URLs just-in-time so we don't keep huge blobs in
@@ -841,7 +988,13 @@ class ChatProvider extends ChangeNotifier {
     // user sent only images, the API will receive an image-only
     // content array which both OpenAI and Anthropic accept.
     final requestMessages = <ChatRequestMessage>[];
-    for (final m in _activeSession!.messages) {
+    final cur = _activeSession;
+    if (cur == null) {
+      _sending = false;
+      if (!_disposed) notifyListeners();
+      return;
+    }
+    for (final m in cur.messages) {
       if (m.id == assistantId) continue;
       if (m.role != MessageRole.user && m.role != MessageRole.assistant) {
         continue;
@@ -1125,9 +1278,9 @@ class ChatProvider extends ChangeNotifier {
       persistTimer?.cancel();
       persistTimer = Timer(const Duration(milliseconds: 300), () {
         if (_disposed) return;
-        final cur = _activeSession;
-        if (cur != null) {
-          _storage.sessions.save(cur);
+        final cur2 = _activeSession;
+        if (cur2 != null) {
+          _storage.sessions.save(cur2);
         }
       });
     });
@@ -1144,9 +1297,9 @@ class ChatProvider extends ChangeNotifier {
       ]);
     }
     _sending = false;
-    final cur = _activeSession;
-    if (cur != null) {
-      await _storage.sessions.save(cur);
+    final saveCur = _activeSession;
+    if (saveCur != null) {
+      await _storage.sessions.save(saveCur);
     }
     refreshSessionList();
     if (!_disposed) notifyListeners();
@@ -1178,7 +1331,9 @@ class ChatProvider extends ChangeNotifier {
     if (s != null && s.messages.isNotEmpty) {
       final last = s.messages.last;
       if (last.role == MessageRole.assistant && last.streaming) {
-        final truncated = last.content.isEmpty ? '' : '${last.content}\n\n*(stopped)*';
+        final truncated = last.content.isEmpty
+            ? ''
+            : '${last.content}\n\n*(stopped)*';
         _replaceMessages([
           for (var i = 0; i < s.messages.length; i++)
             if (i == s.messages.length - 1)

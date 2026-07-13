@@ -35,27 +35,28 @@ void main() {
       expect(ids.length, 3);
     });
 
-    test('synthesizes a uuid when the incoming id collides with an existing bubble',
-        () {
-      // Regression: the second duplicate-keys crash — Hermes-style
-      // models emit `{"id": "call_0", ...}` for every tool call
-      // in a turn, so three siblings arrive as three `call_0`s.
-      // Without this guard, the second one would crash the
-      // Column in `MessageBubble._buildToolCalls` with
-      // `ValueKey('tool_call_0')` repeated.
-      final existing = <ToolCall>[
-        ToolCall(id: 'call_0', name: 'load_skill', arguments: '{}'),
-      ];
-      final id = ChatProvider.resolveToolCallBubbleId(
-        incomingId: 'call_0',
-        existingToolCalls: existing,
-      );
-      expect(id, isNot('call_0'));
-      expect(id, isNotEmpty);
-    });
+    test(
+      'synthesizes a uuid when the incoming id collides with an existing bubble',
+      () {
+        // Regression: the second duplicate-keys crash — Hermes-style
+        // models emit `{"id": "call_0", ...}` for every tool call
+        // in a turn, so three siblings arrive as three `call_0`s.
+        // Without this guard, the second one would crash the
+        // Column in `MessageBubble._buildToolCalls` with
+        // `ValueKey('tool_call_0')` repeated.
+        final existing = <ToolCall>[
+          ToolCall(id: 'call_0', name: 'load_skill', arguments: '{}'),
+        ];
+        final id = ChatProvider.resolveToolCallBubbleId(
+          incomingId: 'call_0',
+          existingToolCalls: existing,
+        );
+        expect(id, isNot('call_0'));
+        expect(id, isNotEmpty);
+      },
+    );
 
-    test('three siblings all with id "call_0" produce three distinct ids',
-        () {
+    test('three siblings all with id "call_0" produce three distinct ids', () {
       // Mirrors the user's reported scenario: load_skill,
       // location, fetch_web — all three arriving with the same
       // Hermes-style `call_0` id from the local model.
@@ -73,18 +74,26 @@ void main() {
         ids.add(id);
         existing.add(ToolCall(id: id, name: 'tool_$i', arguments: '{}'));
       }
-      expect(ids.toSet().length, 3,
-          reason: 'three "call_0" ids must produce three distinct UI ids');
+      expect(
+        ids.toSet().length,
+        3,
+        reason: 'three "call_0" ids must produce three distinct UI ids',
+      );
       // The 2nd and 3rd must have been synthesized (the raw
       // 'call_0' would have collided with the 1st bubble).
-      expect(ids[1], isNot('call_0'),
-          reason: '2nd sibling must synthesize (would collide with 1st)');
-      expect(ids[2], isNot('call_0'),
-          reason: '3rd sibling must synthesize (would collide with 1st)');
+      expect(
+        ids[1],
+        isNot('call_0'),
+        reason: '2nd sibling must synthesize (would collide with 1st)',
+      );
+      expect(
+        ids[2],
+        isNot('call_0'),
+        reason: '3rd sibling must synthesize (would collide with 1st)',
+      );
     });
 
-    test('does not synthesize when the incoming id is unique vs. existing',
-        () {
+    test('does not synthesize when the incoming id is unique vs. existing', () {
       // Sanity check: the happy path (server-generated unique
       // ids, or the local LLM path after `resolveToolCallId`)
       // must still pass through unchanged so the matching

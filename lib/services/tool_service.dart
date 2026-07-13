@@ -7,6 +7,7 @@ import '../models/memory.dart';
 import '../models/note.dart';
 import '../models/task.dart';
 import 'memory_repository.dart';
+import 'notification_service.dart';
 import 'platform/calendar_service.dart';
 import 'platform/calendar_service_factory.dart';
 import 'platform/location_service.dart';
@@ -15,6 +16,7 @@ import 'platform/notes_service.dart';
 import 'platform/reminders_service.dart';
 import 'platform/reminders_service_factory.dart';
 import 'platform/tasks_service.dart';
+import 'timer_service.dart';
 import 'tools/tool_registry.dart';
 
 /// Thrown by tool execution when a tool call fails. Carries a short,
@@ -41,6 +43,8 @@ class ToolService {
     Box<Memory>? memoriesBox,
     LocationServiceBuilder? locationBuilder,
     http.Client? httpClient,
+    TimerService? timerService,
+    NotificationService? notificationService,
   }) {
     if (notesBox != null) {
       _notes = NotesService()..open(preopened: notesBox);
@@ -59,6 +63,12 @@ class ToolService {
       _client = http.Client();
       _ownsClient = true;
     }
+    if (timerService != null) {
+      _timers = timerService;
+    }
+    if (notificationService != null) {
+      _notifications = notificationService;
+    }
   }
 
   late final http.Client _client;
@@ -71,6 +81,8 @@ class ToolService {
   MemoryRepository? _memories;
   LocationServiceBuilder? _locationBuilder;
   LocationService? _location;
+  TimerService? _timers;
+  NotificationService? _notifications;
 
   /// The shared HTTP client used by [FetchWebTool].
   http.Client get httpClient => _client;
@@ -104,6 +116,29 @@ class ToolService {
     _location ??=
         (_locationBuilder ?? location_factory.createLocationService)();
     return _location!;
+  }
+
+  /// The shared in-memory timer queue used by the `timer` tool
+  /// and the in-app foreground notification. Always returns the
+  /// same instance per `ToolService`; falls back to the global
+  /// singleton if no instance was injected (e.g. in tests that
+  /// build a `ToolService` without a ChatProvider in the loop).
+  TimerService get timers {
+    _timers ??= TimerService(notificationService: _notifications);
+    return _timers!;
+  }
+
+  /// Surfaces a notification via [NotificationService]. Thin
+  /// pass-through so the `notification` tool doesn't have to
+  /// reach into the global singleton directly — keeps everything
+  /// routeable through `ToolService` for testability.
+  Future<bool> notify({
+    required String title,
+    required String body,
+    int? notificationId,
+  }) {
+    final svc = _notifications ?? NotificationService.instance;
+    return svc.show(title: title, body: body, notificationId: notificationId);
   }
 
   void dispose() {
@@ -181,6 +216,16 @@ class ToolService {
 
   Future<String> runLocation(Map<String, dynamic> args) async {
     final tool = ToolRegistry.byId('location')!;
+    return tool.execute(args, this);
+  }
+
+  Future<String> runNotification(Map<String, dynamic> args) async {
+    final tool = ToolRegistry.byId('notification')!;
+    return tool.execute(args, this);
+  }
+
+  Future<String> runTimer(Map<String, dynamic> args) async {
+    final tool = ToolRegistry.byId('timer')!;
     return tool.execute(args, this);
   }
 }

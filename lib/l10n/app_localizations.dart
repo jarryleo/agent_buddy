@@ -1507,6 +1507,228 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Location request timed out. Please try again.'**
   String get locationTimeout;
+
+  /// No description provided for @settingsTabTimers.
+  ///
+  /// In en, this message translates to:
+  /// **'Timers'**
+  String get settingsTabTimers;
+
+  /// No description provided for @timerListEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No timers set.\nThe AI can use the \"timer\" tool to schedule a reminder that comes back to itself.'**
+  String get timerListEmpty;
+
+  /// No description provided for @timerListEmptyFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'No timers match the filter.'**
+  String get timerListEmptyFilter;
+
+  /// No description provided for @timerAddTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add timer'**
+  String get timerAddTitle;
+
+  /// No description provided for @timerEditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit timer'**
+  String get timerEditTitle;
+
+  /// No description provided for @timerFieldLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Label'**
+  String get timerFieldLabel;
+
+  /// No description provided for @timerFieldLabelHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. Drink water'**
+  String get timerFieldLabelHint;
+
+  /// No description provided for @timerFieldLabelRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter a label'**
+  String get timerFieldLabelRequired;
+
+  /// No description provided for @timerFieldDelay.
+  ///
+  /// In en, this message translates to:
+  /// **'Delay (seconds)'**
+  String get timerFieldDelay;
+
+  /// No description provided for @timerFieldDelayHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. 300 = 5 minutes'**
+  String get timerFieldDelayHint;
+
+  /// No description provided for @timerFieldDelayInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Delay must be a non-negative integer'**
+  String get timerFieldDelayInvalid;
+
+  /// No description provided for @timerFieldPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Reminder body'**
+  String get timerFieldPrompt;
+
+  /// No description provided for @timerFieldPromptHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional. Becomes the notification body and is fed back to the AI when the timer fires.'**
+  String get timerFieldPromptHint;
+
+  /// No description provided for @timerFieldActionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'AI hint'**
+  String get timerFieldActionHint;
+
+  /// No description provided for @timerFieldActionHintHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional. Tells the AI what to do when the timer fires (e.g. \"Call the notification tool\").'**
+  String get timerFieldActionHintHint;
+
+  /// No description provided for @timerFieldFireAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Fire at (ISO 8601)'**
+  String get timerFieldFireAt;
+
+  /// No description provided for @timerFieldFireAtHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional. Absolute time to fire (overrides delay).'**
+  String get timerFieldFireAtHint;
+
+  /// No description provided for @timerStatusPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get timerStatusPending;
+
+  /// No description provided for @timerStatusFired.
+  ///
+  /// In en, this message translates to:
+  /// **'Fired'**
+  String get timerStatusFired;
+
+  /// No description provided for @timerStatusCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get timerStatusCancelled;
+
+  /// No description provided for @timerActionEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit'**
+  String get timerActionEdit;
+
+  /// No description provided for @timerActionCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get timerActionCancel;
+
+  /// No description provided for @timerActionDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get timerActionDelete;
+
+  /// No description provided for @timerActionRestore.
+  ///
+  /// In en, this message translates to:
+  /// **'Re-activate'**
+  String get timerActionRestore;
+
+  /// No description provided for @timerCancelConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel timer?'**
+  String get timerCancelConfirmTitle;
+
+  /// No description provided for @timerCancelConfirmMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'The pending timer \"{label}\" will be cancelled and won\'t fire.'**
+  String timerCancelConfirmMessage(Object label);
+
+  /// No description provided for @timerDeleteConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete timer?'**
+  String get timerDeleteConfirmTitle;
+
+  /// No description provided for @timerDeleteConfirmMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'The timer record will be removed from the list. This action cannot be undone.'**
+  String get timerDeleteConfirmMessage;
+
+  /// No description provided for @timerShowAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Show all (including fired / cancelled)'**
+  String get timerShowAll;
+
+  /// No description provided for @timerHideTerminal.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide fired / cancelled'**
+  String get timerHideTerminal;
+
+  /// No description provided for @timerFiresIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Fires in {duration}'**
+  String timerFiresIn(String duration);
+
+  /// No description provided for @timerFiredAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Fired at {when}'**
+  String timerFiredAt(String when);
+
+  /// No description provided for @timerSourceAi.
+  ///
+  /// In en, this message translates to:
+  /// **'AI'**
+  String get timerSourceAi;
+
+  /// No description provided for @timerSourceUser.
+  ///
+  /// In en, this message translates to:
+  /// **'User'**
+  String get timerSourceUser;
+
+  /// No description provided for @timerNoteRuntime.
+  ///
+  /// In en, this message translates to:
+  /// **'Timers only fire while the app is running. Background / killed apps will not see the reminder.'**
+  String get timerNoteRuntime;
+
+  /// No description provided for @foregroundTimerTitleOne.
+  ///
+  /// In en, this message translates to:
+  /// **'1 active timer: {label}'**
+  String foregroundTimerTitleOne(String label);
+
+  /// No description provided for @foregroundTimerTitleMany.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} active timers'**
+  String foregroundTimerTitleMany(int count);
 }
 
 class _AppLocalizationsDelegate

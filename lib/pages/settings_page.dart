@@ -11,6 +11,7 @@ import 'memory_tab.dart';
 import 'providers_tab.dart';
 import 'roles_tab.dart';
 import 'skills_tab.dart';
+import 'timers_tab.dart';
 import 'tools_tab.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -20,7 +21,7 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return DefaultTabController(
-      length: 6,
+      length: 7,
       child: Scaffold(
         appBar: AppBar(
           title: Text(l10n.settingsTitle),
@@ -36,6 +37,7 @@ class SettingsPage extends StatelessWidget {
               Tab(text: l10n.settingsTabProvider),
               Tab(text: l10n.settingsTabRole),
               Tab(text: l10n.settingsTabTools),
+              Tab(text: l10n.settingsTabTimers),
               Tab(text: l10n.settingsTabSkill),
               Tab(text: l10n.settingsTabMemory),
             ],
@@ -54,6 +56,7 @@ class SettingsPage extends StatelessWidget {
                 ),
                 RolesTab(settings: settings),
                 ToolsTab(settings: settings),
+                const TimersTab(),
                 SkillsTab(settings: settings),
                 const MemoryTab(),
               ],

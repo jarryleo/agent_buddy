@@ -13,6 +13,10 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // flutter_local_notifications uses java.time APIs not available
+        // on minSdk < 26; core library desugaring backports them so we
+        // can keep `minSdk` at Flutter's default.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -75,4 +79,8 @@ flutter {
 
 dependencies {
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    // Required by `flutter_local_notifications` (and any plugin that
+    // uses java.time.* on older API levels). See the
+    // isCoreLibraryDesugaringEnabled block above.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
