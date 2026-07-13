@@ -52,6 +52,7 @@
   "settingsTabRole": "角色",
   "settingsTabTools": "工具",
   "settingsTabSkill": "技能",
+  "settingsTabMcp": "MCP",
   "settingsTabMemory": "记忆",
 
   "providerListEmpty": "还没有添加任何模型提供商\n点击右下角\"新增\"开始",
@@ -315,5 +316,21 @@
   "timerNoteRuntime": "计时器只在 App 运行期间有效;App 被杀或后台时不会响。",
 
   "foregroundTimerTitleOne": "1 个计时任务: {label}",
-  "foregroundTimerTitleMany": "{count} 个计时任务"
+  "foregroundTimerTitleMany": "{count} 个计时任务",
+
+  "mcpListEmpty": "还没有添加任何 MCP 服务器\n点击右下角\"新增\"添加 MCP 配置",
+  "mcpAddTitle": "新增 MCP",
+  "mcpEditTitle": "编辑 MCP",
+  "mcpName": "名称",
+  "mcpNameHint": "例如: 文件系统服务器",
+  "mcpNameRequired": "请输入 MCP 名称",
+  "mcpJsonConfig": "MCP 配置 (JSON)",
+  "mcpJsonConfigHint": "粘贴 MCP 服务器配置。HTTP: JSON 含 url/headers 字段,或直接贴 URL。Stdio: JSON 含 command/args/env。支持 mcpServers 包装格式。",
+  "mcpJsonConfigRequired": "请输入 MCP 配置",
+  "mcpDeleteTitle": "删除 MCP",
+  "mcpDeleteConfirm": "确认删除 \"{name}\"?",
+  "mcpTestConnection": "测试连接",
+  "mcpTesting": "正在测试连接…",
+  "mcpTestSuccess": "连接成功",
+  "mcpTestFailed": "连接失败"
 }

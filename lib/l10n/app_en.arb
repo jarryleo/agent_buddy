@@ -63,6 +63,7 @@
   "settingsTabRole": "Role",
   "settingsTabTools": "Tools",
   "settingsTabSkill": "Skill",
+  "settingsTabMcp": "MCP",
   "settingsTabMemory": "Memory",
 
   "providerListEmpty": "No model providers added yet.\nTap \"Add\" in the bottom right to start.",
@@ -452,5 +453,21 @@
     "placeholders": {
       "count": { "type": "int" }
     }
-  }
+  },
+
+  "mcpListEmpty": "No MCP servers added yet.\nTap \"Add\" in the bottom right to add an MCP server.",
+  "mcpAddTitle": "Add MCP",
+  "mcpEditTitle": "Edit MCP",
+  "mcpName": "Name",
+  "mcpNameHint": "e.g. Filesystem server",
+  "mcpNameRequired": "Please enter an MCP name",
+  "mcpJsonConfig": "MCP Config (JSON)",
+  "mcpJsonConfigHint": "Paste MCP server config. HTTP: JSON with url/headers fields, or a plain URL. Stdio: JSON with command/args/env. Supports mcpServers wrapper.",
+  "mcpJsonConfigRequired": "Please enter MCP config",
+  "mcpDeleteTitle": "Delete MCP",
+  "mcpDeleteConfirm": "Delete \"{name}\"?",
+  "mcpTestConnection": "Test connection",
+  "mcpTesting": "Testing…",
+  "mcpTestSuccess": "Connected successfully",
+  "mcpTestFailed": "Connection failed"
 }

@@ -147,6 +147,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsTabSkill => '技能';
 
   @override
+  String get settingsTabMcp => 'MCP';
+
+  @override
   String get settingsTabMemory => '记忆';
 
   @override
@@ -898,4 +901,52 @@ class AppLocalizationsZh extends AppLocalizations {
   String foregroundTimerTitleMany(int count) {
     return '$count 个计时任务';
   }
+
+  @override
+  String get mcpListEmpty => '还没有添加任何 MCP 服务器\n点击右下角\"新增\"添加 MCP 配置';
+
+  @override
+  String get mcpAddTitle => '新增 MCP';
+
+  @override
+  String get mcpEditTitle => '编辑 MCP';
+
+  @override
+  String get mcpName => '名称';
+
+  @override
+  String get mcpNameHint => '例如: 文件系统服务器';
+
+  @override
+  String get mcpNameRequired => '请输入 MCP 名称';
+
+  @override
+  String get mcpJsonConfig => 'MCP 配置 (JSON)';
+
+  @override
+  String get mcpJsonConfigHint =>
+      '粘贴 MCP 服务器配置。HTTP: JSON 含 url/headers 字段,或直接贴 URL。Stdio: JSON 含 command/args/env。支持 mcpServers 包装格式。';
+
+  @override
+  String get mcpJsonConfigRequired => '请输入 MCP 配置';
+
+  @override
+  String get mcpDeleteTitle => '删除 MCP';
+
+  @override
+  String mcpDeleteConfirm(Object name) {
+    return '确认删除 \"$name\"?';
+  }
+
+  @override
+  String get mcpTestConnection => '测试连接';
+
+  @override
+  String get mcpTesting => '正在测试连接…';
+
+  @override
+  String get mcpTestSuccess => '连接成功';
+
+  @override
+  String get mcpTestFailed => '连接失败';
 }

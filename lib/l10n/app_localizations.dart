@@ -362,6 +362,12 @@ abstract class AppLocalizations {
   /// **'Skill'**
   String get settingsTabSkill;
 
+  /// No description provided for @settingsTabMcp.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP'**
+  String get settingsTabMcp;
+
   /// No description provided for @settingsTabMemory.
   ///
   /// In en, this message translates to:
@@ -1735,6 +1741,96 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count} active timers'**
   String foregroundTimerTitleMany(int count);
+
+  /// No description provided for @mcpListEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No MCP servers added yet.\nTap \"Add\" in the bottom right to add an MCP server.'**
+  String get mcpListEmpty;
+
+  /// No description provided for @mcpAddTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add MCP'**
+  String get mcpAddTitle;
+
+  /// No description provided for @mcpEditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit MCP'**
+  String get mcpEditTitle;
+
+  /// No description provided for @mcpName.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get mcpName;
+
+  /// No description provided for @mcpNameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. Filesystem server'**
+  String get mcpNameHint;
+
+  /// No description provided for @mcpNameRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter an MCP name'**
+  String get mcpNameRequired;
+
+  /// No description provided for @mcpJsonConfig.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP Config (JSON)'**
+  String get mcpJsonConfig;
+
+  /// No description provided for @mcpJsonConfigHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste MCP server config. HTTP: JSON with url/headers fields, or a plain URL. Stdio: JSON with command/args/env. Supports mcpServers wrapper.'**
+  String get mcpJsonConfigHint;
+
+  /// No description provided for @mcpJsonConfigRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter MCP config'**
+  String get mcpJsonConfigRequired;
+
+  /// No description provided for @mcpDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete MCP'**
+  String get mcpDeleteTitle;
+
+  /// No description provided for @mcpDeleteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete \"{name}\"?'**
+  String mcpDeleteConfirm(Object name);
+
+  /// No description provided for @mcpTestConnection.
+  ///
+  /// In en, this message translates to:
+  /// **'Test connection'**
+  String get mcpTestConnection;
+
+  /// No description provided for @mcpTesting.
+  ///
+  /// In en, this message translates to:
+  /// **'Testing…'**
+  String get mcpTesting;
+
+  /// No description provided for @mcpTestSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected successfully'**
+  String get mcpTestSuccess;
+
+  /// No description provided for @mcpTestFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection failed'**
+  String get mcpTestFailed;
 }
 
 class _AppLocalizationsDelegate

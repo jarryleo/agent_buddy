@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../l10n/app_localizations.dart';
 import '../models/chat_session.dart';
 import '../models/download.dart';
+import '../models/mcp_provider.dart';
 import '../models/message.dart';
 import '../models/skill.dart';
 import '../models/timer_task.dart';
@@ -324,6 +325,13 @@ class ChatProvider extends ChangeNotifier {
 
     String? baseSystem;
     if (_settings.toolsEnabled) {
+      final mcpServers = _settings.mcpProviders.where((m) => m.enabled).toList();
+      final mcpHint = mcpServers.isNotEmpty
+          ? '\n'
+              '- MCP 工具(名称以 mcp__ 开头):这些是由外部 MCP 服务器动态提供的工具。'
+              '每个工具的参数 schema 已经准确列出,按参数说明使用即可。'
+              '当前已启用 ${mcpServers.length} 个 MCP 服务器。'
+          : '';
       baseSystem =
           '你是一个有用、诚实的助手。\n'
           '\n'
@@ -347,7 +355,7 @@ class ChatProvider extends ChangeNotifier {
           '**只在程序运行时有效,App 被杀就不响了**,长时段务必先告知用户。\n'
           '- notification(通知):给用户推一条本地通知(手机系统通知 / 电脑右下角弹窗)。'
           '计时器到点时,如果用户正看着聊天,就由你来调它把提醒正式发出去。\n'
-          '- 其他工具按参数说明用就行。';
+          '- 其他工具按参数说明用就行。$mcpHint';
     }
 
     return [
@@ -357,12 +365,17 @@ class ChatProvider extends ChangeNotifier {
     ];
   }
 
-  List<Map<String, dynamic>> _buildToolsSchema() {
+  Future<List<Map<String, dynamic>>> _buildToolsSchema() async {
     final tools = _settings.activeTools;
     final list = <Map<String, dynamic>>[];
     for (final t in tools) {
       final tool = ToolRegistry.byId(t.id);
       if (tool == null || !tool.isSupportedOnCurrentPlatform) continue;
+
+      // Skip the old call_mcp tool — MCP tools are now exposed via
+      // individual dynamically-generated schemas below.
+      if (tool.id == 'call_mcp') continue;
+
       final schema = tool.buildSchema();
       if (schema.isNotEmpty) list.add(schema);
     }
@@ -374,6 +387,37 @@ class ChatProvider extends ChangeNotifier {
       if (ls != null && ls.isSupportedOnCurrentPlatform) {
         final schema = ls.buildSchema();
         if (schema.isNotEmpty) list.add(schema);
+      }
+    }
+    // Dynamically add MCP tools from enabled servers. Each MCP tool
+    // becomes an individual function schema so the model sees the
+    // exact tool name, description, and parameter schema.
+    final mcpServers = _settings.mcpProviders.where((m) => m.enabled).toList();
+    if (mcpServers.isNotEmpty) {
+      for (final server in mcpServers) {
+        try {
+          final mcpTools = await _tools.mcp.getServerTools(server);
+          for (final mt in mcpTools) {
+            final schemaName = 'mcp__${server.name}__${mt.name}';
+            list.add({
+              'type': 'function',
+              'function': {
+                'name': schemaName,
+                'description': mt.description,
+                'parameters': mt.inputSchema.isNotEmpty
+                    ? mt.inputSchema
+                    : {
+                        'type': 'object',
+                        'properties': <String, dynamic>{},
+                        'additionalProperties': true,
+                      },
+              },
+            });
+          }
+        } catch (_) {
+          // Skip servers that fail to respond — the model will still
+          // see other available tools.
+        }
       }
     }
     return list;
@@ -518,6 +562,9 @@ class ChatProvider extends ChangeNotifier {
       case 'load_skill':
         return await _loadSkill(args);
       default:
+        if (name.startsWith('mcp__')) {
+          return await _onMcpToolCall(name, args);
+        }
         {
           final tool = ToolRegistry.byId(name);
           if (tool == null || !tool.isSupportedOnCurrentPlatform) {
@@ -561,6 +608,36 @@ class ChatProvider extends ChangeNotifier {
     if (match.description.isNotEmpty) sb.writeln(match.description);
     if (match.content.isNotEmpty) sb.writeln(match.content);
     return sb.toString().trim();
+  }
+
+  Future<String> _onMcpToolCall(
+    String fullName,
+    Map<String, dynamic> args,
+  ) async {
+    // fullName has the format: mcp__SERVER_NAME__TOOL_NAME
+    final parts = fullName.split('__');
+    if (parts.length < 3) {
+      throw ToolException('invalid MCP tool name: $fullName');
+    }
+    // Skip the first empty element from "mcp"
+    final serverName = parts[1];
+    final toolName = parts.sublist(2).join('__');
+
+    final server = _settings.mcpProviders.cast<McpProvider?>().firstWhere(
+      (s) => s!.name == serverName && s.enabled,
+      orElse: () => null,
+    );
+    if (server == null) {
+      throw ToolException(
+        'MCP 服务器 "$serverName" 不可用(未找到或未启用)。',
+      );
+    }
+
+    return await _tools.mcp.callTool(
+      server: server,
+      toolName: toolName,
+      arguments: args,
+    );
   }
 
   /// Backs the `download` tool. Spawns a [DownloadItem] on the
@@ -1042,7 +1119,7 @@ class ChatProvider extends ChangeNotifier {
     }
 
     final systemPrompts = _buildSystemPrompts();
-    final tools = _buildToolsSchema();
+    final tools = await _buildToolsSchema();
 
     bool updated = false;
     StreamSubscription<StreamEvent>? sub;

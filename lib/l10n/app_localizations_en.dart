@@ -150,6 +150,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsTabSkill => 'Skill';
 
   @override
+  String get settingsTabMcp => 'MCP';
+
+  @override
   String get settingsTabMemory => 'Memory';
 
   @override
@@ -929,4 +932,53 @@ class AppLocalizationsEn extends AppLocalizations {
   String foregroundTimerTitleMany(int count) {
     return '$count active timers';
   }
+
+  @override
+  String get mcpListEmpty =>
+      'No MCP servers added yet.\nTap \"Add\" in the bottom right to add an MCP server.';
+
+  @override
+  String get mcpAddTitle => 'Add MCP';
+
+  @override
+  String get mcpEditTitle => 'Edit MCP';
+
+  @override
+  String get mcpName => 'Name';
+
+  @override
+  String get mcpNameHint => 'e.g. Filesystem server';
+
+  @override
+  String get mcpNameRequired => 'Please enter an MCP name';
+
+  @override
+  String get mcpJsonConfig => 'MCP Config (JSON)';
+
+  @override
+  String get mcpJsonConfigHint =>
+      'Paste MCP server config. HTTP: JSON with url/headers fields, or a plain URL. Stdio: JSON with command/args/env. Supports mcpServers wrapper.';
+
+  @override
+  String get mcpJsonConfigRequired => 'Please enter MCP config';
+
+  @override
+  String get mcpDeleteTitle => 'Delete MCP';
+
+  @override
+  String mcpDeleteConfirm(Object name) {
+    return 'Delete \"$name\"?';
+  }
+
+  @override
+  String get mcpTestConnection => 'Test connection';
+
+  @override
+  String get mcpTesting => 'Testing…';
+
+  @override
+  String get mcpTestSuccess => 'Connected successfully';
+
+  @override
+  String get mcpTestFailed => 'Connection failed';
 }

@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../models/memory.dart';
 import '../models/note.dart';
 import '../models/task.dart';
+import 'mcp_service.dart';
 import 'memory_repository.dart';
 import 'notification_service.dart';
 import 'platform/calendar_service.dart';
@@ -83,6 +84,7 @@ class ToolService {
   LocationService? _location;
   TimerService? _timers;
   NotificationService? _notifications;
+  McpService? _mcp;
 
   /// The shared HTTP client used by [FetchWebTool].
   http.Client get httpClient => _client;
@@ -126,6 +128,12 @@ class ToolService {
   TimerService get timers {
     _timers ??= TimerService(notificationService: _notifications);
     return _timers!;
+  }
+
+  /// Shared MCP service for communicating with MCP servers.
+  McpService get mcp {
+    _mcp ??= McpService(httpClient: _client);
+    return _mcp!;
   }
 
   /// Surfaces a notification via [NotificationService]. Thin

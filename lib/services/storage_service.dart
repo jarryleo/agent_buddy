@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/chat_session.dart';
 import '../models/local_provider.dart';
+import '../models/mcp_provider.dart';
 import '../models/message.dart';
 import '../models/provider.dart';
 import '../models/role.dart';
@@ -28,6 +29,8 @@ class StorageService {
   // Legacy key for the pre-session "single list of messages" model.
   // Kept for one migration on app start; new writes go to Hive.
   static const _kLegacyMessages = 'chat_messages';
+  static const _kMcpProviders = 'mcp_providers';
+  static const _kActiveMcpIds = 'active_mcp_ids';
   static const _kActiveSessionId = 'active_session_id';
   static const _kThemeMode = 'theme_mode';
   static const _kLocaleCode = 'locale_code';
@@ -153,6 +156,23 @@ class StorageService {
       _prefs.getStringList(_kActiveSkillIds) ?? const [];
   Future<void> setActiveSkillIds(List<String> ids) async {
     await _prefs.setStringList(_kActiveSkillIds, ids);
+  }
+
+  // MCP Providers
+  List<McpProvider> loadMcpProviders() {
+    final raw = _prefs.getStringList(_kMcpProviders) ?? const [];
+    return raw.map((e) => McpProvider.fromRawJson(e)).toList();
+  }
+
+  Future<void> saveMcpProviders(List<McpProvider> providers) async {
+    final raw = providers.map((e) => e.toRawJson()).toList();
+    await _prefs.setStringList(_kMcpProviders, raw);
+  }
+
+  List<String> get activeMcpIds =>
+      _prefs.getStringList(_kActiveMcpIds) ?? const [];
+  Future<void> setActiveMcpIds(List<String> ids) async {
+    await _prefs.setStringList(_kActiveMcpIds, ids);
   }
 
   // Messages

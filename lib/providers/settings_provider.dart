@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/local_provider.dart';
+import '../models/mcp_provider.dart';
 import '../models/provider.dart';
 import '../models/role.dart';
 import '../models/skill.dart';
@@ -20,12 +21,14 @@ class SettingsProvider extends ChangeNotifier {
   List<Role> _roles = [];
   List<AgentTool> _tools = [];
   List<Skill> _skills = [];
+  List<McpProvider> _mcpProviders = [];
   String? _activeProviderId;
   String? _activeLocalProviderId;
   bool _useLocalModel = false;
   String? _activeRoleId;
   Set<String> _activeToolIds = {};
   Set<String> _activeSkillIds = {};
+  Set<String> _activeMcpIds = {};
   bool _toolsEnabled = true;
   String _themeMode = 'system';
   String _localeCode = 'system';
@@ -35,12 +38,14 @@ class SettingsProvider extends ChangeNotifier {
   List<Role> get roles => List.unmodifiable(_roles);
   List<AgentTool> get tools => List.unmodifiable(_tools);
   List<Skill> get skills => List.unmodifiable(_skills);
+  List<McpProvider> get mcpProviders => List.unmodifiable(_mcpProviders);
   String? get activeProviderId => _activeProviderId;
   String? get activeLocalProviderId => _activeLocalProviderId;
   bool get useLocalModel => _useLocalModel;
   String? get activeRoleId => _activeRoleId;
   Set<String> get activeToolIds => Set.unmodifiable(_activeToolIds);
   Set<String> get activeSkillIds => Set.unmodifiable(_activeSkillIds);
+  Set<String> get activeMcpIds => Set.unmodifiable(_activeMcpIds);
   bool get toolsEnabled => _toolsEnabled;
   String get themeMode => _themeMode;
   String get localeCode => _localeCode;
@@ -88,12 +93,14 @@ class SettingsProvider extends ChangeNotifier {
     _roles = _storage.loadRoles();
     _tools = _storage.loadTools();
     _skills = _storage.loadSkills();
+    _mcpProviders = _storage.loadMcpProviders();
     _activeProviderId = _storage.activeProviderId;
     _activeLocalProviderId = _storage.activeLocalProviderId;
     _useLocalModel = _storage.useLocalModel;
     _activeRoleId = _storage.activeRoleId;
     _activeToolIds = _storage.activeToolIds.toSet();
     _activeSkillIds = _storage.activeSkillIds.toSet();
+    _activeMcpIds = _storage.activeMcpIds.toSet();
     _toolsEnabled = _storage.toolsEnabled;
     _themeMode = _storage.themeMode;
     _localeCode = _storage.localeCode;
@@ -238,6 +245,19 @@ class SettingsProvider extends ChangeNotifier {
     }
     if (skillsChanged) {
       await _storage.setActiveSkillIds(_activeSkillIds.toList());
+    }
+
+    // MCP providers: auto-enable any new ones.
+    if (_activeMcpIds.isEmpty) {
+      _activeMcpIds = {
+        for (final m in _mcpProviders) if (m.enabled) m.id,
+      };
+      await _storage.setActiveMcpIds(_activeMcpIds.toList());
+    }
+    for (final m in _mcpProviders) {
+      if (m.enabled && !_activeMcpIds.contains(m.id)) {
+        _activeMcpIds.add(m.id);
+      }
     }
 
     notifyListeners();
@@ -511,6 +531,55 @@ class SettingsProvider extends ChangeNotifier {
     }
     await _storage.saveSkills(_skills);
     await _storage.setActiveSkillIds(_activeSkillIds.toList());
+    notifyListeners();
+  }
+
+  // MCP Providers
+  Future<McpProvider> addMcpProvider({
+    required String name,
+    required String jsonConfig,
+  }) async {
+    final provider = McpProvider(
+      id: _uuid.v4(),
+      name: name,
+      jsonConfig: jsonConfig,
+    );
+    _mcpProviders = [..._mcpProviders, provider];
+    _activeMcpIds.add(provider.id);
+    await _storage.saveMcpProviders(_mcpProviders);
+    await _storage.setActiveMcpIds(_activeMcpIds.toList());
+    notifyListeners();
+    return provider;
+  }
+
+  Future<void> updateMcpProvider(McpProvider provider) async {
+    _mcpProviders = [
+      for (final m in _mcpProviders) m.id == provider.id ? provider : m,
+    ];
+    await _storage.saveMcpProviders(_mcpProviders);
+    notifyListeners();
+  }
+
+  Future<void> deleteMcpProvider(String id) async {
+    _mcpProviders = _mcpProviders.where((m) => m.id != id).toList();
+    _activeMcpIds.remove(id);
+    await _storage.saveMcpProviders(_mcpProviders);
+    await _storage.setActiveMcpIds(_activeMcpIds.toList());
+    notifyListeners();
+  }
+
+  Future<void> toggleMcpProvider(String id, bool enabled) async {
+    _mcpProviders = [
+      for (final m in _mcpProviders)
+        m.id == id ? m.copyWith(enabled: enabled) : m,
+    ];
+    if (enabled) {
+      _activeMcpIds.add(id);
+    } else {
+      _activeMcpIds.remove(id);
+    }
+    await _storage.saveMcpProviders(_mcpProviders);
+    await _storage.setActiveMcpIds(_activeMcpIds.toList());
     notifyListeners();
   }
 
