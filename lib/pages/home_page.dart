@@ -189,7 +189,14 @@ class _HomePageState extends State<HomePage> {
       body: Consumer<ChatProvider>(
         builder: (context, chat, _) {
           final activeSessionId = chat.activeSessionId;
-          final messages = chat.messages;
+          // `visibleMessages` filters out hidden system messages
+          // (e.g. the synthetic "[系统计时触发] …" reminder the
+          // chat provider appends when a timer fires) so the
+          // ListView never tries to render them as user bubbles.
+          // The full `messages` list (including hidden ones) is
+          // still used by the request builder inside
+          // `_runAssistantTurn` so the model still sees them.
+          final messages = chat.visibleMessages;
           final sending = chat.sending;
           // Build a controller bound to the current session. When
           // `activeSessionId` changes the ListView (below) is

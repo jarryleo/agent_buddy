@@ -106,6 +106,13 @@ class _MessageBubbleState extends State<MessageBubble> {
   @override
   Widget build(BuildContext context) {
     final m = widget.message;
+    // Hidden messages are still part of the conversation (the model
+    // sees them in the request list) but the user should never see
+    // them as a bubble. This is used by the timer-driven flow: the
+    // chat provider appends a synthetic "[系统计时触发] <label>" user
+    // message so the model can react, but the UI skips it so the
+    // user just sees the AI's reminder response.
+    if (m.hidden) return const SizedBox.shrink();
     final body = m.role == MessageRole.user
         ? _buildUser(context, m)
         : _buildAssistant(context, m);

@@ -134,11 +134,23 @@ class ChatProvider extends ChangeNotifier {
   // -------- Public read API --------
 
   /// The currently visible messages. Empty when no session is
-  /// active.
+  /// active. Includes hidden messages (the model needs to see
+  /// them in the request list); use [visibleMessages] for UI
+  /// rendering.
   List<ChatMessage> get messages {
     final s = _activeSession;
     if (s == null) return const [];
     return List.unmodifiable(s.messages);
+  }
+
+  /// Subset of [messages] with `hidden == true` filtered out.
+  /// The chat UI uses this so synthetic "system" messages
+  /// (currently the timer-fire reminder) don't render as user
+  /// bubbles, even though they still count toward the model's
+  /// request list. Returns the same empty-when-no-session
+  /// behaviour as [messages].
+  List<ChatMessage> get visibleMessages {
+    return List.unmodifiable(messages.where((m) => !m.hidden));
   }
 
   /// Newest-first session summaries, for the session manager UI.
@@ -825,10 +837,18 @@ class ChatProvider extends ChangeNotifier {
     final s = _activeSession;
     if (s == null) return;
     final text = _formatTimerFiredMessage(task);
+    // The synthetic user message is part of the conversation —
+    // the model must see it so it can react — but we don't want
+    // it to render as a user bubble in the chat. `hidden: true`
+    // is consumed by `MessageBubble.build` and dropped from the
+    // ListView. The model still gets the message in the request
+    // list because `_runAssistantTurn` iterates every message in
+    // the session, hidden or not.
     final userMsg = ChatMessage(
       id: _uuid.v4(),
       role: MessageRole.user,
       content: text,
+      hidden: true,
     );
     _replaceMessages([...s.messages, userMsg]);
     unawaited(_storage.sessions.save(_activeSession!));

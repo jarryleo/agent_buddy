@@ -153,6 +153,14 @@ class ChatMessage {
   /// documents directory and persist across app restarts.
   final List<String> imagePaths;
 
+  /// Set on synthetic "system" messages that the chat provider
+  /// appends to the conversation out-of-band (currently used for
+  /// the timer-fire reminder fed back to the model). The model
+  /// still sees the message in the request list — only the chat
+  /// UI hides the bubble. Persisted so a mid-conversation restart
+  /// preserves the hidden state.
+  final bool hidden;
+
   ChatMessage({
     required this.id,
     required this.role,
@@ -162,6 +170,7 @@ class ChatMessage {
     this.streaming = false,
     this.toolCalls = const [],
     this.imagePaths = const [],
+    this.hidden = false,
   }) : createdAt = createdAt ?? DateTime.now();
 
   ChatMessage copyWith({
@@ -171,6 +180,7 @@ class ChatMessage {
     bool? streaming,
     List<ToolCall>? toolCalls,
     List<String>? imagePaths,
+    bool? hidden,
   }) {
     return ChatMessage(
       id: id,
@@ -181,6 +191,7 @@ class ChatMessage {
       streaming: streaming ?? this.streaming,
       toolCalls: toolCalls ?? this.toolCalls,
       imagePaths: imagePaths ?? this.imagePaths,
+      hidden: hidden ?? this.hidden,
     );
   }
 
@@ -192,6 +203,9 @@ class ChatMessage {
     'createdAt': createdAt.toIso8601String(),
     'toolCalls': toolCalls.map((t) => t.toJson()).toList(),
     'imagePaths': imagePaths,
+    // Only serialize when set so v1 records (no `hidden` key)
+    // round-trip identically. Default on read is `false`.
+    if (hidden) 'hidden': true,
   };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -214,6 +228,7 @@ class ChatMessage {
                 .map((e) => ToolCall.fromJson(e as Map<String, dynamic>))
                 .toList(),
       imagePaths: imgRaw?.cast<String>() ?? const [],
+      hidden: json['hidden'] as bool? ?? false,
     );
   }
 
