@@ -183,6 +183,34 @@ class _MessageBubbleState extends State<MessageBubble> {
                       ),
                     ),
                   ),
+                if (m.content.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        DateFormat('HH:mm').format(m.createdAt.toLocal()),
+                        style: TextStyle(
+                          color: context.textSecondary,
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      InkWell(
+                        onTap: () => widget.onCopy(m.content),
+                        borderRadius: BorderRadius.circular(4),
+                        child: Padding(
+                          padding: EdgeInsets.all(2),
+                          child: Icon(
+                            Icons.copy_rounded,
+                            size: 12,
+                            color: context.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
