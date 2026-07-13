@@ -6,10 +6,29 @@ import Foundation
 /// the `agent_buddy/reminders` protocol. iOS gives us a real
 /// to-do store via `EKReminder`, so unlike Android we don't
 /// piggy-back on calendars.
+///
+/// Permission flow mirrors `CalendarBridge` and `LocationBridge`:
+/// every concurrent call is parked in a per-call pending map so
+/// the user's tap on the system dialog resumes **all** of them —
+/// not just the most recent one. This avoids the "tool call fails
+/// before the user can answer" race when the model fires multiple
+/// tool calls in quick succession.
 public class RemindersBridge: NSObject, FlutterPlugin {
   public static let channelName = "agent_buddy/reminders"
 
   private let store = EKEventStore()
+  private var pendingByCallId: [String: Pending] = [:]
+  private var nextCallSeq: Int = 0
+  private let stateLock = NSLock()
+  private var requestInFlight: Bool = false
+
+  private struct Pending {
+    let result: FlutterResult
+    let method: String
+    let args: [String: Any]
+    let fireLock: NSLock
+    var delivered: Bool
+  }
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(
@@ -27,21 +46,15 @@ public class RemindersBridge: NSObject, FlutterPlugin {
     let args = call.arguments as? [String: Any] ?? [:]
     switch call.method {
     case "ensurePermission":
-      Task { @MainActor in
-        let granted = await self.ensurePermission()
-        result(["granted": granted])
-      }
+      // Pure read; respond synchronously.
+      result(["granted": store.authorizationStatus(for: .reminder) == .fullAccess])
     case "listCalendars":
       // iOS doesn't expose the "pick a calendar" picker flow that
       // Android needs. We still implement the method so the Dart
       // side gets a non-empty list back; the picker sheet is a
       // no-op on iOS because the system Reminders app handles
-      // the default list. We return a single synthetic entry
-      // pointing at the default reminders calendar.
-      Task { @MainActor in
-        let list = self.listWritableCalendars()
-        result(list)
-      }
+      // the default list.
+      result(self.listWritableCalendars())
     case "setTodoCalendar", "getTodoCalendar":
       // No-op on iOS: the system Reminders framework has a single
       // canonical store. The Dart side knows this and short-
@@ -52,95 +65,278 @@ public class RemindersBridge: NSObject, FlutterPlugin {
         result(["ok": true])
       }
     case "listReminders":
-      let includeCompleted = args["includeCompleted"] as? Bool ?? false
-      let max = (args["max"] as? NSNumber)?.intValue ?? 50
-      Task { @MainActor in
-        do {
-          let reminders = try await self.listReminders(
-            includeCompleted: includeCompleted,
-            max: max
-          )
-          result(reminders)
-        } catch let err as BridgeError {
-          result(FlutterError(code: err.code, message: err.message, details: nil))
-        } catch {
-          result(FlutterError(code: "BRIDGE_ERROR", message: error.localizedDescription, details: nil))
-        }
-      }
+      parkOrDispatch(call, result: result, method: call.method, args: args)
     case "createReminder":
-      Task { @MainActor in
-        do {
-          let r = try self.createReminder(args: args)
-          result(r)
-        } catch let err as BridgeError {
-          result(FlutterError(code: err.code, message: err.message, details: nil))
-        } catch {
-          result(FlutterError(code: "BRIDGE_ERROR", message: error.localizedDescription, details: nil))
-        }
-      }
+      parkOrDispatch(call, result: result, method: call.method, args: args)
     case "completeReminder":
-      let id = args["id"] as? String ?? ""
-      Task { @MainActor in
-        do {
-          let r = try self.completeReminder(id: id)
-          result(r)
-        } catch let err as BridgeError {
-          result(FlutterError(code: err.code, message: err.message, details: nil))
-        } catch {
-          result(FlutterError(code: "BRIDGE_ERROR", message: error.localizedDescription, details: nil))
-        }
-      }
+      parkOrDispatch(call, result: result, method: call.method, args: args)
     case "updateReminder":
-      let id = args["id"] as? String ?? ""
-      Task { @MainActor in
-        do {
-          let r = try self.updateReminder(id: id, args: args)
-          result(r)
-        } catch let err as BridgeError {
-          result(FlutterError(code: err.code, message: err.message, details: nil))
-        } catch {
-          result(FlutterError(code: "BRIDGE_ERROR", message: error.localizedDescription, details: nil))
-        }
-      }
+      parkOrDispatch(call, result: result, method: call.method, args: args)
     case "deleteReminder":
-      let id = args["id"] as? String ?? ""
-      Task { @MainActor in
-        do {
-          let ok = try self.deleteReminder(id: id)
-          result(["ok": ok])
-        } catch let err as BridgeError {
-          result(FlutterError(code: err.code, message: err.message, details: nil))
-        } catch {
-          result(FlutterError(code: "BRIDGE_ERROR", message: error.localizedDescription, details: nil))
-        }
-      }
+      parkOrDispatch(call, result: result, method: call.method, args: args)
     default:
       result(FlutterMethodNotImplemented)
     }
   }
 
-  // MARK: - Permission
+  // MARK: - Permission dispatcher
 
-  @MainActor
-  private func ensurePermission() async -> Bool {
+  private func parkOrDispatch(
+    _ call: FlutterMethodCall,
+    result: @escaping FlutterResult,
+    method: String,
+    args: [String: Any]
+  ) {
+    let status = store.authorizationStatus(for: .reminder)
+    if status == .fullAccess {
+      DispatchQueue.main.async { [weak self] in
+        self?.dispatch(method: method, args: args, originalResult: result)
+      }
+      return
+    }
+    if status == .denied || status == .restricted {
+      // The user has permanently denied access; don't pop another
+      // dialog. Surface PERMANENTLY_DENIED so the AI can hint at
+      // system settings.
+      result(
+        FlutterError(
+          code: "PERMANENTLY_DENIED",
+          message: "Reminders permission permanently denied; open system settings to enable it",
+          details: nil
+        )
+      )
+      return
+    }
+    // .notDetermined: ask. Park the call.
+    let callId = registerPending(result: result, method: method, args: args)
+    requestAccessIfNeeded(callId: callId)
+  }
+
+  private func registerPending(
+    result: @escaping FlutterResult,
+    method: String,
+    args: [String: Any]
+  ) -> String {
+    stateLock.lock()
+    nextCallSeq += 1
+    let callId = "rem-\(nextCallSeq)"
+    pendingByCallId[callId] = Pending(
+      result: result,
+      method: method,
+      args: args,
+      fireLock: NSLock(),
+      delivered: false
+    )
+    stateLock.unlock()
+    return callId
+  }
+
+  private func requestAccessIfNeeded(callId: String) {
+    stateLock.lock()
+    let inFlight = requestInFlight
+    if !inFlight { requestInFlight = true }
+    stateLock.unlock()
+    if inFlight { return }
+
     if #available(iOS 17.0, *) {
-      do {
-        return try await store.requestFullAccessToReminders()
-      } catch {
-        return false
+      Task { @MainActor in
+        _ = try? await self.store.requestFullAccessToReminders()
+        DispatchQueue.main.async { [weak self] in
+          self?.resumeAllPending()
+        }
       }
     } else {
-      return await withCheckedContinuation { cont in
-        store.requestAccess(to: .reminder) { granted, _ in
-          cont.resume(returning: granted)
+      self.store.requestAccess(to: .reminder) { [weak self] _, _ in
+        DispatchQueue.main.async {
+          self?.resumeAllPending()
         }
       }
     }
   }
 
+  private func resumeAllPending() {
+    stateLock.lock()
+    requestInFlight = false
+    let status = self.store.authorizationStatus(for: .reminder)
+    let snapshot = self.pendingByCallId
+    stateLock.unlock()
+
+    switch status {
+    case .fullAccess:
+      for (cid, _) in snapshot {
+        self.deliverResume(cid)
+      }
+    case .denied, .restricted:
+      for (cid, _) in snapshot {
+        self.deliverError(
+          cid,
+          code: "PERMANENTLY_DENIED",
+          message: "Reminders permission permanently denied; open system settings to enable it"
+        )
+      }
+    case .notDetermined:
+      for (cid, _) in snapshot {
+        self.deliverError(
+          cid,
+          code: "PERMISSION_DENIED",
+          message: "Reminders permission dialog was dismissed without a decision."
+        )
+      }
+    @unknown default:
+      for (cid, _) in snapshot {
+        self.deliverError(
+          cid,
+          code: "PERMISSION_DENIED",
+          message: "Reminders permission state is unknown."
+        )
+      }
+    }
+  }
+
+  private func deliverResume(_ callId: String) {
+    stateLock.lock()
+    guard var p = pendingByCallId[callId] else {
+      stateLock.unlock()
+      return
+    }
+    p.fireLock.lock()
+    if p.delivered {
+      p.fireLock.unlock()
+      stateLock.unlock()
+      return
+    }
+    p.delivered = true
+    p.fireLock.unlock()
+    pendingByCallId.removeValue(forKey: callId)
+    stateLock.unlock()
+    dispatch(method: p.method, args: p.args, originalResult: p.result)
+  }
+
+  private func deliverError(_ callId: String, code: String, message: String) {
+    stateLock.lock()
+    guard var p = pendingByCallId[callId] else {
+      stateLock.unlock()
+      return
+    }
+    p.fireLock.lock()
+    if p.delivered {
+      p.fireLock.unlock()
+      stateLock.unlock()
+      return
+    }
+    p.delivered = true
+    p.fireLock.unlock()
+    pendingByCallId.removeValue(forKey: callId)
+    stateLock.unlock()
+    p.result(FlutterError(code: code, message: message, details: nil))
+  }
+
+  // MARK: - Dispatch (already authorized path)
+
+  private func dispatch(
+    method: String,
+    args: [String: Any],
+    originalResult: @escaping FlutterResult
+  ) {
+    switch method {
+    case "listReminders":
+      let includeCompleted = args["includeCompleted"] as? Bool ?? false
+      let max = (args["max"] as? NSNumber)?.intValue ?? 50
+      // fetchReminders invokes its callback synchronously on the
+      // calling thread, so we hop to a background queue to avoid
+      // blocking the main thread.
+      DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        guard let self = self else { return }
+        do {
+          let reminders = try self.listReminders(
+            includeCompleted: includeCompleted,
+            max: max
+          )
+          DispatchQueue.main.async { originalResult(reminders) }
+        } catch let err as BridgeError {
+          DispatchQueue.main.async {
+            originalResult(FlutterError(code: err.code, message: err.message, details: nil))
+          }
+        } catch {
+          DispatchQueue.main.async {
+            originalResult(FlutterError(code: "BRIDGE_ERROR", message: error.localizedDescription, details: nil))
+          }
+        }
+      }
+    case "createReminder":
+      DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        guard let self = self else { return }
+        do {
+          let r = try self.createReminder(args: args)
+          DispatchQueue.main.async { originalResult(r) }
+        } catch let err as BridgeError {
+          DispatchQueue.main.async {
+            originalResult(FlutterError(code: err.code, message: err.message, details: nil))
+          }
+        } catch {
+          DispatchQueue.main.async {
+            originalResult(FlutterError(code: "BRIDGE_ERROR", message: error.localizedDescription, details: nil))
+          }
+        }
+      }
+    case "completeReminder":
+      let id = args["id"] as? String ?? ""
+      DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        guard let self = self else { return }
+        do {
+          let r = try self.completeReminder(id: id)
+          DispatchQueue.main.async { originalResult(r as Any) }
+        } catch let err as BridgeError {
+          DispatchQueue.main.async {
+            originalResult(FlutterError(code: err.code, message: err.message, details: nil))
+          }
+        } catch {
+          DispatchQueue.main.async {
+            originalResult(FlutterError(code: "BRIDGE_ERROR", message: error.localizedDescription, details: nil))
+          }
+        }
+      }
+    case "updateReminder":
+      let id = args["id"] as? String ?? ""
+      DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        guard let self = self else { return }
+        do {
+          let r = try self.updateReminder(id: id, args: args)
+          DispatchQueue.main.async { originalResult(r as Any) }
+        } catch let err as BridgeError {
+          DispatchQueue.main.async {
+            originalResult(FlutterError(code: err.code, message: err.message, details: nil))
+          }
+        } catch {
+          DispatchQueue.main.async {
+            originalResult(FlutterError(code: "BRIDGE_ERROR", message: error.localizedDescription, details: nil))
+          }
+        }
+      }
+    case "deleteReminder":
+      let id = args["id"] as? String ?? ""
+      DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        guard let self = self else { return }
+        do {
+          let ok = try self.deleteReminder(id: id)
+          DispatchQueue.main.async { originalResult(["ok": ok]) }
+        } catch let err as BridgeError {
+          DispatchQueue.main.async {
+            originalResult(FlutterError(code: err.code, message: err.message, details: nil))
+          }
+        } catch {
+          DispatchQueue.main.async {
+            originalResult(FlutterError(code: "BRIDGE_ERROR", message: error.localizedDescription, details: nil))
+          }
+        }
+      }
+    default:
+      originalResult(FlutterMethodNotImplemented)
+    }
+  }
+
   // MARK: - Calendar listing (iOS shim)
 
-  @MainActor
   private func listWritableCalendars() -> [[String: Any]] {
     let cals = store.calendars(for: .reminder)
     return cals.map { cal in
@@ -154,24 +350,31 @@ public class RemindersBridge: NSObject, FlutterPlugin {
 
   // MARK: - Reminder CRUD
 
-  @MainActor
-  private func listReminders(includeCompleted: Bool, max: Int) async throws -> [[String: Any]] {
+  private func listReminders(includeCompleted: Bool, max: Int) throws -> [[String: Any]] {
     let cals = store.calendars(for: .reminder)
     let predicate = store.predicateForIncompleteReminders(
       withDueDateStarting: nil,
       ending: nil,
       calendars: cals
     )
-    return try await withCheckedThrowingContinuation { cont in
-      store.fetchReminders(matching: predicate) { ekReminders in
-        let filtered = (ekReminders ?? []).filter { includeCompleted || !$0.isCompleted }
-        let mapped = filtered.prefix(max).map { self.reminderToDict($0) }
-        cont.resume(returning: Array(mapped))
-      }
+    // Caller is responsible for hopping off the main thread before
+    // calling us; fetchReminders invokes its callback synchronously.
+    var mapped: [[String: Any]] = []
+    let semaphore = DispatchSemaphore(value: 0)
+    store.fetchReminders(matching: predicate) { ekReminders in
+      let filtered = (ekReminders ?? []).filter { includeCompleted || !$0.isCompleted }
+      mapped = filtered.prefix(max).map { self.reminderToDict($0) }
+      semaphore.signal()
     }
+    if semaphore.wait(timeout: .now() + 10) == .timedOut {
+      throw BridgeError(
+        code: "BRIDGE_ERROR",
+        message: "fetchReminders timed out"
+      )
+    }
+    return mapped
   }
 
-  @MainActor
   private func createReminder(args: [String: Any]) throws -> [String: Any] {
     let title = args["title"] as? String ?? ""
     if title.isEmpty {
@@ -202,7 +405,6 @@ public class RemindersBridge: NSObject, FlutterPlugin {
     return reminderToDict(reminder)
   }
 
-  @MainActor
   private func completeReminder(id: String) throws -> [String: Any]? {
     guard let calItem = store.calendarItem(withIdentifier: id) as? EKReminder else {
       return nil
@@ -219,7 +421,6 @@ public class RemindersBridge: NSObject, FlutterPlugin {
     return reminderToDict(calItem)
   }
 
-  @MainActor
   private func updateReminder(id: String, args: [String: Any]) throws -> [String: Any]? {
     guard let calItem = store.calendarItem(withIdentifier: id) as? EKReminder else {
       return nil
@@ -245,20 +446,19 @@ public class RemindersBridge: NSObject, FlutterPlugin {
     return reminderToDict(calItem)
   }
 
-  @MainActor
   private func deleteReminder(id: String) throws -> Bool {
     guard let calItem = store.calendarItem(withIdentifier: id) as? EKReminder else {
       return false
     }
     do {
       try store.remove(calItem, commit: true)
-      return true
     } catch {
       throw BridgeError(
         code: "BRIDGE_ERROR",
         message: "failed to delete reminder: \(error.localizedDescription)"
       )
     }
+    return true
   }
 
   // MARK: - Mapping

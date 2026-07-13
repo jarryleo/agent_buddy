@@ -25,6 +25,15 @@ abstract class ToolBase {
   /// Whether this tool can actually run on the current platform.
   bool get isSupportedOnCurrentPlatform;
 
+  /// Whether this tool should be enabled out of the box on a fresh
+  /// install. Most tools default to `true` so the user gets the
+  /// full toolset without having to flip switches. Tools that
+  /// require a one-time setup step (e.g. `reminders` on Android
+  /// needs the user to pick a "todo" calendar) override this to
+  /// `false` so the picker / setup flow is the user's first
+  /// interaction with the tool, not a silent failure.
+  bool get isEnabledByDefault => true;
+
   /// Returns the OpenAI-style function-calling schema entry for
   /// this tool, or `null` if the tool is not supported on the
   /// current platform.

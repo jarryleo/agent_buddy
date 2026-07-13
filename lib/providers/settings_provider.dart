@@ -102,7 +102,11 @@ class SettingsProvider extends ChangeNotifier {
     // get every builtin; existing installs hit the second branch which
     // back-fills any builtin that's missing (e.g. a user upgrading
     // from a build that didn't have `current_time`).
-    // Name and description come from the ToolBase subclass.
+    // Name and description come from the ToolBase subclass. The
+    // per-row `enabled` flag honours the tool's own
+    // `isEnabledByDefault` — some tools (e.g. `reminders`) need
+    // one-time setup so they start off and the settings tab walks
+    // the user through the picker.
     if (_tools.isEmpty) {
       _tools = [
         for (final t in ToolRegistry.all)
@@ -111,7 +115,7 @@ class SettingsProvider extends ChangeNotifier {
               id: t.id,
               name: t.name,
               description: t.description,
-              enabled: true,
+              enabled: t.isEnabledByDefault,
             ),
       ];
       await _storage.saveTools(_tools);
@@ -127,7 +131,7 @@ class SettingsProvider extends ChangeNotifier {
               id: t.id,
               name: t.name,
               description: t.description,
-              enabled: true,
+              enabled: t.isEnabledByDefault,
             ),
           ];
           changed = true;
@@ -165,22 +169,29 @@ class SettingsProvider extends ChangeNotifier {
       await _storage.setActiveLocalProviderId(_activeLocalProviderId);
     }
 
-    // Default active tools: every built-in tool, so the user gets
-    // them out of the box without having to toggle anything on.
+    // Default active tools: every built-in tool that defaults to
+    // on, so the user gets the full default set without having to
+    // flip switches. Tools that default to off (e.g. `reminders`,
+    // which needs the user to pick a "todo" calendar on Android)
+    // are NOT auto-enabled — the user has to turn them on in the
+    // tools tab, which kicks off the picker.
     // For existing installs, only backfill builtins that aren't in
-    // the list yet — that way a user who explicitly turned something
-    // off keeps it off, while a newly-shipped builtin (e.g. upgrading
-    // from a build that didn't have `current_time`) is enabled.
+    // the list yet AND default to on. A user who explicitly turned
+    // something off keeps it off, while a newly-shipped on-by-
+    // default builtin (e.g. upgrading from a build that didn't
+    // have `current_time`) is enabled automatically. Newly-shipped
+    // off-by-default builtins stay off until the user opts in.
     if (_activeToolIds.isEmpty) {
       _activeToolIds = {
         for (final t in ToolRegistry.all)
-          if (t.isSupportedOnCurrentPlatform) t.id,
+          if (t.isSupportedOnCurrentPlatform && t.isEnabledByDefault) t.id,
       };
       await _storage.setActiveToolIds(_activeToolIds.toList());
     } else {
       var changed = false;
       for (final t in ToolRegistry.all) {
         if (!t.isSupportedOnCurrentPlatform) continue;
+        if (!t.isEnabledByDefault) continue;
         if (!_activeToolIds.contains(t.id)) {
           _activeToolIds.add(t.id);
           changed = true;

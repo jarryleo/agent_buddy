@@ -13,22 +13,36 @@ import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
-import org.json.JSONArray
-import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * MethodChannel bridge for the "reminders / to-do" surface on
  * Android. Because Android has no unified system to-do API, we
  * piggy-back on the CalendarProvider: reminders are stored as
  * all-day events in a user-picked "todo" calendar. Each reminder
- * gets a `categories=AGENDA` marker so the list query stays
+ * gets a marker prefix on its description so the list query stays
  * specific to Agent Buddy-created items.
  *
  * Channel: `agent_buddy/reminders`
  *
  * The user must pick a "todo calendar" the first time this tool is
  * used; until then, every call returns `NO_TODO_CALENDAR` so the
- * Dart side can prompt them via [ask_user] / the picker sheet.
+ * Dart side can prompt them via the picker sheet.
+ *
+ * Permission flow mirrors [CalendarBridge] / [LocationBridge]:
+ * concurrent tool calls are all parked in a per-call pending map so
+ * the user's tap on the system dialog resumes every one of them.
+ *
+ * Why a description-prefix marker instead of `categories`:
+ * `CalendarContract.Events.CATEGORIES` is part of the contract but
+ * several OEM calendar providers (notably Huawei / Xiaomi local
+ * calendars) don't expose the column at all, so writing
+ * `put("categories", ...)` blows up with
+ * `IllegalArgumentException: column 'categories' is invalid`. The
+ * `DESCRIPTION` column is universal, so we encode ownership as a
+ * short sentinel prefix and strip it on read.
  */
 class RemindersBridge(
     private val context: Context,
@@ -39,16 +53,29 @@ class RemindersBridge(
         const val CHANNEL = "agent_buddy/reminders"
         private const val PREFS_NAME = "agent_buddy_prefs"
         private const val PREF_TODO_CALENDAR = "todo_calendar_id"
-        private const val REMINDER_CATEGORY = "AGENDA"
         private const val PERMISSION_REQUEST_CODE = 9002
+
+        // Description prefix that marks an all-day event as an
+        // Agent Buddy reminder. The trailing `|` is a separator so
+        // the marker's length is well-defined when we strip it. The
+        // SQLite LIKE wildcard `%` is appended in the SELECT
+        // so `LIKE '__ab_agenda__|%'` only matches events we own.
+        private const val MARKER = "__ab_agenda__|"
     }
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    private var pendingResult: MethodChannel.Result? = null
-    private var pendingArgs: Map<String, Any?>? = null
-    private var pendingMethod: String? = null
+    private data class Pending(
+        val result: MethodChannel.Result,
+        val method: String,
+        val args: Map<String, Any?>?,
+        val delivered: AtomicBoolean,
+    )
+
+    private val pendingResults: MutableMap<String, Pending> = ConcurrentHashMap()
+    private val callSeq: AtomicInteger = AtomicInteger(0)
+    private var permissionRequestInFlight: Boolean = false
 
     fun register(engine: FlutterEngine) {
         MethodChannel(engine.dartExecutor.binaryMessenger, CHANNEL)
@@ -59,11 +86,41 @@ class RemindersBridge(
         call: io.flutter.plugin.common.MethodCall,
         result: MethodChannel.Result,
     ) {
+        if (call.method == "ensurePermission") {
+            result.success(mapOf("granted" to hasPermission()))
+            return
+        }
+        // Calendar listing & todo-calendar selection never need the
+        // runtime permission — they only need the system to know
+        // about the user's calendars. Pass them through directly.
+        if (call.method == "listCalendars" ||
+            call.method == "setTodoCalendar" ||
+            call.method == "getTodoCalendar"
+        ) {
+            try {
+                handle(call.method, call.arguments as? Map<String, Any?>, result)
+            } catch (e: Exception) {
+                result.error("BRIDGE_ERROR", e.message, null)
+            }
+            return
+        }
         if (!hasPermission()) {
-            pendingResult = result
-            pendingArgs = call.arguments as? Map<String, Any?>
-            pendingMethod = call.method
-            requestPermission()
+            if (currentStatus() == "permanently_denied") {
+                result.error(
+                    "PERMANENTLY_DENIED",
+                    "Calendar permission permanently denied; open system settings to enable it",
+                    null,
+                )
+                return
+            }
+            val callId = nextCallId()
+            pendingResults[callId] = Pending(
+                result = result,
+                method = call.method,
+                args = call.arguments as? Map<String, Any?>,
+                delivered = AtomicBoolean(false),
+            )
+            requestPermissionIfNeeded()
             return
         }
         try {
@@ -81,9 +138,6 @@ class RemindersBridge(
         result: MethodChannel.Result,
     ) {
         when (method) {
-            "ensurePermission" -> {
-                result.success(mapOf("granted" to hasPermission()))
-            }
             "listCalendars" -> {
                 result.success(listWritableCalendars())
             }
@@ -144,7 +198,26 @@ class RemindersBridge(
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    private fun requestPermission() {
+    private fun currentStatus(): String {
+        if (hasPermission()) return "granted"
+        val rationaleOff = !ActivityCompat.shouldShowRequestPermissionRationale(
+            activity,
+            Manifest.permission.READ_CALENDAR,
+        )
+        return if (rationaleOff && hasEverRequested()) "permanently_denied" else "denied"
+    }
+
+    private fun hasEverRequested(): Boolean =
+        prefs.getBoolean("reminders_permission_requested", false)
+
+    private fun markPermissionRequested() {
+        prefs.edit().putBoolean("reminders_permission_requested", true).apply()
+    }
+
+    private fun requestPermissionIfNeeded() {
+        if (permissionRequestInFlight) return
+        permissionRequestInFlight = true
+        markPermissionRequested()
         ActivityCompat.requestPermissions(
             activity,
             arrayOf(
@@ -161,33 +234,36 @@ class RemindersBridge(
         grantResults: IntArray,
     ): Boolean {
         if (requestCode != PERMISSION_REQUEST_CODE) return false
-        val result = pendingResult
-        val method = pendingMethod
-        val args = pendingArgs
-        pendingResult = null
-        pendingMethod = null
-        pendingArgs = null
+        permissionRequestInFlight = false
+        val snapshot = pendingResults.toMap()
+        pendingResults.clear()
 
-        if (result == null) return true
         if (!hasPermission()) {
-            result.error(
-                "PERMISSION_DENIED",
-                "Calendar permission was denied; please grant it in system settings.",
-                null,
-            )
+            val code = if (currentStatus() == "permanently_denied") {
+                "PERMANENTLY_DENIED"
+            } else {
+                "PERMISSION_DENIED"
+            }
+            val msg = "Calendar permission was denied; please grant it in system settings."
+            for ((_, p) in snapshot) {
+                if (p.delivered.compareAndSet(false, true)) {
+                    p.result.error(code, msg, null)
+                }
+            }
             return true
         }
-        if (method != null) {
+        for ((_, p) in snapshot) {
+            if (!p.delivered.compareAndSet(false, true)) continue
             try {
-                handle(method, args, result)
+                handle(p.method, p.args, p.result)
             } catch (e: Exception) {
-                result.error("BRIDGE_ERROR", e.message, null)
+                p.result.error("BRIDGE_ERROR", e.message, null)
             }
-        } else {
-            result.success(mapOf("granted" to true))
         }
         return true
     }
+
+    private fun nextCallId(): String = "rem-${callSeq.incrementAndGet()}"
 
     // -------- Calendar selection --------
 
@@ -253,14 +329,19 @@ class RemindersBridge(
             CalendarContract.Events.CALENDAR_DISPLAY_NAME,
         )
         // "Completed" = due-date strictly in the past. List only
-        // events we own (CATEGORIES contains AGENDA).
+        // events we own (description starts with the marker).
         val nowMs = System.currentTimeMillis()
         val (selection, args) = if (includeCompleted) {
-            "${CalendarContract.Events.CALENDAR_ID} = ? AND ${CalendarContract.Events.ALL_DAY} = 1" to
-                arrayOf(calId.toString())
+            "${CalendarContract.Events.CALENDAR_ID} = ? " +
+                "AND ${CalendarContract.Events.ALL_DAY} = 1 " +
+                "AND ${CalendarContract.Events.DESCRIPTION} LIKE ?" to
+                arrayOf(calId.toString(), "$MARKER%")
         } else {
-            "${CalendarContract.Events.CALENDAR_ID} = ? AND ${CalendarContract.Events.ALL_DAY} = 1 AND ${CalendarContract.Events.DTSTART} >= ?" to
-                arrayOf(calId.toString(), nowMs.toString())
+            "${CalendarContract.Events.CALENDAR_ID} = ? " +
+                "AND ${CalendarContract.Events.ALL_DAY} = 1 " +
+                "AND ${CalendarContract.Events.DTSTART} >= ? " +
+                "AND ${CalendarContract.Events.DESCRIPTION} LIKE ?" to
+                arrayOf(calId.toString(), nowMs.toString(), "$MARKER%")
         }
         val out = mutableListOf<Map<String, Any?>>()
         context.contentResolver.query(
@@ -285,7 +366,7 @@ class RemindersBridge(
                     mapOf<String, Any?>(
                         "id" to id.toString(),
                         "title" to (c.getString(titleIdx) ?: ""),
-                        "notes" to c.getString(descIdx),
+                        "notes" to stripMarker(c.getString(descIdx)),
                         "dueMs" to dueMs,
                         "completed" to isCompleted,
                         "completedAtMs" to if (isCompleted) dueMs else null,
@@ -309,15 +390,17 @@ class RemindersBridge(
         val cv = ContentValues().apply {
             put(CalendarContract.Events.CALENDAR_ID, calId)
             put(CalendarContract.Events.TITLE, title)
-            if (notes != null) put(CalendarContract.Events.DESCRIPTION, notes)
+            // Prepend the marker so the row is identifiable as an
+            // Agent Buddy reminder. We can't rely on the
+            // `categories` column — some OEM providers (Huawei /
+            // Xiaomi local calendars) reject it with
+            // `IllegalArgumentException: column 'categories' is
+            // invalid`.
+            put(CalendarContract.Events.DESCRIPTION, prependMarker(notes))
             put(CalendarContract.Events.DTSTART, dueMs)
             put(CalendarContract.Events.DTEND, dueMs)
             put(CalendarContract.Events.ALL_DAY, 1)
             put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
-            // CalendarContract.Events.CATEGORIES is only available on
-            // API 17+ which we target, but the constant isn't
-            // exposed on every compileSdk; hard-code the column.
-            put("categories", REMINDER_CATEGORY)
         }
         val uri = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, cv)
             ?: throw IllegalStateException("failed to insert reminder")
@@ -356,7 +439,9 @@ class RemindersBridge(
     private fun updateReminder(id: Long, args: Map<String, Any?>): Map<String, Any?>? {
         val cv = ContentValues().apply {
             (args["title"] as? String)?.let { put(CalendarContract.Events.TITLE, it) }
-            (args["notes"] as? String)?.let { put(CalendarContract.Events.DESCRIPTION, it) }
+            (args["notes"] as? String)?.let {
+                put(CalendarContract.Events.DESCRIPTION, prependMarker(it))
+            }
             (args["dueMs"] as? Number)?.toLong()?.let {
                 put(CalendarContract.Events.DTSTART, it)
                 put(CalendarContract.Events.DTEND, it)
@@ -396,7 +481,7 @@ class RemindersBridge(
                 return mapOf<String, Any?>(
                     "id" to id.toString(),
                     "title" to title,
-                    "notes" to desc,
+                    "notes" to stripMarker(desc),
                     "dueMs" to dueMs,
                     "completed" to isCompleted,
                     "completedAtMs" to if (isCompleted) dueMs else null,
@@ -404,6 +489,16 @@ class RemindersBridge(
             }
         }
         return null
+    }
+
+    // -------- Marker helpers --------
+
+    private fun prependMarker(notes: String?): String =
+        if (notes.isNullOrEmpty()) MARKER else "$MARKER$notes"
+
+    private fun stripMarker(desc: String?): String? {
+        if (desc.isNullOrEmpty()) return desc
+        return if (desc.startsWith(MARKER)) desc.substring(MARKER.length) else desc
     }
 
     private fun startOfDayUtcMs(timestampMs: Long): Long {

@@ -8,10 +8,29 @@ import Foundation
 /// updateEvent / deleteEvent. On iOS 17+ we use the new Full
 /// Access API; on older systems we fall back to the deprecated
 /// `requestAccess(to:)` which still works but logs a warning.
+///
+/// Permission flow mirrors the Android side and `LocationBridge`:
+/// every concurrent call is parked in a per-call pending map so
+/// the user's tap on the system dialog resumes **all** of them —
+/// not just the most recent one. This avoids the "tool call fails
+/// before the user can answer" race when the model fires multiple
+/// tool calls in quick succession.
 public class CalendarBridge: NSObject, FlutterPlugin {
   public static let channelName = "agent_buddy/calendar"
 
   private let store = EKEventStore()
+  private var pendingByCallId: [String: Pending] = [:]
+  private var nextCallSeq: Int = 0
+  private let stateLock = NSLock()
+  private var requestInFlight: Bool = false
+
+  private struct Pending {
+    let result: FlutterResult
+    let method: String
+    let args: [String: Any]
+    let fireLock: NSLock
+    var delivered: Bool
+  }
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(
@@ -29,83 +48,227 @@ public class CalendarBridge: NSObject, FlutterPlugin {
     let args = call.arguments as? [String: Any] ?? [:]
     switch call.method {
     case "ensurePermission":
-      Task { @MainActor in
-        let status = await self.ensurePermission()
-        result(["granted": status == .granted])
-      }
+      // Pure read; respond synchronously. The Dart side uses this to
+      // decide whether to invoke any of the actions below.
+      result(["granted": store.authorizationStatus(for: .event) == .fullAccess])
     case "listEvents":
-      let fromMs = (args["fromMs"] as? NSNumber)?.int64Value ?? 0
-      let toMs = (args["toMs"] as? NSNumber)?.int64Value ?? 0
-      let max = (args["max"] as? NSNumber)?.intIntValue ?? 50
-      Task { @MainActor in
-        let events = self.listEvents(fromMs: fromMs, toMs: toMs, max: max)
-        result(events)
-      }
+      parkOrDispatch(call, result: result, method: call.method, args: args)
     case "getEvent":
-      let id = args["id"] as? String ?? ""
-      Task { @MainActor in
-        result(self.getEvent(id: id))
-      }
+      parkOrDispatch(call, result: result, method: call.method, args: args)
     case "createEvent":
-      Task { @MainActor in
-        do {
-          let ev = try self.createEvent(args: args)
-          result(ev)
-        } catch let err as BridgeError {
-          result(FlutterError(code: err.code, message: err.message, details: nil))
-        } catch {
-          result(FlutterError(code: "BRIDGE_ERROR", message: error.localizedDescription, details: nil))
-        }
-      }
+      parkOrDispatch(call, result: result, method: call.method, args: args)
     case "updateEvent":
-      let id = args["id"] as? String ?? ""
-      Task { @MainActor in
-        do {
-          let ev = try self.updateEvent(id: id, args: args)
-          result(ev)
-        } catch let err as BridgeError {
-          result(FlutterError(code: err.code, message: err.message, details: nil))
-        } catch {
-          result(FlutterError(code: "BRIDGE_ERROR", message: error.localizedDescription, details: nil))
-        }
-      }
+      parkOrDispatch(call, result: result, method: call.method, args: args)
     case "deleteEvent":
-      let id = args["id"] as? String ?? ""
-      Task { @MainActor in
-        let ok = self.deleteEvent(id: id)
-        result(["ok": ok])
-      }
+      parkOrDispatch(call, result: result, method: call.method, args: args)
     default:
       result(FlutterMethodNotImplemented)
     }
   }
 
-  // MARK: - Permission
+  // MARK: - Permission dispatcher
 
-  private enum PermissionOutcome { case granted, denied, notSupported }
+  private func parkOrDispatch(
+    _ call: FlutterMethodCall,
+    result: @escaping FlutterResult,
+    method: String,
+    args: [String: Any]
+  ) {
+    let status = store.authorizationStatus(for: .event)
+    if status == .fullAccess {
+      DispatchQueue.main.async { [weak self] in
+        self?.dispatch(method: method, args: args, originalResult: result)
+      }
+      return
+    }
+    if status == .denied || status == .restricted {
+      // The user has permanently denied access; don't pop another
+      // dialog. Surface PERMANENTLY_DENIED so the AI can hint at
+      // system settings.
+      result(
+        FlutterError(
+          code: "PERMANENTLY_DENIED",
+          message: "Calendar permission permanently denied; open system settings to enable it",
+          details: nil
+        )
+      )
+      return
+    }
+    // .notDetermined: ask. Park the call. The system dialog's
+    // completion is observed via the helper that polls the
+    // authorization status (EKEventStore doesn't have a delegate
+    // for requestFullAccessToEvents on iOS 17+).
+    let callId = registerPending(result: result, method: method, args: args)
+    requestAccessIfNeeded(callId: callId)
+  }
 
-  @MainActor
-  private func ensurePermission() async -> PermissionOutcome {
+  private func registerPending(
+    result: @escaping FlutterResult,
+    method: String,
+    args: [String: Any]
+  ) -> String {
+    stateLock.lock()
+    nextCallSeq += 1
+    let callId = "cal-\(nextCallSeq)"
+    pendingByCallId[callId] = Pending(
+      result: result,
+      method: method,
+      args: args,
+      fireLock: NSLock(),
+      delivered: false
+    )
+    stateLock.unlock()
+    return callId
+  }
+
+  private func requestAccessIfNeeded(callId: String) {
+    stateLock.lock()
+    let inFlight = requestInFlight
+    if !inFlight { requestInFlight = true }
+    stateLock.unlock()
+    if inFlight { return }
+
+    // We are the first requester — fire the system dialog. EKEventStore
+    // doesn't expose a delegate for this, so we wait for the async
+    // request to complete and then dispatch all parked calls based
+    // on the resulting authorization status.
     if #available(iOS 17.0, *) {
-      do {
-        return try await store.requestFullAccessToEvents()
-          ? .granted
-          : .denied
-      } catch {
-        return .denied
+      Task { @MainActor in
+        _ = try? await self.store.requestFullAccessToEvents()
+        DispatchQueue.main.async { [weak self] in
+          self?.resumeAllPending()
+        }
       }
     } else {
-      return await withCheckedContinuation { cont in
-        store.requestAccess(to: .event) { granted, _ in
-          cont.resume(returning: granted ? .granted : .denied)
+      self.store.requestAccess(to: .event) { [weak self] _, _ in
+        DispatchQueue.main.async {
+          self?.resumeAllPending()
         }
       }
     }
   }
 
+  private func resumeAllPending() {
+    stateLock.lock()
+    requestInFlight = false
+    let status = self.store.authorizationStatus(for: .event)
+    let snapshot = self.pendingByCallId
+    stateLock.unlock()
+
+    switch status {
+    case .fullAccess:
+      // User said yes — resume every parked call.
+      for (cid, _) in snapshot {
+        self.deliverResume(cid)
+      }
+    case .denied, .restricted:
+      // User said no (and won't be asked again) — bubble
+      // PERMANENTLY_DENIED up to every waiter.
+      for (cid, _) in snapshot {
+        self.deliverError(
+          cid,
+          code: "PERMANENTLY_DENIED",
+          message: "Calendar permission permanently denied; open system settings to enable it"
+        )
+      }
+    case .notDetermined:
+      // The dialog was somehow dismissed without changing the
+      // state. Surface a plain PERMISSION_DENIED so the AI can
+      // tell the user something went wrong.
+      for (cid, _) in snapshot {
+        self.deliverError(
+          cid,
+          code: "PERMISSION_DENIED",
+          message: "Calendar permission dialog was dismissed without a decision."
+        )
+      }
+    @unknown default:
+      for (cid, _) in snapshot {
+        self.deliverError(
+          cid,
+          code: "PERMISSION_DENIED",
+          message: "Calendar permission state is unknown."
+        )
+      }
+    }
+  }
+
+  private func deliverResume(_ callId: String) {
+    stateLock.lock()
+    guard var p = pendingByCallId[callId] else {
+      stateLock.unlock()
+      return
+    }
+    p.fireLock.lock()
+    if p.delivered {
+      p.fireLock.unlock()
+      stateLock.unlock()
+      return
+    }
+    p.delivered = true
+    p.fireLock.unlock()
+    pendingByCallId.removeValue(forKey: callId)
+    stateLock.unlock()
+    dispatch(method: p.method, args: p.args, originalResult: p.result)
+  }
+
+  private func deliverError(_ callId: String, code: String, message: String) {
+    stateLock.lock()
+    guard var p = pendingByCallId[callId] else {
+      stateLock.unlock()
+      return
+    }
+    p.fireLock.lock()
+    if p.delivered {
+      p.fireLock.unlock()
+      stateLock.unlock()
+      return
+    }
+    p.delivered = true
+    p.fireLock.unlock()
+    pendingByCallId.removeValue(forKey: callId)
+    stateLock.unlock()
+    p.result(FlutterError(code: code, message: message, details: nil))
+  }
+
+  // MARK: - Dispatch (already authorized path)
+
+  private func dispatch(
+    method: String,
+    args: [String: Any],
+    originalResult: @escaping FlutterResult
+  ) {
+    do {
+      switch method {
+      case "listEvents":
+        let fromMs = (args["fromMs"] as? NSNumber)?.int64Value ?? 0
+        let toMs = (args["toMs"] as? NSNumber)?.int64Value ?? 0
+        let max = (args["max"] as? NSNumber)?.intValue ?? 50
+        originalResult(self.listEvents(fromMs: fromMs, toMs: toMs, max: max))
+      case "getEvent":
+        let id = args["id"] as? String ?? ""
+        originalResult(self.getEvent(id: id))
+      case "createEvent":
+        originalResult(try self.createEvent(args: args))
+      case "updateEvent":
+        let id = args["id"] as? String ?? ""
+        let r = try self.updateEvent(id: id, args: args)
+        originalResult(r as Any)
+      case "deleteEvent":
+        let id = args["id"] as? String ?? ""
+        originalResult(["ok": self.deleteEvent(id: id)])
+      default:
+        originalResult(FlutterMethodNotImplemented)
+      }
+    } catch let err as BridgeError {
+      originalResult(FlutterError(code: err.code, message: err.message, details: nil))
+    } catch {
+      originalResult(FlutterError(code: "BRIDGE_ERROR", message: error.localizedDescription, details: nil))
+    }
+  }
+
   // MARK: - CRUD
 
-  @MainActor
   private func listEvents(fromMs: Int64, toMs: Int64, max: Int) -> [[String: Any]] {
     let from = Date(timeIntervalSince1970: TimeInterval(fromMs) / 1000.0)
     let to = Date(timeIntervalSince1970: TimeInterval(toMs) / 1000.0)
@@ -119,7 +282,6 @@ public class CalendarBridge: NSObject, FlutterPlugin {
     return events.prefix(max).map { eventToDict($0) }
   }
 
-  @MainActor
   private func getEvent(id: String) -> [String: Any]? {
     guard let item = store.calendarItem(withIdentifier: id) as? EKEvent else {
       return nil
@@ -127,7 +289,6 @@ public class CalendarBridge: NSObject, FlutterPlugin {
     return eventToDict(item)
   }
 
-  @MainActor
   private func createEvent(args: [String: Any]) throws -> [String: Any] {
     let title = args["title"] as? String ?? ""
     if title.isEmpty {
@@ -170,7 +331,6 @@ public class CalendarBridge: NSObject, FlutterPlugin {
     return eventToDict(event)
   }
 
-  @MainActor
   private func updateEvent(id: String, args: [String: Any]) throws -> [String: Any]? {
     guard let event = store.calendarItem(withIdentifier: id) as? EKEvent else {
       return nil
@@ -202,7 +362,6 @@ public class CalendarBridge: NSObject, FlutterPlugin {
     return eventToDict(event)
   }
 
-  @MainActor
   private func deleteEvent(id: String) -> Bool {
     guard let event = store.calendarItem(withIdentifier: id) as? EKEvent else {
       return false

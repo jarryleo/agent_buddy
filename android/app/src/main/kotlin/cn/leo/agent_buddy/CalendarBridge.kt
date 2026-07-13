@@ -14,6 +14,9 @@ import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * MethodChannel bridge for the phone's system calendar.
@@ -27,9 +30,12 @@ import io.flutter.plugin.common.PluginRegistry
  *   - deleteEvent
  *
  * The Dart side ([CalendarServiceIo]) dispatches into this. Permission
- * is requested on the first call: the response is a dict
- * `{granted: bool, canAsk: bool}`. The Dart side re-invokes the
- * requested operation once permission flips to granted.
+ * is requested lazily on the first call. While the system dialog is
+ * up, every concurrent call is parked in a per-call pending map so
+ * the user's tap on the dialog resumes **all** of them — not just the
+ * most recent one. This matches the pattern used by [LocationBridge]
+ * and avoids the "tool call fails before the user can answer" race
+ * when the model fires multiple tool calls in quick succession.
  */
 class CalendarBridge(
     private val context: Context,
@@ -41,9 +47,16 @@ class CalendarBridge(
         private const val PERMISSION_REQUEST_CODE = 9001
     }
 
-    private var pendingResult: MethodChannel.Result? = null
-    private var pendingArgs: Map<String, Any?>? = null
-    private var pendingMethod: String? = null
+    private data class Pending(
+        val result: MethodChannel.Result,
+        val method: String,
+        val args: Map<String, Any?>?,
+        val delivered: AtomicBoolean,
+    )
+
+    private val pendingResults: MutableMap<String, Pending> = ConcurrentHashMap()
+    private val callSeq: AtomicInteger = AtomicInteger(0)
+    private var permissionRequestInFlight: Boolean = false
 
     fun register(engine: FlutterEngine) {
         MethodChannel(engine.dartExecutor.binaryMessenger, CHANNEL)
@@ -54,14 +67,36 @@ class CalendarBridge(
         call: io.flutter.plugin.common.MethodCall,
         result: MethodChannel.Result,
     ) {
-        // Lazy permission check: every operation first asks for
-        // permission. We hold the call and resume after the user
-        // responds to the system dialog.
+        // ensurePermission is a pure read — return synchronously so
+        // the AI can decide whether to invoke the other actions.
+        if (call.method == "ensurePermission") {
+            result.success(mapOf("granted" to hasPermission()))
+            return
+        }
         if (!hasPermission()) {
-            pendingResult = result
-            pendingArgs = call.arguments as? Map<String, Any?>
-            pendingMethod = call.method
-            requestPermission()
+            // Permanent denial short-circuit: don't pop a system
+            // dialog the user has already said no to, just fail the
+            // call with PERMANENTLY_DENIED so the AI can surface a
+            // "open settings" hint.
+            if (currentStatus() == "permanently_denied") {
+                result.error(
+                    "PERMANENTLY_DENIED",
+                    "Calendar permission permanently denied; open system settings to enable it",
+                    null,
+                )
+                return
+            }
+            // Park this call. The user's answer to the system dialog
+            // will resume every parked call via
+            // onRequestPermissionsResult.
+            val callId = nextCallId()
+            pendingResults[callId] = Pending(
+                result = result,
+                method = call.method,
+                args = call.arguments as? Map<String, Any?>,
+                delivered = AtomicBoolean(false),
+            )
+            requestPermissionIfNeeded()
             return
         }
         try {
@@ -79,9 +114,6 @@ class CalendarBridge(
         result: MethodChannel.Result,
     ) {
         when (method) {
-            "ensurePermission" -> {
-                result.success(mapOf("granted" to hasPermission()))
-            }
             "listEvents" -> {
                 val fromMs = (args?.get("fromMs") as? Number)?.toLong()
                     ?: throw IllegalArgumentException("fromMs required")
@@ -139,7 +171,38 @@ class CalendarBridge(
         }
     }
 
-    private fun requestPermission() {
+    /**
+     * Returns one of `granted` / `denied` / `permanently_denied`.
+     * "Permanently denied" is detected by a "Don't ask again" tap on
+     * the system dialog: the OS stops showing the prompt and
+     * `shouldShowRequestPermissionRationale` flips to false, while a
+     * one-time decline leaves it true.
+     */
+    private fun currentStatus(): String {
+        if (hasPermission()) return "granted"
+        val prefs = context.getSharedPreferences(
+            "agent_buddy_prefs",
+            Context.MODE_PRIVATE,
+        )
+        val everAsked = prefs.getBoolean("calendar_permission_requested", false)
+        val rationaleOff = !ActivityCompat.shouldShowRequestPermissionRationale(
+            activity,
+            Manifest.permission.READ_CALENDAR,
+        )
+        return if (everAsked && rationaleOff) "permanently_denied" else "denied"
+    }
+
+    private fun markPermissionRequested() {
+        context.getSharedPreferences("agent_buddy_prefs", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("calendar_permission_requested", true)
+            .apply()
+    }
+
+    private fun requestPermissionIfNeeded() {
+        if (permissionRequestInFlight) return
+        permissionRequestInFlight = true
+        markPermissionRequested()
         val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             arrayOf(
                 Manifest.permission.READ_CALENDAR,
@@ -157,34 +220,37 @@ class CalendarBridge(
         grantResults: IntArray,
     ): Boolean {
         if (requestCode != PERMISSION_REQUEST_CODE) return false
-        val result = pendingResult
-        val method = pendingMethod
-        val args = pendingArgs
-        pendingResult = null
-        pendingMethod = null
-        pendingArgs = null
+        permissionRequestInFlight = false
+        val snapshot = pendingResults.toMap()
+        pendingResults.clear()
 
-        if (result == null) return true
         if (!hasPermission()) {
-            result.error(
-                "PERMISSION_DENIED",
-                "Calendar permission was denied; please grant it in system settings.",
-                null,
-            )
+            val code = if (currentStatus() == "permanently_denied") {
+                "PERMANENTLY_DENIED"
+            } else {
+                "PERMISSION_DENIED"
+            }
+            val msg = "Calendar permission was denied; please grant it in system settings."
+            for ((_, p) in snapshot) {
+                if (p.delivered.compareAndSet(false, true)) {
+                    p.result.error(code, msg, null)
+                }
+            }
             return true
         }
-        // Re-dispatch the original call now that permission is granted.
-        if (method != null) {
+        // Re-dispatch every parked call now that permission is granted.
+        for ((_, p) in snapshot) {
+            if (!p.delivered.compareAndSet(false, true)) continue
             try {
-                handle(method, args, result)
+                handle(p.method, p.args, p.result)
             } catch (e: Exception) {
-                result.error("BRIDGE_ERROR", e.message, null)
+                p.result.error("BRIDGE_ERROR", e.message, null)
             }
-        } else {
-            result.success(mapOf("granted" to true))
         }
         return true
     }
+
+    private fun nextCallId(): String = "cal-${callSeq.incrementAndGet()}"
 
     // -------- CRUD --------
 

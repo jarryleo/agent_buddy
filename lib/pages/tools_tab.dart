@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show PlatformException;
 import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
@@ -52,11 +51,23 @@ class ToolsTab extends StatelessWidget {
                   masterEnabled: settings.toolsEnabled,
                   onToggle: (v) async {
                     if (t.id == 'reminders' && v) {
-                      await _maybePromptForTodoCalendar(context);
+                      // On Android the reminders tool needs a
+                      // "todo" calendar to be picked. We pop the
+                      // picker **every time** the user flips the
+                      // switch on (not just the first time) so
+                      // they can switch the backing calendar
+                      // whenever they want. If they cancel the
+                      // sheet, we roll the switch back to off so
+                      // the UI stays consistent with reality.
+                      final picked = await _promptForTodoCalendar(
+                        context,
+                      );
+                      if (picked == null) return;
+                      if (!context.mounted) return;
+                      await settings.toggleTool(t.id, true);
+                      return;
                     }
-                    if (context.mounted) {
-                      await settings.toggleTool(t.id, v);
-                    }
+                    await settings.toggleTool(t.id, v);
                   },
                 );
               },
@@ -67,27 +78,25 @@ class ToolsTab extends StatelessWidget {
     );
   }
 
-  /// On Android, the first time the user enables the reminders
-  /// tool we ask them to pick a writable calendar as the "todo"
-  /// container. If a calendar is already configured, this is a
-  /// no-op. If the user has no writable calendar accounts (e.g.
-  /// fresh device with no Google account), we surface a snackbar
-  /// and let them try again later.
-  Future<void> _maybePromptForTodoCalendar(BuildContext context) async {
+  /// Always show the calendar picker when the user enables the
+  /// reminders tool. Returns the picked calendar id, or `null` if
+  /// the user dismissed the sheet (in which case the caller should
+  /// NOT toggle the tool on). On iOS the picker is a no-op because
+  /// the system Reminders framework owns the storage; we return
+  /// the synthetic `ios_default` id so the toggle can proceed.
+  Future<String?> _promptForTodoCalendar(BuildContext context) async {
     final tools = context.read<ToolService>();
     final reminders = tools.reminders;
-    if (reminders is! RemindersServiceIo) return;
-    try {
-      final existing = await reminders.getTodoCalendar();
-      if (existing != null) return;
-    } on PlatformException {
-      // Permission may not be granted yet — proceed to picker
-      // which will trigger the system permission dialog.
+    if (reminders is! RemindersServiceIo) {
+      // iOS path — no picker needed, the system Reminders store is
+      // the single canonical container. Fall through and let the
+      // caller enable the tool.
+      return 'ios_default';
     }
-    if (!context.mounted) return;
     final picked = await ReminderCalendarPickerSheet.show(context, reminders);
-    if (picked == null) return;
+    if (picked == null) return null;
     await reminders.setTodoCalendar(picked);
+    return picked;
   }
 }
 

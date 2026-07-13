@@ -9,6 +9,15 @@ class RemindersTool extends ToolBase {
   @override String get description => '管理提醒和待办(iOS 用 Reminders,Android 用日历)。需要权限。仅手机可用。';
   @override bool get isSupportedOnCurrentPlatform => isMobile();
 
+  // On Android the tool needs the user to pick a "todo" calendar
+  // before any list/create can succeed. Defaulting it to on would
+  // mean the very first model invocation either fails with
+  // `NO_TODO_CALENDAR` or silently creates entries in a calendar
+  // the user didn't pick. We default to off and let the tools tab
+  // walk the user through the picker on the first enable.
+  @override
+  bool get isEnabledByDefault => false;
+
   @override Map<String, dynamic> buildSchema() {
     if (!isSupportedOnCurrentPlatform) return {};
     return {
