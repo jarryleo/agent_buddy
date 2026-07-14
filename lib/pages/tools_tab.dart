@@ -75,12 +75,21 @@ class ToolsTab extends StatelessWidget {
                       // setup (spreadsheet id + OAuth). Refuse to
                       // flip the switch on until the user has
                       // saved a valid config; instead, jump them
-                      // straight to the settings sheet.
+                      // straight to the settings sheet and only
+                      // commit the flip if they actually saved.
                       if (v && !settings.googleSheetConfig.isFullyConfigured) {
-                        await _openGoogleSheetSettings(context);
+                        final saved = await _openGoogleSheetSettings(context);
                         if (!context.mounted) return;
-                        // Roll back the optimistic switch flip.
-                        await settings.toggleTool(t.id, false);
+                        if (saved == true &&
+                            settings.googleSheetConfig.isFullyConfigured) {
+                          await settings.toggleTool(t.id, true);
+                        }
+                        // Cancel / dismiss / unsaved: tool stays
+                        // off. We never call `toggleTool(true)`,
+                        // so `tool.enabled` is still false and the
+                        // Switch's value never moved away from
+                        // false — no snap-back flicker, no
+                        // "looks enabled but isn't" window.
                         return;
                       }
                       await settings.toggleTool(t.id, v);
@@ -121,9 +130,12 @@ class ToolsTab extends StatelessWidget {
   /// Pop the Google Sheet settings sheet. Pulls the shared
   /// [GoogleSheetsService] off the [ToolService] container so the
   /// sheet sees the same instance the `google_sheet` tool uses.
-  Future<void> _openGoogleSheetSettings(BuildContext context) async {
+  /// Returns `true` if the user saved, `false` if they dismissed
+  /// (back gesture / Cancel), `null` if the sheet was somehow
+  /// removed without a result (treated as cancel by the caller).
+  Future<bool?> _openGoogleSheetSettings(BuildContext context) async {
     final tools = context.read<ToolService>();
-    await GoogleSheetSettingsSheet.show(context, tools.googleSheets);
+    return GoogleSheetSettingsSheet.show(context, tools.googleSheets);
   }
 }
 

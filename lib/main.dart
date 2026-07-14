@@ -143,6 +143,7 @@ class AgentBuddyApp extends StatelessWidget {
             memoriesBox: memoriesBox,
             timerService: timerService,
             storage: storage,
+            googleSheets: googleSheets,
           ),
         ),
         Provider<ImageService>(create: (_) => ImageService()),

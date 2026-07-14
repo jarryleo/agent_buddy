@@ -17,8 +17,14 @@ class GoogleSheetSettingsSheet extends StatefulWidget {
   const GoogleSheetSettingsSheet({super.key, required this.service});
   final GoogleSheetsService service;
 
-  static Future<void> show(BuildContext context, GoogleSheetsService service) {
-    return showModalBottomSheet<void>(
+  /// Pop the sheet with a result. `true` = the user clicked Save
+  /// and the config is now fully usable; `false` = the user
+  /// dismissed without saving (back gesture, tap outside, Cancel
+  /// button). The caller uses this to decide whether to enable
+  /// the tool's per-row switch — without it, the tools tab toggle
+  /// gate can't tell a real save from a cancel.
+  static Future<bool?> show(BuildContext context, GoogleSheetsService service) {
+    return showModalBottomSheet<bool?>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -138,7 +144,7 @@ class _GoogleSheetSettingsSheetState extends State<GoogleSheetSettingsSheet> {
     final tab = _defaultTab ?? '';
     await widget.service.updateSelection(spreadsheetId: id, defaultTab: tab);
     if (!mounted) return;
-    Navigator.of(context).pop();
+    Navigator.of(context).pop(true);
   }
 
   Future<void> _onSignOut() async {
@@ -293,7 +299,9 @@ class _GoogleSheetSettingsSheetState extends State<GoogleSheetSettingsSheet> {
                     ),
                   const Spacer(),
                   TextButton(
-                    onPressed: _busy ? null : () => Navigator.of(context).pop(),
+                    onPressed: _busy
+                        ? null
+                        : () => Navigator.of(context).pop(false),
                     child: Text(l10n.commonCancel),
                   ),
                   const SizedBox(width: 8),
