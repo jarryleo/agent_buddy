@@ -47,9 +47,9 @@ void main() {
           expectedId: '1',
           timeout: const Duration(seconds: 1),
         );
-        controller.add(utf8.encode(
-          '{"jsonrpc":"2.0","id":1,"result":{"phase":"init"}}\n',
-        ));
+        controller.add(
+          utf8.encode('{"jsonrpc":"2.0","id":1,"result":{"phase":"init"}}\n'),
+        );
         expect(await first, contains('"id":1'));
 
         // Second call: id=2 — this is the one that would have
@@ -58,41 +58,45 @@ void main() {
           expectedId: '2',
           timeout: const Duration(seconds: 1),
         );
-        controller.add(utf8.encode(
-          '{"jsonrpc":"2.0","id":2,"result":{"phase":"request"}}\n',
-        ));
+        controller.add(
+          utf8.encode(
+            '{"jsonrpc":"2.0","id":2,"result":{"phase":"request"}}\n',
+          ),
+        );
         expect(await second, contains('"id":2'));
       },
     );
 
-    test('buffers non-matching lines until the matching id is requested',
-        () async {
-      // Simulates: response to id=2 arrives before we even ask for
-      // it, then we ask for id=2 later and get the buffered line.
-      final controller = StreamController<List<int>>();
-      final reader = McpStdioLineReader(
-        controller.stream,
-        stderrBuffer: StringBuffer(),
-      );
-      addTearDown(() async {
-        await reader.close();
-        await controller.close();
-      });
+    test(
+      'buffers non-matching lines until the matching id is requested',
+      () async {
+        // Simulates: response to id=2 arrives before we even ask for
+        // it, then we ask for id=2 later and get the buffered line.
+        final controller = StreamController<List<int>>();
+        final reader = McpStdioLineReader(
+          controller.stream,
+          stderrBuffer: StringBuffer(),
+        );
+        addTearDown(() async {
+          await reader.close();
+          await controller.close();
+        });
 
-      // Send the id=2 response up front, before any waiter exists.
-      controller.add(utf8.encode(
-        '{"jsonrpc":"2.0","id":2,"result":{"x":1}}\n',
-      ));
-      // Let the microtask drain so the listener has buffered the line.
-      await Future<void>.delayed(Duration.zero);
+        // Send the id=2 response up front, before any waiter exists.
+        controller.add(
+          utf8.encode('{"jsonrpc":"2.0","id":2,"result":{"x":1}}\n'),
+        );
+        // Let the microtask drain so the listener has buffered the line.
+        await Future<void>.delayed(Duration.zero);
 
-      // Now ask for id=2 — should return from the buffer.
-      final line = await reader.nextLine(
-        expectedId: '2',
-        timeout: const Duration(seconds: 1),
-      );
-      expect(line, contains('"id":2'));
-    });
+        // Now ask for id=2 — should return from the buffer.
+        final line = await reader.nextLine(
+          expectedId: '2',
+          timeout: const Duration(seconds: 1),
+        );
+        expect(line, contains('"id":2'));
+      },
+    );
 
     test('strips a UTF-8 BOM from the first line', () async {
       final controller = StreamController<List<int>>();
@@ -124,8 +128,7 @@ void main() {
       expect(line, contains('"id":7'));
     });
 
-    test('times out and includes stderr tail in the error message',
-        () async {
+    test('times out and includes stderr tail in the error message', () async {
       final stderr = StringBuffer();
       final controller = StreamController<List<int>>();
       final reader = McpStdioLineReader(
@@ -173,9 +176,9 @@ void main() {
         expectedId: '5',
         timeout: const Duration(seconds: 1),
       );
-      controller.add(utf8.encode(
-        '{"jsonrpc":"2.0","id":5,"result":{"ok":true}}\n',
-      ));
+      controller.add(
+        utf8.encode('{"jsonrpc":"2.0","id":5,"result":{"ok":true}}\n'),
+      );
       // Close stdout before awaiting the future.
       await controller.close();
 
@@ -183,36 +186,38 @@ void main() {
       expect(line, contains('"id":5'));
     });
 
-    test('errors with descriptive message on onDone with no buffered line',
-        () async {
-      final stderr = StringBuffer();
-      final controller = StreamController<List<int>>();
-      final reader = McpStdioLineReader(
-        controller.stream,
-        stderrBuffer: stderr,
-      );
-      addTearDown(() async {
-        await reader.close();
-      });
+    test(
+      'errors with descriptive message on onDone with no buffered line',
+      () async {
+        final stderr = StringBuffer();
+        final controller = StreamController<List<int>>();
+        final reader = McpStdioLineReader(
+          controller.stream,
+          stderrBuffer: stderr,
+        );
+        addTearDown(() async {
+          await reader.close();
+        });
 
-      stderr.write('boom\n');
+        stderr.write('boom\n');
 
-      final first = reader.nextLine(
-        expectedId: '9',
-        timeout: const Duration(seconds: 1),
-      );
-      await controller.close();
+        final first = reader.nextLine(
+          expectedId: '9',
+          timeout: const Duration(seconds: 1),
+        );
+        await controller.close();
 
-      await expectLater(
-        first,
-        throwsA(
-          isA<McpException>().having(
-            (e) => e.message,
-            'message',
-            allOf(contains('意外退出'), contains('boom')),
+        await expectLater(
+          first,
+          throwsA(
+            isA<McpException>().having(
+              (e) => e.message,
+              'message',
+              allOf(contains('意外退出'), contains('boom')),
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
   });
 }

@@ -13,9 +13,7 @@ class McpTab extends StatelessWidget {
 
   Future<void> _openEdit(BuildContext context, [McpProvider? existing]) async {
     final result = await Navigator.of(context).push<McpProvider>(
-      MaterialPageRoute(
-        builder: (_) => AddMcpProviderPage(existing: existing),
-      ),
+      MaterialPageRoute(builder: (_) => AddMcpProviderPage(existing: existing)),
     );
     if (result == null) return;
     if (existing == null) {
@@ -42,10 +40,7 @@ class McpTab extends StatelessWidget {
         foregroundColor: Colors.white,
       ),
       body: servers.isEmpty
-          ? EmptyHint(
-              text: l10n.mcpListEmpty,
-              icon: Icons.cable,
-            )
+          ? EmptyHint(text: l10n.mcpListEmpty, icon: Icons.cable)
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
               itemCount: servers.length,
@@ -119,9 +114,7 @@ class McpTab extends StatelessWidget {
                                 context: context,
                                 builder: (ctx) => AlertDialog(
                                   title: Text(l10n.mcpDeleteTitle),
-                                  content: Text(
-                                    l10n.mcpDeleteConfirm(s.name),
-                                  ),
+                                  content: Text(l10n.mcpDeleteConfirm(s.name)),
                                   actions: [
                                     TextButton(
                                       onPressed: () =>
@@ -129,8 +122,7 @@ class McpTab extends StatelessWidget {
                                       child: Text(l10n.commonCancel),
                                     ),
                                     TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(ctx, true),
+                                      onPressed: () => Navigator.pop(ctx, true),
                                       child: Text(l10n.commonDelete),
                                     ),
                                   ],

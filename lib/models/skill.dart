@@ -124,9 +124,7 @@ https://www.tianqi.com/<城市拼音>/
   /// Map by id for O(1) lookups (e.g. when deciding whether an
   /// unknown id in the persisted list is a built-in we should
   /// re-seed).
-  static final Map<String, BuiltinSkill> _byId = {
-    for (final s in all) s.id: s,
-  };
+  static final Map<String, BuiltinSkill> _byId = {for (final s in all) s.id: s};
 
   static BuiltinSkill? byId(String id) => _byId[id];
 }

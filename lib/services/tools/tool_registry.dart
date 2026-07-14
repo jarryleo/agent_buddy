@@ -16,6 +16,7 @@ import 'load_skill_tool.dart';
 import 'mcp_tool.dart';
 import 'notification_tool.dart';
 import 'timer_tool.dart';
+import 'google_sheet_tool.dart';
 
 /// Central registry that maps tool [id] to [ToolBase] instances.
 ///
@@ -62,6 +63,9 @@ class ToolRegistry {
     // Push / scheduled callbacks to the user (runtime only).
     NotificationTool(),
     TimerTool(),
+
+    // External services — third-party APIs the user signs into.
+    GoogleSheetTool(),
 
     // MCP (Model Context Protocol) — dynamic external tool registration.
     McpTool(),

@@ -65,8 +65,8 @@ class _ChatInputState extends State<ChatInput> {
     final finalText = nonImageText.isEmpty
         ? text
         : text.isNotEmpty
-            ? '$text\n---\n${nonImageText.join('\n')}'
-            : nonImageText.join('\n');
+        ? '$text\n---\n${nonImageText.join('\n')}'
+        : nonImageText.join('\n');
 
     widget.onSend(finalText, images);
     _controller.clear();
@@ -176,19 +176,15 @@ class _ChatInputState extends State<ChatInput> {
   /// via platform-specific tooling. Returns empty list on failure.
   Future<List<String>> _readFileDropList() async {
     if (!Platform.isWindows) return [];
-    final result = await Process.run(
-      'powershell',
-      [
-        '-NoProfile',
-        '-Command',
-        'Add-Type -AssemblyName System.Windows.Forms; '
-            '\$files = [System.Windows.Forms.Clipboard]::GetFileDropList(); '
-            'if (\$files -ne \$null -and \$files.Count -gt 0) { '
-            'foreach (\$f in \$files) { Write-Output \$f } '
-            '} else { Write-Output \'\' }',
-      ],
-      runInShell: true,
-    );
+    final result = await Process.run('powershell', [
+      '-NoProfile',
+      '-Command',
+      'Add-Type -AssemblyName System.Windows.Forms; '
+          '\$files = [System.Windows.Forms.Clipboard]::GetFileDropList(); '
+          'if (\$files -ne \$null -and \$files.Count -gt 0) { '
+          'foreach (\$f in \$files) { Write-Output \$f } '
+          '} else { Write-Output \'\' }',
+    ], runInShell: true);
     if (result.exitCode != 0) return [];
     return (result.stdout as String)
         .split('\r\n')
@@ -207,20 +203,16 @@ class _ChatInputState extends State<ChatInput> {
         'ab_clip_${DateTime.now().microsecondsSinceEpoch}.png',
       );
       try {
-        final psResult = await Process.run(
-          'powershell',
-          [
-            '-NoProfile',
-            '-Command',
-            'Add-Type -AssemblyName System.Windows.Forms; '
-                '\$img = [System.Windows.Forms.Clipboard]::GetImage(); '
-                'if (\$img -ne \$null) { '
-                '\$img.Save(\'$tempFile\', [System.Drawing.Imaging.ImageFormat]::Png); '
-                'Write-Output \'OK\' '
-                '} else { Write-Output \'null\' }',
-          ],
-          runInShell: true,
-        );
+        final psResult = await Process.run('powershell', [
+          '-NoProfile',
+          '-Command',
+          'Add-Type -AssemblyName System.Windows.Forms; '
+              '\$img = [System.Windows.Forms.Clipboard]::GetImage(); '
+              'if (\$img -ne \$null) { '
+              '\$img.Save(\'$tempFile\', [System.Drawing.Imaging.ImageFormat]::Png); '
+              'Write-Output \'OK\' '
+              '} else { Write-Output \'null\' }',
+        ], runInShell: true);
         if (psResult.exitCode == 0 &&
             psResult.stdout.toString().trim() == 'OK') {
           final file = File(tempFile);
@@ -278,7 +270,9 @@ class _ChatInputState extends State<ChatInput> {
   /// replacing any selected text.
   void _insertText(String text) {
     final selection = _controller.selection;
-    final offset = selection.isValid ? selection.start : _controller.text.length;
+    final offset = selection.isValid
+        ? selection.start
+        : _controller.text.length;
     final end = selection.isValid && selection.start != selection.end
         ? selection.end
         : offset;
@@ -364,15 +358,13 @@ class _ChatInputState extends State<ChatInput> {
                           onPressed: widget.enabled ? _send : null,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppTheme.primary,
-                            disabledBackgroundColor: AppTheme.primary.withValues(
-                              alpha: 0.4,
-                            ),
+                            disabledBackgroundColor: AppTheme.primary
+                                .withValues(alpha: 0.4),
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                             ),
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 16),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
                             elevation: 0,
                           ),
                           child: const Icon(Icons.send_rounded, size: 18),
@@ -642,7 +634,8 @@ class _AttachmentThumbnail extends StatelessWidget {
                       child: Image.file(
                         File(path),
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stack) => _fileIcon(context, name),
+                        errorBuilder: (context, error, stack) =>
+                            _fileIcon(context, name),
                       ),
                     )
                   : _fileIcon(context, name),

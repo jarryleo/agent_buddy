@@ -5,24 +5,40 @@ import '../tool_service.dart';
 import 'tool_base.dart';
 
 class FileTool extends ToolBase {
-  @override String get id => 'file';
-  @override String get name => '文件';
-  @override String get description => '管理电脑文件(读/写/删/改名/列目录/查属性)。仅 Windows / macOS / Linux 可用。';
-  @override bool get isSupportedOnCurrentPlatform => isDesktop();
+  @override
+  String get id => 'file';
+  @override
+  String get name => '文件';
+  @override
+  String get description =>
+      '管理电脑文件(读/写/删/改名/列目录/查属性)。仅 Windows / macOS / Linux 可用。';
+  @override
+  bool get isSupportedOnCurrentPlatform => isDesktop();
 
-  @override Map<String, dynamic> buildSchema() {
+  @override
+  Map<String, dynamic> buildSchema() {
     if (!isSupportedOnCurrentPlatform) return {};
     return {
       'type': 'function',
       'function': {
-        'name': 'file', 'description': description,
+        'name': 'file',
+        'description': description,
         'parameters': {
           'type': 'object',
           'properties': {
             'action': {
               'type': 'string',
-              'enum': ['read', 'read_attr', 'write', 'append', 'delete', 'rename', 'list_dir'],
-              'description': '操作: read(读文本)/read_attr(查属性)/write(覆盖写)/append(追加)/delete(删)/rename(重命名/移动)/list_dir(列目录)',
+              'enum': [
+                'read',
+                'read_attr',
+                'write',
+                'append',
+                'delete',
+                'rename',
+                'list_dir',
+              ],
+              'description':
+                  '操作: read(读文本)/read_attr(查属性)/write(覆盖写)/append(追加)/delete(删)/rename(重命名/移动)/list_dir(列目录)',
             },
             'path': {
               'type': 'string',
@@ -32,13 +48,11 @@ class FileTool extends ToolBase {
               'type': 'string',
               'description': 'write 时必填(新内容),append 时可填(追加内容)',
             },
-            'new_path': {
-              'type': 'string',
-              'description': 'rename 时必填(新路径)',
-            },
+            'new_path': {'type': 'string', 'description': 'rename 时必填(新路径)'},
             'recursive': {
               'type': 'boolean',
-              'description': 'delete 时是否递归删目录(默认 false,目录非空需 true);list_dir 时是否递归列子目录(默认 false)',
+              'description':
+                  'delete 时是否递归删目录(默认 false,目录非空需 true);list_dir 时是否递归列子目录(默认 false)',
               'default': false,
             },
           },
@@ -49,9 +63,14 @@ class FileTool extends ToolBase {
   }
 
   @override
-  Future<String> execute(Map<String, dynamic> args, ToolService services) async {
+  Future<String> execute(
+    Map<String, dynamic> args,
+    ToolService services,
+  ) async {
     if (!isDesktop()) {
-      throw ToolException('file tool is only supported on desktop (macOS / Windows / Linux)');
+      throw ToolException(
+        'file tool is only supported on desktop (macOS / Windows / Linux)',
+      );
     }
 
     final action = args['action'] as String? ?? '';
@@ -100,13 +119,18 @@ class FileTool extends ToolBase {
       try {
         final text = utf8.decode(bytes);
         return jsonEncode({
-          'action': 'read', 'path': path,
-          'size': bytes.length, 'encoding': 'utf-8', 'content': text,
+          'action': 'read',
+          'path': path,
+          'size': bytes.length,
+          'encoding': 'utf-8',
+          'content': text,
         });
       } on FormatException {
         return jsonEncode({
-          'action': 'read', 'path': path,
-          'size': bytes.length, 'encoding': 'binary',
+          'action': 'read',
+          'path': path,
+          'size': bytes.length,
+          'encoding': 'binary',
           'content': '[binary file, ${bytes.length} bytes]',
         });
       }
@@ -123,7 +147,8 @@ class FileTool extends ToolBase {
     try {
       final stat = File(path).statSync();
       return jsonEncode({
-        'action': 'read_attr', 'path': path,
+        'action': 'read_attr',
+        'path': path,
         'type': _typeName(entityType),
         'size': stat.size,
         'modified_ms': stat.modified.millisecondsSinceEpoch,
@@ -150,7 +175,10 @@ class FileTool extends ToolBase {
       final file = File(path);
       await file.writeAsString(content);
       return jsonEncode({
-        'action': 'write', 'path': path, 'size': content.length, 'ok': true,
+        'action': 'write',
+        'path': path,
+        'size': content.length,
+        'ok': true,
       });
     } catch (e) {
       throw ToolException('error writing file: $e');
@@ -165,7 +193,10 @@ class FileTool extends ToolBase {
       }
       await file.writeAsString(content, mode: FileMode.append);
       return jsonEncode({
-        'action': 'append', 'path': path, 'size': content.length, 'ok': true,
+        'action': 'append',
+        'path': path,
+        'size': content.length,
+        'ok': true,
       });
     } catch (e) {
       throw ToolException('error appending to file: $e');
@@ -192,9 +223,7 @@ class FileTool extends ToolBase {
       } else {
         await File(path).delete();
       }
-      return jsonEncode({
-        'action': 'delete', 'path': path, 'ok': true,
-      });
+      return jsonEncode({'action': 'delete', 'path': path, 'ok': true});
     } on ToolException {
       rethrow;
     } catch (e) {
@@ -218,7 +247,10 @@ class FileTool extends ToolBase {
         await File(path).rename(newPath);
       }
       return jsonEncode({
-        'action': 'rename', 'path': path, 'new_path': newPath, 'ok': true,
+        'action': 'rename',
+        'path': path,
+        'new_path': newPath,
+        'ok': true,
       });
     } on ToolException {
       rethrow;
@@ -247,8 +279,8 @@ class FileTool extends ToolBase {
           'type': entity is File
               ? 'file'
               : entity is Directory
-                  ? 'dir'
-                  : 'link',
+              ? 'dir'
+              : 'link',
           'size': stat.size,
           'modified_ms': stat.modified.millisecondsSinceEpoch,
         });
@@ -260,7 +292,8 @@ class FileTool extends ToolBase {
         return (a['name'] as String).compareTo(b['name'] as String);
       });
       return jsonEncode({
-        'action': 'list_dir', 'path': path,
+        'action': 'list_dir',
+        'path': path,
         'count': entries.length,
         'truncated': entries.length >= maxEntries,
         'recursive': recursive,

@@ -41,14 +41,8 @@ class McpTool extends ToolBase {
                   '目标 MCP 服务器名称,必须与列表中已配置的名称完全一致。'
                   '可用服务器: ${_availableServers()}',
             },
-            'tool': {
-              'type': 'string',
-              'description': '要调用的工具名称',
-            },
-            'arguments': {
-              'type': 'object',
-              'description': '传递给工具的参数',
-            },
+            'tool': {'type': 'string', 'description': '要调用的工具名称'},
+            'arguments': {'type': 'object', 'description': '传递给工具的参数'},
           },
           'required': ['server', 'tool', 'arguments'],
         },
@@ -57,7 +51,10 @@ class McpTool extends ToolBase {
   }
 
   @override
-  Future<String> execute(Map<String, dynamic> args, ToolService services) async {
+  Future<String> execute(
+    Map<String, dynamic> args,
+    ToolService services,
+  ) async {
     final serverName = args['server'] as String? ?? '';
     final toolName = args['tool'] as String? ?? '';
     final arguments =

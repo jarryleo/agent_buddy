@@ -332,5 +332,23 @@
   "mcpTestConnection": "测试连接",
   "mcpTesting": "正在测试连接…",
   "mcpTestSuccess": "连接成功",
-  "mcpTestFailed": "连接失败"
+  "mcpTestFailed": "连接失败",
+
+  "googleSheetSheetTitle": "Google Sheet",
+  "googleSheetSheetSubtitle": "通过 OAuth 把 Agent Buddy 接入 Google Sheet,让模型可以读写你指定的表格。",
+  "googleSheetInputLabel": "Google Sheet 链接或 ID",
+  "googleSheetInputHint": "https://docs.google.com/spreadsheets/d/…/edit   或直接粘贴 ID",
+  "googleSheetTestButton": "测试连接",
+  "googleSheetTestAuthorizing": "正在浏览器中授权…",
+  "googleSheetDefaultTabLabel": "默认表(模型未指定 tab 时用这张)",
+  "googleSheetRefreshButton": "刷新表格",
+  "googleSheetEmptyTabs": "点击刷新从表格拉取表名。",
+  "googleSheetEmptyTabsUnauthorized": "请先授权后加载表名。",
+  "googleSheetSignOut": "退出登录",
+  "googleSheetStatusUnconfigured": "未配置",
+  "googleSheetStatusUnauthorized": "未授权 — 点击测试连接",
+  "googleSheetStatusAuthorizing": "等待浏览器回调…",
+  "googleSheetStatusAuthorized": "已连接",
+  "googleSheetStatusAuthorizedAs": "已连接:{email}",
+  "googleSheetStatusError": "授权出错"
 }

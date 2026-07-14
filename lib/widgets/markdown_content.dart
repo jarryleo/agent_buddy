@@ -154,14 +154,16 @@ class MarkdownContent extends StatelessWidget {
                 ),
               );
             },
-            errorBuilder: (context, error, stack) => _imageError(context, alt ?? uri.toString()),
+            errorBuilder: (context, error, stack) =>
+                _imageError(context, alt ?? uri.toString()),
           );
         } else if (isFile) {
           final filePath = uri.toFilePath();
           image = Image.file(
             File(filePath),
             fit: BoxFit.contain,
-            errorBuilder: (context, error, stack) => _imageError(context, alt ?? uri.toString()),
+            errorBuilder: (context, error, stack) =>
+                _imageError(context, alt ?? uri.toString()),
           );
         } else if (isData) {
           image = _buildDataImage(context, uri, alt);
@@ -172,7 +174,8 @@ class MarkdownContent extends StatelessWidget {
             image = Image.file(
               File(path),
               fit: BoxFit.contain,
-              errorBuilder: (context, error, stack) => _imageError(context, alt ?? path),
+              errorBuilder: (context, error, stack) =>
+                  _imageError(context, alt ?? path),
             );
           } catch (_) {
             image = _imageError(context, alt ?? path);
@@ -182,9 +185,17 @@ class MarkdownContent extends StatelessWidget {
         return GestureDetector(
           onTap: () {
             if (isNetwork) {
-              ImagePreviewPage.showNetwork(context, uri.toString(), title: title);
+              ImagePreviewPage.showNetwork(
+                context,
+                uri.toString(),
+                title: title,
+              );
             } else if (isFile) {
-              ImagePreviewPage.showLocal(context, uri.toFilePath(), title: title);
+              ImagePreviewPage.showLocal(
+                context,
+                uri.toFilePath(),
+                title: title,
+              );
             }
           },
           child: ClipRRect(
@@ -216,7 +227,11 @@ Widget _imageError(BuildContext context, String label) {
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.broken_image_outlined, size: 18, color: context.textSecondary),
+        Icon(
+          Icons.broken_image_outlined,
+          size: 18,
+          color: context.textSecondary,
+        ),
         SizedBox(width: 8),
         Flexible(
           child: Text(
@@ -242,7 +257,8 @@ Widget _buildDataImage(BuildContext context, Uri uri, String? alt) {
     return Image.memory(
       decoded,
       fit: BoxFit.contain,
-      errorBuilder: (context, error, stack) => _imageError(context, alt ?? data),
+      errorBuilder: (context, error, stack) =>
+          _imageError(context, alt ?? data),
     );
   } catch (_) {
     return _imageError(context, alt ?? uri.toString());

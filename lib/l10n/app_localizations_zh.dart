@@ -949,4 +949,59 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get mcpTestFailed => '连接失败';
+
+  @override
+  String get googleSheetSheetTitle => 'Google Sheet';
+
+  @override
+  String get googleSheetSheetSubtitle =>
+      '通过 OAuth 把 Agent Buddy 接入 Google Sheet,让模型可以读写你指定的表格。';
+
+  @override
+  String get googleSheetInputLabel => 'Google Sheet 链接或 ID';
+
+  @override
+  String get googleSheetInputHint =>
+      'https://docs.google.com/spreadsheets/d/…/edit   或直接粘贴 ID';
+
+  @override
+  String get googleSheetTestButton => '测试连接';
+
+  @override
+  String get googleSheetTestAuthorizing => '正在浏览器中授权…';
+
+  @override
+  String get googleSheetDefaultTabLabel => '默认表(模型未指定 tab 时用这张)';
+
+  @override
+  String get googleSheetRefreshButton => '刷新表格';
+
+  @override
+  String get googleSheetEmptyTabs => '点击刷新从表格拉取表名。';
+
+  @override
+  String get googleSheetEmptyTabsUnauthorized => '请先授权后加载表名。';
+
+  @override
+  String get googleSheetSignOut => '退出登录';
+
+  @override
+  String get googleSheetStatusUnconfigured => '未配置';
+
+  @override
+  String get googleSheetStatusUnauthorized => '未授权 — 点击测试连接';
+
+  @override
+  String get googleSheetStatusAuthorizing => '等待浏览器回调…';
+
+  @override
+  String get googleSheetStatusAuthorized => '已连接';
+
+  @override
+  String googleSheetStatusAuthorizedAs(String email) {
+    return '已连接:$email';
+  }
+
+  @override
+  String get googleSheetStatusError => '授权出错';
 }

@@ -18,10 +18,7 @@ import 'mcp_service.dart' show McpException;
 /// Pass the [stderrBuffer] shared with the process's stderr drain
 /// so timeout / done error messages can include stderr context.
 class McpStdioLineReader {
-  McpStdioLineReader(
-    Stream<List<int>> stdout, {
-    required this.stderrBuffer,
-  }) {
+  McpStdioLineReader(Stream<List<int>> stdout, {required this.stderrBuffer}) {
     _sub = stdout
         .transform(const Utf8Decoder(allowMalformed: true))
         .transform(const LineSplitter())
@@ -92,9 +89,7 @@ class McpStdioLineReader {
     } else {
       final tail = stderrTail();
       c.completeError(
-        McpException(
-          'MCP 进程意外退出${tail.isNotEmpty ? " (stderr: $tail)" : ""}',
-        ),
+        McpException('MCP 进程意外退出${tail.isNotEmpty ? " (stderr: $tail)" : ""}'),
       );
     }
   }
@@ -104,10 +99,7 @@ class McpStdioLineReader {
   /// are kept in the internal buffer and re-checked against future
   /// calls. Times out after [timeout] with a descriptive
   /// [McpException] that includes the latest stderr tail.
-  Future<String> nextLine({
-    String? expectedId,
-    required Duration timeout,
-  }) {
+  Future<String> nextLine({String? expectedId, required Duration timeout}) {
     while (_buffered.isNotEmpty) {
       final line = _buffered.removeAt(0);
       if (_matchesExpected(line, expectedId)) {
@@ -117,24 +109,25 @@ class McpStdioLineReader {
 
     if (_done) {
       if (_doneError != null) return Future.error(_doneError!);
-      return Future.error(
-        McpException('MCP 进程意外退出${_stderrDetail()}'),
-      );
+      return Future.error(McpException('MCP 进程意外退出${_stderrDetail()}'));
     }
 
     final c = Completer<String>();
     _waiting = c;
     _expectedId = expectedId;
-    return c.future.timeout(timeout, onTimeout: () {
-      // A late line may have already drained `_waiting` between
-      // the timer firing and this callback running — only clear
-      // state if we're still the active waiter.
-      if (identical(_waiting, c)) {
-        _waiting = null;
-        _expectedId = null;
-      }
-      throw McpException('MCP 请求超时(${timeout.inSeconds}s)${_stderrDetail()}');
-    });
+    return c.future.timeout(
+      timeout,
+      onTimeout: () {
+        // A late line may have already drained `_waiting` between
+        // the timer firing and this callback running — only clear
+        // state if we're still the active waiter.
+        if (identical(_waiting, c)) {
+          _waiting = null;
+          _expectedId = null;
+        }
+        throw McpException('MCP 请求超时(${timeout.inSeconds}s)${_stderrDetail()}');
+      },
+    );
   }
 
   String stderrTail() => stderrBuffer.toString().trim();

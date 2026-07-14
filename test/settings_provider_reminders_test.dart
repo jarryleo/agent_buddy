@@ -76,8 +76,9 @@ void main() {
     test('fresh install: every other builtin tool IS in activeToolIds '
         'and enabled (regression guard for the default-on behavior)', () async {
       final p = await loadProvider();
+      const setupOnlyIds = {'reminders', 'google_sheet'};
       for (final t in ToolRegistry.all) {
-        if (t.id == 'reminders') continue;
+        if (setupOnlyIds.contains(t.id)) continue;
         if (!t.isSupportedOnCurrentPlatform) continue;
         expect(
           p.activeToolIds.contains(t.id),
@@ -113,7 +114,10 @@ void main() {
       final stored = preExisting.map((t) => t.toRawJson()).toList();
       final activeIds = [
         for (final t in ToolRegistry.all)
-          if (t.isSupportedOnCurrentPlatform && t.id != 'reminders') t.id,
+          if (t.isSupportedOnCurrentPlatform &&
+              t.id != 'reminders' &&
+              t.id != 'google_sheet')
+            t.id,
       ];
       SharedPreferences.setMockInitialValues({
         'tools': stored,
@@ -127,8 +131,9 @@ void main() {
         reason: 'reminders must NOT be back-filled into activeToolIds',
       );
       // The other tools should still be there.
+      const setupOnlyIds = {'reminders', 'google_sheet'};
       for (final t in ToolRegistry.all) {
-        if (t.id == 'reminders') continue;
+        if (setupOnlyIds.contains(t.id)) continue;
         if (!t.isSupportedOnCurrentPlatform) continue;
         expect(
           p.activeToolIds.contains(t.id),
@@ -153,6 +158,7 @@ void main() {
       }
       for (final t in ToolRegistry.all) {
         if (t.id == 'reminders') continue;
+        if (t.id == 'google_sheet') continue;
         if (!t.isSupportedOnCurrentPlatform) continue;
         expect(
           stored.contains(t.id),

@@ -981,4 +981,63 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get mcpTestFailed => 'Connection failed';
+
+  @override
+  String get googleSheetSheetTitle => 'Google Sheet';
+
+  @override
+  String get googleSheetSheetSubtitle =>
+      'Connect Agent Buddy to a Google Sheet via OAuth. The model will be able to read / write the cells of the spreadsheet you choose.';
+
+  @override
+  String get googleSheetInputLabel => 'Spreadsheet URL or ID';
+
+  @override
+  String get googleSheetInputHint =>
+      'https://docs.google.com/spreadsheets/d/…/edit   or   the bare ID';
+
+  @override
+  String get googleSheetTestButton => 'Test connection';
+
+  @override
+  String get googleSheetTestAuthorizing => 'Authorizing in browser…';
+
+  @override
+  String get googleSheetDefaultTabLabel =>
+      'Default tab (used when the model omits `tab`)';
+
+  @override
+  String get googleSheetRefreshButton => 'Refresh tabs';
+
+  @override
+  String get googleSheetEmptyTabs =>
+      'Click refresh to load tabs from the spreadsheet.';
+
+  @override
+  String get googleSheetEmptyTabsUnauthorized =>
+      'Authorize first to load the tab list.';
+
+  @override
+  String get googleSheetSignOut => 'Sign out';
+
+  @override
+  String get googleSheetStatusUnconfigured => 'Not configured';
+
+  @override
+  String get googleSheetStatusUnauthorized =>
+      'Not authorized — click Test connection';
+
+  @override
+  String get googleSheetStatusAuthorizing => 'Waiting for browser…';
+
+  @override
+  String get googleSheetStatusAuthorized => 'Connected';
+
+  @override
+  String googleSheetStatusAuthorizedAs(String email) {
+    return 'Connected as $email';
+  }
+
+  @override
+  String get googleSheetStatusError => 'Authorization error';
 }

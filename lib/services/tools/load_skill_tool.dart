@@ -2,13 +2,17 @@ import '../tool_service.dart';
 import 'tool_base.dart';
 
 class LoadSkillTool extends ToolBase {
-  @override String get id => 'load_skill';
-  @override String get name => '加载技能';
-  @override String get description =>
-      '获取某个技能的完整内容。需要用到某个技能的具体指令时调用此工具获取完整内容';
-  @override bool get isSupportedOnCurrentPlatform => true;
+  @override
+  String get id => 'load_skill';
+  @override
+  String get name => '加载技能';
+  @override
+  String get description => '获取某个技能的完整内容。需要用到某个技能的具体指令时调用此工具获取完整内容';
+  @override
+  bool get isSupportedOnCurrentPlatform => true;
 
-  @override Map<String, dynamic> buildSchema() {
+  @override
+  Map<String, dynamic> buildSchema() {
     return {
       'type': 'function',
       'function': {
@@ -29,7 +33,10 @@ class LoadSkillTool extends ToolBase {
   }
 
   @override
-  Future<String> execute(Map<String, dynamic> args, ToolService services) async {
+  Future<String> execute(
+    Map<String, dynamic> args,
+    ToolService services,
+  ) async {
     throw ToolException(
       'load_skill requires the settings provider and is handled by the chat provider',
     );

@@ -43,11 +43,7 @@ class McpProvider {
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
-  McpProvider copyWith({
-    String? name,
-    String? jsonConfig,
-    bool? enabled,
-  }) {
+  McpProvider copyWith({String? name, String? jsonConfig, bool? enabled}) {
     return McpProvider(
       id: id,
       name: name ?? this.name,

@@ -4,10 +4,12 @@ import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
 import '../models/tool.dart';
 import '../providers/settings_provider.dart';
+import '../services/google_sheets_service.dart';
 import '../services/platform/reminders_service_io.dart';
 import '../services/tool_service.dart';
 import '../services/tools/tool_registry.dart';
 import '../theme/app_theme.dart';
+import 'google_sheet_settings_sheet.dart';
 import 'settings_page.dart';
 
 class ToolsTab extends StatelessWidget {
@@ -49,6 +51,9 @@ class ToolsTab extends StatelessWidget {
                   name: name,
                   description: description,
                   masterEnabled: settings.toolsEnabled,
+                  onTap: t.id == 'google_sheet'
+                      ? () => _openGoogleSheetSettings(context)
+                      : null,
                   onToggle: (v) async {
                     if (t.id == 'reminders' && v) {
                       // On Android the reminders tool needs a
@@ -59,12 +64,26 @@ class ToolsTab extends StatelessWidget {
                       // whenever they want. If they cancel the
                       // sheet, we roll the switch back to off so
                       // the UI stays consistent with reality.
-                      final picked = await _promptForTodoCalendar(
-                        context,
-                      );
+                      final picked = await _promptForTodoCalendar(context);
                       if (picked == null) return;
                       if (!context.mounted) return;
                       await settings.toggleTool(t.id, true);
+                      return;
+                    }
+                    if (t.id == 'google_sheet') {
+                      // The google_sheet tool needs a one-time
+                      // setup (spreadsheet id + OAuth). Refuse to
+                      // flip the switch on until the user has
+                      // saved a valid config; instead, jump them
+                      // straight to the settings sheet.
+                      if (v && !settings.googleSheetConfig.isFullyConfigured) {
+                        await _openGoogleSheetSettings(context);
+                        if (!context.mounted) return;
+                        // Roll back the optimistic switch flip.
+                        await settings.toggleTool(t.id, false);
+                        return;
+                      }
+                      await settings.toggleTool(t.id, v);
                       return;
                     }
                     await settings.toggleTool(t.id, v);
@@ -97,6 +116,14 @@ class ToolsTab extends StatelessWidget {
     if (picked == null) return null;
     await reminders.setTodoCalendar(picked);
     return picked;
+  }
+
+  /// Pop the Google Sheet settings sheet. Pulls the shared
+  /// [GoogleSheetsService] off the [ToolService] container so the
+  /// sheet sees the same instance the `google_sheet` tool uses.
+  Future<void> _openGoogleSheetSettings(BuildContext context) async {
+    final tools = context.read<ToolService>();
+    await GoogleSheetSettingsSheet.show(context, tools.googleSheets);
   }
 }
 
@@ -351,6 +378,7 @@ class _ToolCard extends StatelessWidget {
     required this.description,
     required this.masterEnabled,
     required this.onToggle,
+    this.onTap,
   });
 
   final AgentTool tool;
@@ -359,6 +387,7 @@ class _ToolCard extends StatelessWidget {
   final String description;
   final bool masterEnabled;
   final ValueChanged<bool> onToggle;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -370,61 +399,74 @@ class _ToolCard extends StatelessWidget {
         child: Material(
           color: context.surface,
           borderRadius: BorderRadius.circular(14),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: active && masterEnabled
-                    ? AppTheme.primary
-                    : context.appBorder,
-                width: active && masterEnabled ? 1.4 : 0.6,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: active && masterEnabled
+                      ? AppTheme.primary
+                      : context.appBorder,
+                  width: active && masterEnabled ? 1.4 : 0.6,
+                ),
               ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
+              child: Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.handyman_outlined,
+                      color: AppTheme.primary,
+                      size: 18,
+                    ),
                   ),
-                  child: Icon(
-                    Icons.handyman_outlined,
-                    color: AppTheme.primary,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        description,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: context.textSecondary,
-                          height: 1.4,
+                        const SizedBox(height: 2),
+                        Text(
+                          description,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: context.textSecondary,
+                            height: 1.4,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                Switch(
-                  value: tool.enabled,
-                  onChanged: dimmed ? null : onToggle,
-                ),
-              ],
+                  if (onTap != null)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: Icon(
+                        Icons.chevron_right,
+                        size: 18,
+                        color: context.textSecondary,
+                      ),
+                    ),
+                  Switch(
+                    value: tool.enabled,
+                    onChanged: dimmed ? null : onToggle,
+                  ),
+                ],
+              ),
             ),
           ),
         ),

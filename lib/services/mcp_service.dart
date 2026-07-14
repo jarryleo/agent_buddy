@@ -12,7 +12,8 @@ class _McpCacheEntry {
   final List<McpToolDef> tools;
   final int fetchedAtMs;
 
-  _McpCacheEntry(this.tools) : fetchedAtMs = DateTime.now().millisecondsSinceEpoch;
+  _McpCacheEntry(this.tools)
+    : fetchedAtMs = DateTime.now().millisecondsSinceEpoch;
 
   static const _ttlMs = 60_000;
 
@@ -95,10 +96,7 @@ class McpService {
     try {
       final response = await _client.post(
         Uri.parse(url),
-        headers: {
-          'Content-Type': 'application/json',
-          ...server.headers,
-        },
+        headers: {'Content-Type': 'application/json', ...server.headers},
         body: body,
       );
       if (response.statusCode != 200) {
@@ -130,10 +128,7 @@ class McpService {
     try {
       final response = await _client.post(
         Uri.parse(url),
-        headers: {
-          'Content-Type': 'application/json',
-          ...server.headers,
-        },
+        headers: {'Content-Type': 'application/json', ...server.headers},
         body: body,
       );
       if (response.statusCode != 200) {
@@ -149,8 +144,7 @@ class McpService {
   // ---- Stdio transport (desktop only) ----
 
   bool get _stdioSupported =>
-      !kIsWeb &&
-      (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+      !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
   Future<List<McpToolDef>> _discoverToolsStdio(McpProvider server) async {
     if (!_stdioSupported) {
@@ -168,11 +162,10 @@ class McpService {
     if (!_stdioSupported) {
       throw McpException('stdio MCP 仅支持桌面平台');
     }
-    final result = await _stdioRequest(
-      server,
-      'tools/call',
-      {'name': toolName, 'arguments': arguments},
-    );
+    final result = await _stdioRequest(server, 'tools/call', {
+      'name': toolName,
+      'arguments': arguments,
+    });
     return _parseToolCallResponse(result);
   }
 
@@ -241,10 +234,7 @@ class McpService {
         _buildRequest(initId, 'initialize', {
           'protocolVersion': '2024-11-05',
           'capabilities': {},
-          'clientInfo': {
-            'name': 'agent-buddy',
-            'version': '1.0.0',
-          },
+          'clientInfo': {'name': 'agent-buddy', 'version': '1.0.0'},
         }),
       );
       await reader.nextLine(
@@ -260,10 +250,7 @@ class McpService {
 
       // ---- Actual request ----
       final reqId = _nextId();
-      await _stdioSend(
-        process.stdin,
-        _buildRequest(reqId, method, params),
-      );
+      await _stdioSend(process.stdin, _buildRequest(reqId, method, params));
       final raw = await reader.nextLine(
         expectedId: reqId.toString(),
         timeout: _stdioRequestTimeout,

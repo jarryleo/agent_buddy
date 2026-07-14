@@ -1831,6 +1831,108 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Connection failed'**
   String get mcpTestFailed;
+
+  /// No description provided for @googleSheetSheetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Google Sheet'**
+  String get googleSheetSheetTitle;
+
+  /// No description provided for @googleSheetSheetSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect Agent Buddy to a Google Sheet via OAuth. The model will be able to read / write the cells of the spreadsheet you choose.'**
+  String get googleSheetSheetSubtitle;
+
+  /// No description provided for @googleSheetInputLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Spreadsheet URL or ID'**
+  String get googleSheetInputLabel;
+
+  /// No description provided for @googleSheetInputHint.
+  ///
+  /// In en, this message translates to:
+  /// **'https://docs.google.com/spreadsheets/d/…/edit   or   the bare ID'**
+  String get googleSheetInputHint;
+
+  /// No description provided for @googleSheetTestButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Test connection'**
+  String get googleSheetTestButton;
+
+  /// No description provided for @googleSheetTestAuthorizing.
+  ///
+  /// In en, this message translates to:
+  /// **'Authorizing in browser…'**
+  String get googleSheetTestAuthorizing;
+
+  /// No description provided for @googleSheetDefaultTabLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Default tab (used when the model omits `tab`)'**
+  String get googleSheetDefaultTabLabel;
+
+  /// No description provided for @googleSheetRefreshButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh tabs'**
+  String get googleSheetRefreshButton;
+
+  /// No description provided for @googleSheetEmptyTabs.
+  ///
+  /// In en, this message translates to:
+  /// **'Click refresh to load tabs from the spreadsheet.'**
+  String get googleSheetEmptyTabs;
+
+  /// No description provided for @googleSheetEmptyTabsUnauthorized.
+  ///
+  /// In en, this message translates to:
+  /// **'Authorize first to load the tab list.'**
+  String get googleSheetEmptyTabsUnauthorized;
+
+  /// No description provided for @googleSheetSignOut.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign out'**
+  String get googleSheetSignOut;
+
+  /// No description provided for @googleSheetStatusUnconfigured.
+  ///
+  /// In en, this message translates to:
+  /// **'Not configured'**
+  String get googleSheetStatusUnconfigured;
+
+  /// No description provided for @googleSheetStatusUnauthorized.
+  ///
+  /// In en, this message translates to:
+  /// **'Not authorized — click Test connection'**
+  String get googleSheetStatusUnauthorized;
+
+  /// No description provided for @googleSheetStatusAuthorizing.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for browser…'**
+  String get googleSheetStatusAuthorizing;
+
+  /// No description provided for @googleSheetStatusAuthorized.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected'**
+  String get googleSheetStatusAuthorized;
+
+  /// No description provided for @googleSheetStatusAuthorizedAs.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected as {email}'**
+  String googleSheetStatusAuthorizedAs(String email);
+
+  /// No description provided for @googleSheetStatusError.
+  ///
+  /// In en, this message translates to:
+  /// **'Authorization error'**
+  String get googleSheetStatusError;
 }
 
 class _AppLocalizationsDelegate

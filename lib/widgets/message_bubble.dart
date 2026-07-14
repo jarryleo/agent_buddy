@@ -293,7 +293,10 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-  Widget _buildGroupedToolCalls(BuildContext context, List<ChatMessage> messages) {
+  Widget _buildGroupedToolCalls(
+    BuildContext context,
+    List<ChatMessage> messages,
+  ) {
     final allCalls = <ToolCall>[];
     for (final m in messages) {
       allCalls.addAll(m.toolCalls);
@@ -314,8 +317,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (hasThinking) _buildThinking(context, m),
-          if (hasTools)
-            _buildToolCallsSection(context, m),
+          if (hasTools) _buildToolCallsSection(context, m),
           if (m.content.isNotEmpty || m.streaming)
             Container(
               margin: EdgeInsets.only(top: (hasThinking || hasTools) ? 6 : 0),
@@ -373,10 +375,12 @@ class _MessageBubbleState extends State<MessageBubble> {
   Widget _buildToolCallsSection(BuildContext context, ChatMessage m) {
     final l10n = AppLocalizations.of(context);
     final count = m.toolCalls.length;
-    final successCount =
-        m.toolCalls.where((c) => c.status == ToolCallStatus.success).length;
-    final failedCount =
-        m.toolCalls.where((c) => c.status == ToolCallStatus.failed).length;
+    final successCount = m.toolCalls
+        .where((c) => c.status == ToolCallStatus.success)
+        .length;
+    final failedCount = m.toolCalls
+        .where((c) => c.status == ToolCallStatus.failed)
+        .length;
     final runningCount = m.toolCalls
         .where((c) => c.status == ToolCallStatus.running)
         .length;
@@ -420,8 +424,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                       height: 12,
                       child: CircularProgressIndicator(
                         strokeWidth: 1.6,
-                        valueColor:
-                            AlwaysStoppedAnimation(AppTheme.primary),
+                        valueColor: AlwaysStoppedAnimation(AppTheme.primary),
                       ),
                     )
                   else ...[
@@ -594,12 +597,15 @@ class _GroupedToolCallsState extends State<_GroupedToolCalls> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final count = widget.allCalls.length;
-    final successCount =
-        widget.allCalls.where((c) => c.status == ToolCallStatus.success).length;
-    final failedCount =
-        widget.allCalls.where((c) => c.status == ToolCallStatus.failed).length;
-    final runningCount =
-        widget.allCalls.where((c) => c.status == ToolCallStatus.running).length;
+    final successCount = widget.allCalls
+        .where((c) => c.status == ToolCallStatus.success)
+        .length;
+    final failedCount = widget.allCalls
+        .where((c) => c.status == ToolCallStatus.failed)
+        .length;
+    final runningCount = widget.allCalls
+        .where((c) => c.status == ToolCallStatus.running)
+        .length;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 48, 4),
@@ -681,8 +687,7 @@ class _GroupedToolCallsState extends State<_GroupedToolCalls> {
           if (_expanded) ...[
             const SizedBox(height: 6),
             for (final m in widget.messages) ...[
-              if (m.toolCalls.isNotEmpty)
-                _buildToolCalls(context, m.toolCalls),
+              if (m.toolCalls.isNotEmpty) _buildToolCalls(context, m.toolCalls),
             ],
           ],
         ],

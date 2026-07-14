@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/chat_session.dart';
+import '../models/google_sheet_config.dart';
 import '../models/local_provider.dart';
 import '../models/mcp_provider.dart';
 import '../models/message.dart';
@@ -34,6 +35,7 @@ class StorageService {
   static const _kActiveSessionId = 'active_session_id';
   static const _kThemeMode = 'theme_mode';
   static const _kLocaleCode = 'locale_code';
+  static const _kGoogleSheetConfig = 'google_sheet_config';
 
   late final SharedPreferences _prefs;
   final ChatSessionRepository _sessions = ChatSessionRepository();
@@ -248,5 +250,20 @@ class StorageService {
   String get localeCode => _prefs.getString(_kLocaleCode) ?? 'system';
   Future<void> setLocaleCode(String code) async {
     await _prefs.setString(_kLocaleCode, code);
+  }
+
+  // Google Sheet
+  GoogleSheetConfig loadGoogleSheetConfig() {
+    final raw = _prefs.getString(_kGoogleSheetConfig);
+    if (raw == null || raw.isEmpty) return GoogleSheetConfig.empty;
+    try {
+      return GoogleSheetConfig.fromRawJson(raw);
+    } catch (_) {
+      return GoogleSheetConfig.empty;
+    }
+  }
+
+  Future<void> saveGoogleSheetConfig(GoogleSheetConfig config) async {
+    await _prefs.setString(_kGoogleSheetConfig, config.toRawJson());
   }
 }

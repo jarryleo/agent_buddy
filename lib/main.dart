@@ -20,6 +20,7 @@ import 'providers/settings_provider.dart';
 import 'services/api_service.dart';
 import 'services/chat_session_repository.dart';
 import 'services/download_service.dart';
+import 'services/google_sheets_service.dart';
 import 'services/image_service.dart';
 import 'services/local_llm_service.dart';
 import 'services/memory_repository.dart';
@@ -63,6 +64,7 @@ Future<void> main() async {
   // queue.
   await NotificationService.instance.initialize();
   final timerService = TimerService();
+  final googleSheets = GoogleSheetsService(storage: storage)..load();
   runApp(
     AgentBuddyApp(
       storage: storage,
@@ -71,6 +73,7 @@ Future<void> main() async {
       memoriesBox: memoriesBox,
       memoryRepo: memoryRepo,
       timerService: timerService,
+      googleSheets: googleSheets,
     ),
   );
 }
@@ -113,6 +116,7 @@ class AgentBuddyApp extends StatelessWidget {
     required this.memoriesBox,
     required this.memoryRepo,
     required this.timerService,
+    required this.googleSheets,
   });
   final StorageService storage;
   final Box<Note> notesBox;
@@ -120,22 +124,25 @@ class AgentBuddyApp extends StatelessWidget {
   final Box<Memory> memoriesBox;
   final MemoryRepository memoryRepo;
   final TimerService timerService;
+  final GoogleSheetsService googleSheets;
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(
-          create: (_) => SettingsProvider(storage)..load(),
+          create: (_) => SettingsProvider(storage, googleSheets)..load(),
         ),
         Provider<ApiService>(create: (_) => ApiService()),
         ChangeNotifierProvider<TimerService>.value(value: timerService),
+        ChangeNotifierProvider<GoogleSheetsService>.value(value: googleSheets),
         Provider<ToolService>(
           create: (_) => ToolService(
             notesBox: notesBox,
             tasksBox: tasksBox,
             memoriesBox: memoriesBox,
             timerService: timerService,
+            storage: storage,
           ),
         ),
         Provider<ImageService>(create: (_) => ImageService()),

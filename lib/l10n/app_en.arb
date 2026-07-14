@@ -469,5 +469,26 @@
   "mcpTestConnection": "Test connection",
   "mcpTesting": "Testing…",
   "mcpTestSuccess": "Connected successfully",
-  "mcpTestFailed": "Connection failed"
+  "mcpTestFailed": "Connection failed",
+
+  "googleSheetSheetTitle": "Google Sheet",
+  "googleSheetSheetSubtitle": "Connect Agent Buddy to a Google Sheet via OAuth. The model will be able to read / write the cells of the spreadsheet you choose.",
+  "googleSheetInputLabel": "Spreadsheet URL or ID",
+  "googleSheetInputHint": "https://docs.google.com/spreadsheets/d/…/edit   or   the bare ID",
+  "googleSheetTestButton": "Test connection",
+  "googleSheetTestAuthorizing": "Authorizing in browser…",
+  "googleSheetDefaultTabLabel": "Default tab (used when the model omits `tab`)",
+  "googleSheetRefreshButton": "Refresh tabs",
+  "googleSheetEmptyTabs": "Click refresh to load tabs from the spreadsheet.",
+  "googleSheetEmptyTabsUnauthorized": "Authorize first to load the tab list.",
+  "googleSheetSignOut": "Sign out",
+  "googleSheetStatusUnconfigured": "Not configured",
+  "googleSheetStatusUnauthorized": "Not authorized — click Test connection",
+  "googleSheetStatusAuthorizing": "Waiting for browser…",
+  "googleSheetStatusAuthorized": "Connected",
+  "googleSheetStatusAuthorizedAs": "Connected as {email}",
+  "@googleSheetStatusAuthorizedAs": {
+    "placeholders": { "email": { "type": "String" } }
+  },
+  "googleSheetStatusError": "Authorization error"
 }

@@ -12,30 +12,45 @@ import '../tool_service.dart';
 import 'tool_base.dart';
 
 class FetchWebTool extends ToolBase {
-  @override String get id => 'fetch_web';
-  @override String get name => 'Fetch Web';
-  @override String get description =>
+  @override
+  String get id => 'fetch_web';
+  @override
+  String get name => 'Fetch Web';
+  @override
+  String get description =>
       '抓取网页。填入 link_text 会直接返回匹配的链接 URL,不返回页面内容——'
       '你需要再调一次 fetch_web 来抓那个链接的页面。多级深入是正常操作,别只看首页。';
-  @override bool get isSupportedOnCurrentPlatform => true;
+  @override
+  bool get isSupportedOnCurrentPlatform => true;
 
-  @override Map<String, dynamic> buildSchema() {
+  @override
+  Map<String, dynamic> buildSchema() {
     return {
       'type': 'function',
       'function': {
         'name': 'fetch_web',
-        'description': '抓取网页。不填 link_text 时返回 {url, title, text, link_count}。'
+        'description':
+            '抓取网页。不填 link_text 时返回 {url, title, text, link_count}。'
             '填 link_text 后只返回匹配的链接 URL + 提示——你需要再调一次 fetch_web 去抓那个链接的页面。'
             'include_links=true 是最后手段(最多 50 条),默认关闭省 token。',
         'parameters': {
           'type': 'object',
           'properties': {
-            'url': {'type': 'string', 'description': '目标网址,带 http:// 或 https://'},
-            'link_text': {'type': 'string',
-              'description': '填页面上看到的链接文字,工具会找到链接并返回 URL(不返回页面内容)。'
-                  '不区分大小写,先精确匹配再模糊匹配。拿到 URL 后还得再调一次 fetch_web 抓内容。'},
-            'include_links': {'type': 'boolean',
-              'description': '设为 true 返回页面上所有链接(最多 50 条)。默认 false,优先用 link_text 深入。'},
+            'url': {
+              'type': 'string',
+              'description': '目标网址,带 http:// 或 https://',
+            },
+            'link_text': {
+              'type': 'string',
+              'description':
+                  '填页面上看到的链接文字,工具会找到链接并返回 URL(不返回页面内容)。'
+                  '不区分大小写,先精确匹配再模糊匹配。拿到 URL 后还得再调一次 fetch_web 抓内容。',
+            },
+            'include_links': {
+              'type': 'boolean',
+              'description':
+                  '设为 true 返回页面上所有链接(最多 50 条)。默认 false,优先用 link_text 深入。',
+            },
           },
           'required': ['url'],
         },
@@ -64,7 +79,10 @@ class FetchWebTool extends ToolBase {
   void clearCache() => _fetchCache.clear();
 
   @override
-  Future<String> execute(Map<String, dynamic> args, ToolService services) async {
+  Future<String> execute(
+    Map<String, dynamic> args,
+    ToolService services,
+  ) async {
     final url = (args['url'] as String? ?? '').trim();
     if (url.isEmpty) {
       throw ToolException('url is required');
@@ -102,9 +120,7 @@ class FetchWebTool extends ToolBase {
 
     _FetchedPage? page = _fetchCache[cacheKey];
     if (page == null) {
-      await Future.delayed(
-        Duration(milliseconds: 50 + _rng.nextInt(201)),
-      );
+      await Future.delayed(Duration(milliseconds: 50 + _rng.nextInt(201)));
 
       http.Response resp;
       int attempts = 0;
@@ -133,14 +149,18 @@ class FetchWebTool extends ToolBase {
             await _backoff(attempts);
             continue;
           }
-          throw ToolException('HTTP 429 (rate limited after $maxAttempts attempts)');
+          throw ToolException(
+            'HTTP 429 (rate limited after $maxAttempts attempts)',
+          );
         }
         if (resp.statusCode >= 500) {
           if (attempts < maxAttempts) {
             await _backoff(attempts);
             continue;
           }
-          throw ToolException('HTTP ${resp.statusCode} (after $maxAttempts attempts)');
+          throw ToolException(
+            'HTTP ${resp.statusCode} (after $maxAttempts attempts)',
+          );
         }
         if (resp.statusCode < 200 || resp.statusCode >= 300) {
           throw ToolException('HTTP ${resp.statusCode}');
@@ -150,9 +170,9 @@ class FetchWebTool extends ToolBase {
 
       final contentType = resp.headers['content-type'] ?? '';
       if (contentType.contains('application/json')) {
-        var text = const JsonEncoder.withIndent('  ').convert(
-          jsonDecode(utf8.decode(resp.bodyBytes)),
-        );
+        var text = const JsonEncoder.withIndent(
+          '  ',
+        ).convert(jsonDecode(utf8.decode(resp.bodyBytes)));
         if (text.length > maxLength) {
           text = '${text.substring(0, maxLength)}\n...(truncated)';
         }
@@ -170,7 +190,12 @@ class FetchWebTool extends ToolBase {
         el.remove();
       }
       final title =
-          doc.querySelector('title')?.text.trim().replaceAll(RegExp(r'\s+'), ' ') ?? '';
+          doc
+              .querySelector('title')
+              ?.text
+              .trim()
+              .replaceAll(RegExp(r'\s+'), ' ') ??
+          '';
       final rawText = doc.body?.text ?? doc.documentElement?.text ?? '';
       final cleanedText = _cleanWhitespace(rawText);
       final links = _extractLinks(doc, baseUri: uri);
@@ -203,7 +228,8 @@ class FetchWebTool extends ToolBase {
     var text = page.cleanedText;
     final truncated = text.length > maxLength;
     if (truncated) {
-      text = '${text.substring(0, maxLength)}\n...(truncated, total ${page.cleanedText.length} chars)';
+      text =
+          '${text.substring(0, maxLength)}\n...(truncated, total ${page.cleanedText.length} chars)';
     }
     if (text.isEmpty) {
       throw ToolException('empty page content');
@@ -314,14 +340,20 @@ class FetchWebTool extends ToolBase {
     if (u.fragment.isEmpty) return u.toString();
     final out = StringBuffer();
     if (u.scheme.isNotEmpty) {
-      out..write(u.scheme)..write(':');
+      out
+        ..write(u.scheme)
+        ..write(':');
     }
     if (u.hasAuthority) {
-      out..write('//')..write(u.authority);
+      out
+        ..write('//')
+        ..write(u.authority);
     }
     out.write(u.path);
     if (u.hasQuery) {
-      out..write('?')..write(u.query);
+      out
+        ..write('?')
+        ..write(u.query);
     }
     return out.toString();
   }

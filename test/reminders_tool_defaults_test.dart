@@ -26,14 +26,17 @@ void main() {
 
   group('ToolBase.isEnabledByDefault default', () {
     test('defaults to true so the existing tools (fetch_web, current_time, '
-        '...) keep their opt-out behavior — only `reminders` (and any '
-        'future tool that needs one-time setup) opts in explicitly', () {
+        '...) keep their opt-out behavior — only `reminders` and '
+        '`google_sheet` (both need one-time setup) opt in explicitly', () {
       // Walk the registry and assert every tool's default — except
-      // `reminders`, which is the only one currently overriding
-      // to false. A future tool that needs the same flow should
-      // join this exception list, not flip the default.
+      // `reminders` and `google_sheet`, which both override to
+      // false because their first use requires a picker / OAuth
+      // flow that the user has to walk through. A future tool
+      // that needs the same flow should join this exception list,
+      // not flip the default.
+      const exceptionIds = {'reminders', 'google_sheet'};
       for (final tool in ToolRegistry.all) {
-        if (tool.id == 'reminders') {
+        if (exceptionIds.contains(tool.id)) {
           expect(
             tool.isEnabledByDefault,
             isFalse,

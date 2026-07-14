@@ -129,7 +129,8 @@ class SkillsTab extends StatelessWidget {
                                         child: Text(l10n.commonCancel),
                                       ),
                                       TextButton(
-                                        onPressed: () => Navigator.pop(ctx, true),
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, true),
                                         child: Text(l10n.commonDelete),
                                       ),
                                     ],

@@ -325,12 +325,14 @@ class ChatProvider extends ChangeNotifier {
 
     String? baseSystem;
     if (_settings.toolsEnabled) {
-      final mcpServers = _settings.mcpProviders.where((m) => m.enabled).toList();
+      final mcpServers = _settings.mcpProviders
+          .where((m) => m.enabled)
+          .toList();
       final mcpHint = mcpServers.isNotEmpty
           ? '\n'
-              '- MCP 工具(名称以 mcp__ 开头):这些是由外部 MCP 服务器动态提供的工具。'
-              '每个工具的参数 schema 已经准确列出,按参数说明使用即可。'
-              '当前已启用 ${mcpServers.length} 个 MCP 服务器。'
+                '- MCP 工具(名称以 mcp__ 开头):这些是由外部 MCP 服务器动态提供的工具。'
+                '每个工具的参数 schema 已经准确列出,按参数说明使用即可。'
+                '当前已启用 ${mcpServers.length} 个 MCP 服务器。'
           : '';
       baseSystem =
           '你是一个有用、诚实的助手。\n'
@@ -355,6 +357,10 @@ class ChatProvider extends ChangeNotifier {
           '**只在程序运行时有效,App 被杀就不响了**,长时段务必先告知用户。\n'
           '- notification(通知):给用户推一条本地通知(手机系统通知 / 电脑右下角弹窗)。'
           '计时器到点时,如果用户正看着聊天,就由你来调它把提醒正式发出去。\n'
+          '- google_sheet(谷歌表格):操作用户在设置里配置的 Google Sheet。'
+          'action=list_tabs 先拿表名,read/update/append/clear 用 A1 表示法(range),'
+          'create_tab/delete_tab 增删整张表,format 改文字/格子属性。'
+          '插入数据给二维数组 values,字符串以 `=` 开头会被当公式。\n'
           '- 其他工具按参数说明用就行。$mcpHint';
     }
 
@@ -628,9 +634,7 @@ class ChatProvider extends ChangeNotifier {
       orElse: () => null,
     );
     if (server == null) {
-      throw ToolException(
-        'MCP 服务器 "$serverName" 不可用(未找到或未启用)。',
-      );
+      throw ToolException('MCP 服务器 "$serverName" 不可用(未找到或未启用)。');
     }
 
     return await _tools.mcp.callTool(

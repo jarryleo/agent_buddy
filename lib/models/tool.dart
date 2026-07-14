@@ -13,6 +13,7 @@ enum BuiltinTool {
   memory,
   location,
   download,
+  googleSheet,
 }
 
 /// Minimal extension: only provides the snake_case [id].
@@ -45,6 +46,8 @@ extension BuiltinToolX on BuiltinTool {
         return 'location';
       case BuiltinTool.download:
         return 'download';
+      case BuiltinTool.googleSheet:
+        return 'google_sheet';
     }
   }
 }

@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../models/memory.dart';
 import '../models/note.dart';
 import '../models/task.dart';
+import 'google_sheets_service.dart';
 import 'mcp_service.dart';
 import 'memory_repository.dart';
 import 'notification_service.dart';
@@ -17,6 +18,7 @@ import 'platform/notes_service.dart';
 import 'platform/reminders_service.dart';
 import 'platform/reminders_service_factory.dart';
 import 'platform/tasks_service.dart';
+import 'storage_service.dart';
 import 'timer_service.dart';
 import 'tools/tool_registry.dart';
 
@@ -46,6 +48,8 @@ class ToolService {
     http.Client? httpClient,
     TimerService? timerService,
     NotificationService? notificationService,
+    StorageService? storage,
+    GoogleSheetsService? googleSheets,
   }) {
     if (notesBox != null) {
       _notes = NotesService()..open(preopened: notesBox);
@@ -70,6 +74,14 @@ class ToolService {
     if (notificationService != null) {
       _notifications = notificationService;
     }
+    if (googleSheets != null) {
+      _googleSheets = googleSheets;
+    } else if (storage != null) {
+      _googleSheets = GoogleSheetsService(
+        storage: storage,
+        httpClient: _client,
+      );
+    }
   }
 
   late final http.Client _client;
@@ -85,6 +97,7 @@ class ToolService {
   TimerService? _timers;
   NotificationService? _notifications;
   McpService? _mcp;
+  GoogleSheetsService? _googleSheets;
 
   /// The shared HTTP client used by [FetchWebTool].
   http.Client get httpClient => _client;
@@ -147,6 +160,19 @@ class ToolService {
   }) {
     final svc = _notifications ?? NotificationService.instance;
     return svc.show(title: title, body: body, notificationId: notificationId);
+  }
+
+  /// The shared Google Sheets + OAuth coordinator used by the
+  /// `google_sheet` tool. Falls back to a service that throws on
+  /// every API call when no [StorageService] was injected (e.g.
+  /// in unit tests that don't exercise the Sheets path) — keeps
+  /// the type non-nullable while still failing loudly.
+  GoogleSheetsService get googleSheets {
+    if (_googleSheets != null) return _googleSheets!;
+    throw StateError(
+      'GoogleSheetsService is not available on this ToolService '
+      '(no StorageService was injected)',
+    );
   }
 
   void dispose() {
@@ -234,6 +260,11 @@ class ToolService {
 
   Future<String> runTimer(Map<String, dynamic> args) async {
     final tool = ToolRegistry.byId('timer')!;
+    return tool.execute(args, this);
+  }
+
+  Future<String> runGoogleSheet(Map<String, dynamic> args) async {
+    final tool = ToolRegistry.byId('google_sheet')!;
     return tool.execute(args, this);
   }
 }

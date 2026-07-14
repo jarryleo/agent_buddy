@@ -21,10 +21,10 @@ void main() {
     });
 
     test('wraps a .exe absolute path with cmd /c', () {
-      final out = McpService.wrapWindowsCommand(
-        r'C:\Tools\server.exe',
-        ['--port', '8080'],
-      );
+      final out = McpService.wrapWindowsCommand(r'C:\Tools\server.exe', [
+        '--port',
+        '8080',
+      ]);
       expect(out.$1, 'cmd');
       expect(out.$2, [r'/c', r'C:\Tools\server.exe', '--port', '8080']);
     });
@@ -41,11 +41,7 @@ void main() {
     });
 
     test('preserves user-supplied cmd /k as-is', () {
-      final out = McpService.wrapWindowsCommand('cmd', [
-        '/k',
-        'npx',
-        'foo',
-      ]);
+      final out = McpService.wrapWindowsCommand('cmd', ['/k', 'npx', 'foo']);
       expect(out.$1, 'cmd');
       expect(out.$2, ['/k', 'npx', 'foo']);
     });
@@ -106,10 +102,7 @@ void main() {
         expect(tools, hasLength(1));
         expect(tools.first.name, 'echo');
         expect(tools.first.description, 'echo back');
-        expect(
-          tools.first.inputSchema['properties']['text']['type'],
-          'string',
-        );
+        expect(tools.first.inputSchema['properties']['text']['type'], 'string');
       } finally {
         mcp.dispose();
       }

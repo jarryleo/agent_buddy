@@ -7,13 +7,24 @@ import '../models/provider.dart';
 import '../models/role.dart';
 import '../models/skill.dart';
 import '../models/tool.dart';
+import '../models/google_sheet_config.dart';
+import '../services/google_sheets_service.dart';
 import '../services/storage_service.dart';
 import '../services/tools/tool_registry.dart';
 
 class SettingsProvider extends ChangeNotifier {
-  SettingsProvider(this._storage);
+  SettingsProvider(this._storage, [GoogleSheetsService? googleSheets])
+    : _googleSheets = googleSheets {
+    // Mirror the Google Sheet config into our cached copy so the
+    // tools tab + auth-state UI see the latest state. The service
+    // owns the persistence path (writes go through `_storage`); we
+    // just keep our snapshot in sync so the toggle gate doesn't
+    // re-open the settings sheet after a successful save.
+    _googleSheets?.addListener(_onGoogleSheetsChanged);
+  }
 
   final StorageService _storage;
+  final GoogleSheetsService? _googleSheets;
   final _uuid = const Uuid();
 
   List<ModelProvider> _providers = [];
@@ -32,6 +43,7 @@ class SettingsProvider extends ChangeNotifier {
   bool _toolsEnabled = true;
   String _themeMode = 'system';
   String _localeCode = 'system';
+  GoogleSheetConfig _googleSheetConfig = GoogleSheetConfig.empty;
 
   List<ModelProvider> get providers => List.unmodifiable(_providers);
   List<LocalProvider> get localProviders => List.unmodifiable(_localProviders);
@@ -49,6 +61,32 @@ class SettingsProvider extends ChangeNotifier {
   bool get toolsEnabled => _toolsEnabled;
   String get themeMode => _themeMode;
   String get localeCode => _localeCode;
+  GoogleSheetConfig get googleSheetConfig => _googleSheetConfig;
+
+  /// Called whenever `GoogleSheetsService` notifies (config writes,
+  /// auth state transitions, tab list refreshes). We mirror the
+  /// service's config into our cached copy so the tools tab toggle
+  /// gate (`isFullyConfigured`) sees the latest state without
+  /// needing to round-trip through SharedPreferences.
+  ///
+  /// `GoogleSheetConfig` is a value type — `updateSelection()` and
+  /// `signOut()` always produce a new instance via `copyWith`, so
+  /// reference equality is a safe change detector here. The listener
+  /// fires on every notify regardless; if the data happens to match,
+  /// the UI sees no visual diff and skips the rebuild on its own.
+  void _onGoogleSheetsChanged() {
+    final svc = _googleSheets;
+    if (svc == null) return;
+    if (identical(_googleSheetConfig, svc.config)) return;
+    _googleSheetConfig = svc.config;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _googleSheets?.removeListener(_onGoogleSheetsChanged);
+    super.dispose();
+  }
 
   ModelProvider? get activeProvider {
     if (_activeProviderId == null) return null;
@@ -104,6 +142,7 @@ class SettingsProvider extends ChangeNotifier {
     _toolsEnabled = _storage.toolsEnabled;
     _themeMode = _storage.themeMode;
     _localeCode = _storage.localeCode;
+    _googleSheetConfig = _storage.loadGoogleSheetConfig();
 
     // Seed built-in tools. Fresh installs hit the `isEmpty` branch and
     // get every builtin; existing installs hit the second branch which
@@ -250,7 +289,8 @@ class SettingsProvider extends ChangeNotifier {
     // MCP providers: auto-enable any new ones.
     if (_activeMcpIds.isEmpty) {
       _activeMcpIds = {
-        for (final m in _mcpProviders) if (m.enabled) m.id,
+        for (final m in _mcpProviders)
+          if (m.enabled) m.id,
       };
       await _storage.setActiveMcpIds(_activeMcpIds.toList());
     }
