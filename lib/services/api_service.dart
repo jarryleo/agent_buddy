@@ -629,7 +629,7 @@ class ApiService {
           .toList();
     }
     if (tools != null && tools.isNotEmpty) {
-      payload['tools'] = tools;
+      payload['tools'] = _toAnthropicTools(tools);
     }
 
     final req = http.Request('POST', Uri.parse(provider.fullChatUrl))
@@ -934,6 +934,29 @@ class ApiService {
       }
     }
     return out;
+  }
+
+  /// Converts OpenAI-style tool schemas (`{type:'function', function:{name,...}}`)
+  /// to Anthropic format (`{name, description, input_schema}`).
+  List<Map<String, dynamic>> _toAnthropicTools(
+    List<Map<String, dynamic>> openaiTools,
+  ) {
+    return openaiTools.map((t) {
+      final fn = t['function'] as Map<String, dynamic>?;
+      if (fn != null) {
+        return <String, dynamic>{
+          'name': fn['name'] ?? '',
+          'description': fn['description'] ?? '',
+          'input_schema': fn['parameters'] ?? {
+            'type': 'object',
+            'properties': <String, dynamic>{},
+          },
+        };
+      }
+      // If the tool is already in Anthropic format (no `function` wrapper),
+      // pass it through directly.
+      return t;
+    }).toList();
   }
 
   String _mediaTypeFromDataUrl(String dataUrl) {
