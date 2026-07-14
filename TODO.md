@@ -64,7 +64,8 @@ Skill:技能列表,与现有市面上技能兼容.
 - 用户的消息气泡增加复制功能
 - 连续的工具消息折叠一下，折叠后只展示调用工具数量，展开后能查看每个工具的调用情况。
 - 支持MCP功能,设置页面在技能右侧新增一个tab:MCP, 右下角和技能页差不多的新增按钮,弹出新增页面:可输入MCP名称, 然后复制粘贴mcp json可以加入一个对应的条目,AI可以通过mcp实现对应能力
-
+- 内置2个角色: 猫娘和小秘
+- 内置搜索mcp: bing搜索，bilibili，12306
 
 #### 未完成
 - 桌面端增加一个给AI设置工作区的功能,让AI默认处理工作区内的文件.
@@ -73,46 +74,6 @@ Skill:技能列表,与现有市面上技能兼容.
 - 本地模型推荐几个给用户下载
 - 让AI可以展示文件图片和url图片在气泡中
 - 模型加思考开关
-- 内置2个角色:
-- 内置搜索mcp:
-```json5
-{
-  "mcpServers": {
-    "chrome-devtools": {
-      "command": "cmd",
-      "args": [
-        "npx",
-        "-y",
-        "chrome-devtools-mcp@latest",
-        "--browser-url=http://127.0.0.1:9222"
-      ]
-    },
-    "bing-search": {
-      "command": "cmd",
-      "args": [
-        "/c",
-        "npx",
-        "-y",
-        "bing-cn-mcp"
-      ]
-    },
-    "bilibili": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@wangshunnn/bilibili-mcp-server"
-      ]
-    },
-    "12306-mcp": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "12306-mcp"
-      ]
-    }
-  }
-}
-```
 
 搜索 skill :
 ```json5

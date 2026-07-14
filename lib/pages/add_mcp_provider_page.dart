@@ -23,7 +23,9 @@ class _AddMcpProviderPageState extends State<AddMcpProviderPage> {
   void initState() {
     super.initState();
     _name = TextEditingController(text: widget.existing?.name ?? '');
-    _jsonConfig = TextEditingController(text: widget.existing?.jsonConfig ?? '');
+    _jsonConfig = TextEditingController(
+      text: widget.existing?.jsonConfig ?? '',
+    );
   }
 
   @override
@@ -33,18 +35,25 @@ class _AddMcpProviderPageState extends State<AddMcpProviderPage> {
     super.dispose();
   }
 
+  void _fillTemplate(String name, String jsonConfig) {
+    setState(() {
+      _name.text = name;
+      _jsonConfig.text = jsonConfig;
+    });
+  }
+
   void _save() {
     final l10n = AppLocalizations.of(context);
     if (_name.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.mcpNameRequired)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.mcpNameRequired)));
       return;
     }
     if (_jsonConfig.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.mcpJsonConfigRequired)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.mcpJsonConfigRequired)));
       return;
     }
 
@@ -62,9 +71,9 @@ class _AddMcpProviderPageState extends State<AddMcpProviderPage> {
     final l10n = AppLocalizations.of(context);
     final raw = _jsonConfig.text.trim();
     if (raw.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.mcpJsonConfigRequired)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.mcpJsonConfigRequired)));
       return;
     }
 
@@ -109,13 +118,44 @@ class _AddMcpProviderPageState extends State<AddMcpProviderPage> {
         title: Text(
           widget.existing == null ? l10n.mcpAddTitle : l10n.mcpEditTitle,
         ),
-        actions: [
-          TextButton(onPressed: _save, child: Text(l10n.commonSave)),
-        ],
+        actions: [TextButton(onPressed: _save, child: Text(l10n.commonSave))],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (widget.existing == null) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ActionChip(
+                  avatar: const Icon(Icons.search, size: 16),
+                  label: const Text('bing-search'),
+                  onPressed: () => _fillTemplate(
+                    'bing-search',
+                    '{\n  "command": "cmd",\n  "args": [\n    "/c",\n    "npx",\n    "-y",\n    "bing-cn-mcp"\n  ]\n}',
+                  ),
+                ),
+                ActionChip(
+                  avatar: const Icon(Icons.videocam, size: 16),
+                  label: const Text('bilibili'),
+                  onPressed: () => _fillTemplate(
+                    'bilibili',
+                    '{\n  "command": "npx",\n  "args": [\n    "-y",\n    "@wangshunnn/bilibili-mcp-server"\n  ]\n}',
+                  ),
+                ),
+                ActionChip(
+                  avatar: const Icon(Icons.train, size: 16),
+                  label: const Text('12306-mcp'),
+                  onPressed: () => _fillTemplate(
+                    '12306-mcp',
+                    '{\n  "command": "npx",\n  "args": [\n    "-y",\n    "12306-mcp"\n  ]\n}',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
           _FieldLabel(text: l10n.mcpName),
           TextField(
             controller: _name,
@@ -124,9 +164,7 @@ class _AddMcpProviderPageState extends State<AddMcpProviderPage> {
           const SizedBox(height: 14),
           Row(
             children: [
-              Expanded(
-                child: _FieldLabel(text: l10n.mcpJsonConfig),
-              ),
+              Expanded(child: _FieldLabel(text: l10n.mcpJsonConfig)),
               TextButton.icon(
                 onPressed: _testing ? null : _testConnection,
                 icon: _testing
