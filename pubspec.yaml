@@ -27,7 +27,7 @@ dependencies:
   path_provider: ^2.1.4
   path: ^1.9.0
   file_picker: ^8.1.4
-  llamadart: ^0.8.13
+  llamadart: ^0.8.16
   flutter_local_notifications: ^18.0.1
   # Windows-only local notifications via the WinToast C++/WinRT
   # library. Replaces our previous PowerShell balloon approach,
