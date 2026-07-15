@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -156,9 +157,12 @@ class _ChatInputState extends State<ChatInput> {
             children: [
               SizedBox(
                 height: 24,
-                child: Switch.adaptive(
-                  value: widget.thinkingEnabled,
-                  onChanged: enabled ? _setThinkingMode : null,
+                child: FittedBox(
+                  fit: BoxFit.fitHeight,
+                  child: Switch.adaptive(
+                    value: widget.thinkingEnabled,
+                    onChanged: enabled ? _setThinkingMode : null,
+                  ),
                 ),
               ),
               const SizedBox(height: 2),
@@ -508,18 +512,20 @@ class _ChatInputState extends State<ChatInput> {
                         !widget.sending && !_pickingImage && !_pickingFile
                         ? _toggleToolbar
                         : null,
-                    icon: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 200),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      transitionBuilder: (child, anim) => RotationTransition(
-                        turns: Tween<double>(begin: 0.125, end: 0.0)
-                            .animate(anim),
-                        child: FadeTransition(opacity: anim, child: child),
+                    icon: TweenAnimationBuilder<double>(
+                      duration: const Duration(milliseconds: 500),
+                      tween: Tween(
+                        begin: 0.0,
+                        end: _toolbarOpen ? 0.125 : 0.0,
+                      ),
+                      curve: Curves.easeInOutCubic,
+                      builder: (context, value, child) => Transform.rotate(
+                        angle: value * 2 * math.pi,
+                        child: child,
                       ),
                       child: Icon(
-                        _toolbarOpen ? Icons.close : Icons.add,
-                        key: ValueKey<bool>(_toolbarOpen),
+                        Icons.add,
+                        color: context.textSecondary,
                       ),
                     ),
                     color: context.textSecondary,
