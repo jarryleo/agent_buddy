@@ -143,7 +143,7 @@ class NotificationService {
         // action buttons, so the default is fine.
         linux: LinuxInitializationSettings(defaultActionName: 'Open'),
       );
-      await _plugin.initialize(initSettings);
+      await _plugin.initialize(settings: initSettings);
       _pluginSupported = true;
 
       // Android 13+ runtime permission for posting notifications.
@@ -200,7 +200,12 @@ class NotificationService {
       try {
         final id = notificationId ?? _nextId();
         final details = _detailsFor(title: title, body: body, ongoing: false);
-        await _plugin.show(id, title, body, details);
+        await _plugin.show(
+          id: id,
+          title: title,
+          body: body,
+          notificationDetails: details,
+        );
         return true;
       } catch (_) {
         // Fall through to the local_notifier / in-app path so
@@ -247,7 +252,7 @@ class NotificationService {
       // Best-effort cancel on every OS path.
       if (_isPluginPlatform() && _pluginSupported) {
         try {
-          await _plugin.cancel(_foregroundId);
+          await _plugin.cancel(id: _foregroundId);
         } catch (_) {}
       }
       if (_isWindows() && _localNotifierReady) {
@@ -267,7 +272,12 @@ class NotificationService {
     if (_isPluginPlatform() && _pluginSupported) {
       try {
         final details = _detailsFor(title: title, body: body, ongoing: true);
-        await _plugin.show(_foregroundId, title, body, details);
+        await _plugin.show(
+          id: _foregroundId,
+          title: title,
+          body: body,
+          notificationDetails: details,
+        );
       } catch (_) {
         // Best-effort: a failed foreground notification should
         // never break the timer / chat flow.
