@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:agent_buddy/l10n/app_localizations.dart';
 import 'package:agent_buddy/models/message.dart';
 import 'package:agent_buddy/widgets/message_bubble.dart';
@@ -56,6 +58,24 @@ void main() {
       // Sanity: a visible user bubble has a real Container in the
       // tree (the bubble background).
       expect(find.byType(Container), findsWidgets);
+    });
+
+    testWidgets('image thumbnails preserve aspect ratio and crop to fill', (
+      tester,
+    ) async {
+      final m = ChatMessage(
+        id: 'image',
+        role: MessageRole.user,
+        content: '',
+        imagePaths: [File('assets/icon/ic_app.png').absolute.path],
+      );
+
+      await pumpBubble(tester, m);
+
+      final image = tester.widget<Image>(find.byType(Image));
+      expect(image.fit, BoxFit.cover);
+      expect(image.image, isA<ResizeImage>());
+      expect((image.image as ResizeImage).policy, ResizeImagePolicy.fit);
     });
   });
 }

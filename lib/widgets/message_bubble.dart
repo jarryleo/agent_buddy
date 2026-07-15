@@ -269,13 +269,16 @@ class _MessageBubbleState extends State<MessageBubble> {
                 // Each thumbnail is its own repaint layer so the
                 // rest of the chat list doesn't repaint when one
                 // image finishes decoding.
-                child: Image.file(
-                  File(path),
+                child: Image(
+                  image: ResizeImage(
+                    FileImage(File(path)),
+                    width: cacheSize,
+                    height: cacheSize,
+                    policy: ResizeImagePolicy.fit,
+                  ),
                   width: thumbSize,
                   height: thumbSize,
                   fit: BoxFit.cover,
-                  cacheWidth: cacheSize,
-                  cacheHeight: cacheSize,
                   errorBuilder: (context, error, stack) => Container(
                     color: context.bg,
                     alignment: Alignment.center,
