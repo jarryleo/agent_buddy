@@ -2,11 +2,59 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:path/path.dart' as p;
 
 import '../tool_service.dart';
 import 'tool_base.dart';
+
+/// Build the environment map passed to [Process.start] when running
+/// a shell command.
+///
+/// macOS apps launched as a GUI bundle (i.e. from Finder) inherit a
+/// minimal PATH from launchd that typically omits `/usr/sbin`
+/// (`sysctl`, `system_profiler`, `ifconfig`, …) and Apple-Silicon
+/// Homebrew at `/opt/homebrew/bin`. Without help, common shell
+/// recipes fail with `command not found`. We prepend the canonical
+/// system paths to whatever the parent already exports, deduped and
+/// order-preserving, so the shell can find the standard utilities.
+/// The Windows variant covers `cmd.exe` / PowerShell being reachable
+/// from a freshly-spawned shell.
+///
+/// Exposed for testing via [visibleForTesting]; not part of the
+/// public API.
+@visibleForTesting
+Map<String, String> buildShellEnvironment({Map<String, String>? baseEnv}) {
+  final env = Map<String, String>.from(baseEnv ?? Platform.environment);
+  final pathKey = Platform.isWindows ? 'Path' : 'PATH';
+  final separator = Platform.isWindows ? ';' : ':';
+  final stdPaths = Platform.isWindows
+      ? const <String>[
+          r'C:\Windows\System32',
+          r'C:\Windows',
+          r'C:\Windows\System32\Wbem',
+          r'C:\Windows\System32\WindowsPowerShell\v1.0',
+          r'C:\Windows\System32\OpenSSH',
+        ]
+      : const <String>[
+          '/opt/homebrew/bin', // Apple-Silicon Homebrew
+          '/usr/local/bin', // Intel Homebrew / manual installs
+          '/usr/bin',
+          '/bin',
+          '/usr/sbin',
+          '/sbin',
+        ];
+  final existing = (env[pathKey] ?? '')
+      .split(separator)
+      .where((s) => s.isNotEmpty);
+  final seen = <String>{};
+  final unique = <String>[];
+  for (final entry in <String>[...stdPaths, ...existing]) {
+    if (seen.add(entry)) unique.add(entry);
+  }
+  env[pathKey] = unique.join(separator);
+  return env;
+}
 
 class RunCommandTool extends ToolBase {
   @override
@@ -74,13 +122,29 @@ class RunCommandTool extends ToolBase {
         : p.normalize(p.join(defaultCwd, requestedCwd));
     final timeoutSeconds = (args['timeout_seconds'] as num?)?.toInt() ?? 30;
 
+    final env = buildShellEnvironment();
+    // NOTE: we deliberately do NOT use `runInShell: true` here.
+    // On macOS that wrapper spawns `/bin/sh -c <command>` via
+    // `posix_spawn` in a way that drops the inherited environment
+    // (PATH comes back empty inside the shell, so even `sysctl`
+    // in `/usr/sbin` becomes "command not found"). Invoking the
+    // shell + `-c` directly keeps the env we set in `env`.
+    final String shellExecutable;
+    final List<String> shellArgs;
+    if (Platform.isWindows) {
+      shellExecutable = 'cmd.exe';
+      shellArgs = ['/c', command];
+    } else {
+      shellExecutable = '/bin/sh';
+      shellArgs = ['-c', command];
+    }
     final Process process;
     try {
       process = await Process.start(
-        command,
-        const [],
+        shellExecutable,
+        shellArgs,
         workingDirectory: cwd,
-        runInShell: true,
+        environment: env,
       );
     } catch (e) {
       throw ToolException('failed to start command: $e');
