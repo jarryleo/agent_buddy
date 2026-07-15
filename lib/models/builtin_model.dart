@@ -63,8 +63,9 @@ class BuiltinModel {
 class BuiltinModels {
   BuiltinModels._();
 
-  /// Sole entry for the v1 rollout. Additional models can be
-  /// appended below — the settings UI iterates [all] in order.
+  /// Built-in models offered to the user as one-tap downloads.
+  /// Additional entries can be appended below — the settings UI
+  /// iterates [all] in declaration order.
   static const List<BuiltinModel> all = [
     BuiltinModel(
       id: 'gemma-4-e2b-it-qat-q4_0',
@@ -76,7 +77,19 @@ class BuiltinModels {
       mmprojUrl:
           'https://www.modelscope.cn/models/google/gemma-4-E2B-it-qat-q4_0-gguf/resolve/master/gemma-4-E2B-it-mmproj.gguf',
       mmprojFilename: 'gemma-4-E2B-it-mmproj.gguf',
-      approxSizeBytes: 4100000000,
+      approxSizeBytes: 4200000000,
+    ),
+    BuiltinModel(
+      id: 'qwen3.5-0.8b-q4_k_m',
+      displayName: 'Qwen3.5-0.8B-Q4_K_M',
+      description: 'Qwen3.5 0.8B Q4_K_M 量化版,体量小、加载快,带 mmproj 支持多模态(图片输入)。',
+      modelUrl:
+          'https://www.modelscope.cn/models/unsloth/Qwen3.5-0.8B-GGUF/resolve/master/Qwen3.5-0.8B-Q4_K_M.gguf',
+      modelFilename: 'Qwen3.5-0.8B-Q4_K_M.gguf',
+      mmprojUrl:
+          'https://www.modelscope.cn/models/unsloth/Qwen3.5-0.8B-GGUF/resolve/master/mmproj-BF16.gguf',
+      mmprojFilename: 'mmproj-BF16.gguf',
+      approxSizeBytes: 800000000,
     ),
   ];
 
