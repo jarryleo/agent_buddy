@@ -345,6 +345,24 @@
   "chatInputHint": "Say something…",
   "chatInputHintNoModel": "Please add a model in settings first",
   "chatInputHintReplying": "Model is replying…",
+  "chatToolsTooltip": "More tools",
+  "chatToolImage": "Image",
+  "chatToolFile": "File",
+  "chatToolWorkingDirectory": "Workdir",
+  "chatToolThinking": "Thinking",
+  "fileRemoveTooltip": "Remove file",
+  "fileErrorFailedToAttach": "Failed to attach file: {error}",
+  "@fileErrorFailedToAttach": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "workingDirectoryError": "Failed to choose working directory: {error}",
+  "@workingDirectoryError": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
   "imageAttachTooltip": "Attach image",
   "imagePickGallery": "Choose from gallery",
   "imagePickCamera": "Take a photo",

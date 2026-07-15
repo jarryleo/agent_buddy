@@ -1,5 +1,6 @@
 import 'package:agent_buddy/l10n/app_localizations.dart';
 import 'package:agent_buddy/services/api_service.dart';
+import 'package:agent_buddy/services/file_attachment_service.dart';
 import 'package:agent_buddy/services/image_service.dart';
 import 'package:agent_buddy/widgets/chat_input.dart';
 import 'package:flutter/material.dart';
@@ -26,14 +27,29 @@ void main() {
           supportedLocales: const [Locale('en'), Locale('zh')],
           home: Scaffold(
             body: ChatInput(
-              onSend: (text, images) => onSend(text),
+              onSend: (text, images, files) => onSend(text),
               enabled: true,
               imageService: ImageService(),
+              fileAttachmentService: const FileAttachmentService(),
             ),
           ),
         ),
       );
     }
+
+    testWidgets('plus button opens the inline tools bar', (tester) async {
+      await pumpInput(tester, (_) {});
+      await tester.tap(find.byIcon(Icons.add));
+      await tester.pump();
+
+      final context = tester.element(find.byType(ChatInput));
+      final l10n = AppLocalizations.of(context);
+      expect(find.text(l10n.chatToolImage), findsOneWidget);
+      expect(find.text(l10n.chatToolFile), findsOneWidget);
+      expect(find.text(l10n.chatToolWorkingDirectory), findsOneWidget);
+      expect(find.text(l10n.chatToolThinking), findsOneWidget);
+      expect(find.byType(Switch), findsOneWidget);
+    });
 
     testWidgets('Enter sends the message on desktop', (tester) async {
       final sent = <String>[];
@@ -119,10 +135,11 @@ void main() {
               builder: (ctx) {
                 captured = AppLocalizations.of(ctx);
                 return ChatInput(
-                  onSend: (_, _) {},
+                  onSend: (_, _, _) {},
                   enabled: enabled,
                   sending: sending,
                   imageService: ImageService(),
+                  fileAttachmentService: const FileAttachmentService(),
                 );
               },
             ),

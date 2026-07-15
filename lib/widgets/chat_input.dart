@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/file_attachment.dart';
+import '../services/file_attachment_service.dart';
 import '../services/image_service.dart';
 import '../theme/app_theme.dart';
 import 'image_preview.dart';
@@ -17,15 +20,30 @@ class ChatInput extends StatefulWidget {
     required this.onSend,
     required this.enabled,
     required this.imageService,
+    required this.fileAttachmentService,
+    this.workingDirectory,
+    this.thinkingEnabled = false,
+    this.onWorkingDirectoryChanged,
+    this.onThinkingChanged,
     this.sending = false,
     this.onStop,
   });
 
-  final void Function(String text, List<String> imagePaths) onSend;
+  final void Function(
+    String text,
+    List<String> imagePaths,
+    List<ChatFileAttachment> fileAttachments,
+  )
+  onSend;
   final bool enabled;
   final bool sending;
   final VoidCallback? onStop;
   final ImageService imageService;
+  final FileAttachmentService fileAttachmentService;
+  final String? workingDirectory;
+  final bool thinkingEnabled;
+  final Future<void> Function(String? path)? onWorkingDirectoryChanged;
+  final Future<void> Function(bool enabled)? onThinkingChanged;
 
   @override
   State<ChatInput> createState() => _ChatInputState();
@@ -37,8 +55,11 @@ const int _kMaxLinesExpanded = 10;
 class _ChatInputState extends State<ChatInput> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
-  final List<String> _attachmentPaths = [];
+  final List<String> _imagePaths = [];
+  final List<ChatFileAttachment> _fileAttachments = [];
   bool _pickingImage = false;
+  bool _pickingFile = false;
+  bool _toolbarOpen = false;
 
   @override
   void dispose() {
@@ -49,32 +70,209 @@ class _ChatInputState extends State<ChatInput> {
 
   void _send() {
     final text = _controller.text.trim();
-    if ((text.isEmpty && _attachmentPaths.isEmpty) || !widget.enabled) return;
-
-    // Separate images (sent as multimodal content) from other files.
-    final images = <String>[];
-    final nonImageText = <String>[];
-    for (final p in _attachmentPaths) {
-      if (_isImageFile(p)) {
-        images.add(p);
-      } else {
-        nonImageText.add(p);
-      }
+    if ((text.isEmpty && _imagePaths.isEmpty && _fileAttachments.isEmpty) ||
+        !widget.enabled) {
+      return;
     }
-
-    final finalText = nonImageText.isEmpty
-        ? text
-        : text.isNotEmpty
-        ? '$text\n---\n${nonImageText.join('\n')}'
-        : nonImageText.join('\n');
-
-    widget.onSend(finalText, images);
+    _setToolbarOpen(false);
+    widget.onSend(
+      text,
+      List.unmodifiable(_imagePaths),
+      List.unmodifiable(_fileAttachments),
+    );
     _controller.clear();
-    setState(() => _attachmentPaths.clear());
+    setState(() {
+      _imagePaths.clear();
+      _fileAttachments.clear();
+    });
+  }
+
+  void _toggleToolbar() => _setToolbarOpen(!_toolbarOpen);
+
+  void _setToolbarOpen(bool open) {
+    if (_toolbarOpen == open) return;
+    setState(() {
+      _toolbarOpen = open;
+      if (open) _focusNode.unfocus();
+    });
+  }
+
+  Widget _buildToolbar(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Divider(height: 1, thickness: 0.5, color: context.appBorder),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _toolbarAction(
+                context: context,
+                icon: Icons.image_outlined,
+                label: l10n.chatToolImage,
+                onTap: widget.enabled ? _pickImage : null,
+              ),
+              _toolbarAction(
+                context: context,
+                icon: Icons.attach_file_rounded,
+                label: l10n.chatToolFile,
+                onTap: widget.enabled ? _pickFile : null,
+              ),
+              _toolbarAction(
+                context: context,
+                icon: Icons.folder_outlined,
+                label: l10n.chatToolWorkingDirectory,
+                active: widget.workingDirectory?.isNotEmpty == true,
+                tooltip: widget.workingDirectory,
+                onTap: widget.sending ? null : _pickWorkingDirectory,
+              ),
+              Expanded(child: _thinkingToggle(context, l10n)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _thinkingToggle(BuildContext context, AppLocalizations l10n) {
+    final enabled = !widget.sending;
+    final color = enabled
+        ? context.textPrimary
+        : context.textSecondary.withValues(alpha: 0.5);
+    return Semantics(
+      button: true,
+      label: l10n.chatToolThinking,
+      child: InkWell(
+        key: const ValueKey('chat-thinking-toggle'),
+        onTap: enabled ? _toggleThinking : null,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                height: 24,
+                child: Switch.adaptive(
+                  value: widget.thinkingEnabled,
+                  onChanged: enabled ? _setThinkingMode : null,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                l10n.chatToolThinking,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: color),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _toolbarAction({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required VoidCallback? onTap,
+    bool active = false,
+    String? tooltip,
+  }) {
+    final color = onTap == null
+        ? context.textSecondary.withValues(alpha: 0.5)
+        : active
+        ? AppTheme.primary
+        : context.textSecondary;
+    return Expanded(
+      child: Tooltip(
+        message: tooltip ?? label,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 22, color: color),
+                const SizedBox(height: 5),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: onTap == null ? color : context.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickFile() async {
+    if (_pickingFile) return;
+    _setToolbarOpen(false);
+    setState(() => _pickingFile = true);
+    try {
+      final files = await widget.fileAttachmentService.pickFiles();
+      if (!mounted || files.isEmpty) return;
+      setState(() => _fileAttachments.addAll(files));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context).fileErrorFailedToAttach(e.toString()),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _pickingFile = false);
+    }
+  }
+
+  Future<void> _pickWorkingDirectory() async {
+    _setToolbarOpen(false);
+    try {
+      final path = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: AppLocalizations.of(context).chatToolWorkingDirectory,
+      );
+      if (path == null || !mounted) return;
+      await widget.onWorkingDirectoryChanged?.call(path);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context).workingDirectoryError(e.toString()),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  void _toggleThinking() {
+    _setThinkingMode(!widget.thinkingEnabled);
+  }
+
+  Future<void> _setThinkingMode(bool enabled) async {
+    await widget.onThinkingChanged?.call(enabled);
   }
 
   Future<void> _pickImage() async {
     if (_pickingImage) return;
+    _setToolbarOpen(false);
     setState(() => _pickingImage = true);
     try {
       final l10n = AppLocalizations.of(context);
@@ -113,7 +311,7 @@ class _ChatInputState extends State<ChatInput> {
           : await widget.imageService.pickFromCamera();
       if (path == null) return;
       if (!mounted) return;
-      setState(() => _attachmentPaths.add(path));
+      setState(() => _imagePaths.add(path));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -127,38 +325,34 @@ class _ChatInputState extends State<ChatInput> {
     }
   }
 
-  /// Handle paste (Ctrl+V / Cmd+V): read clipboard for files, images,
-  /// and text. All files go to [_attachmentPaths] (thumbnail strip).
-  /// Images are sent as multimodal content; non-image file paths are
-  /// appended to the message text on send so the AI can reference them.
   void _handlePaste() async {
-    // 1. File drop list (copied files from Explorer / Finder).
     var pastedFileCount = 0;
     try {
-      final files = await _readFileDropList();
-      if (files.isNotEmpty) {
-        setState(() => _attachmentPaths.addAll(files));
-        pastedFileCount = files.length;
+      final paths = await _readFileDropList();
+      if (paths.isNotEmpty) {
+        final imagePaths = paths.where(_isImageFile).toList();
+        final filePaths = paths.where((path) => !_isImageFile(path));
+        final files = await widget.fileAttachmentService.importPaths(filePaths);
+        if (mounted) {
+          setState(() {
+            _imagePaths.addAll(imagePaths);
+            _fileAttachments.addAll(files);
+          });
+        }
+        pastedFileCount = paths.length;
       }
-    } catch (_) {
-      // File drop list read is best-effort.
-    }
+    } catch (_) {}
 
-    // 2. Image paste — only when no files were found above, so
-    //    a copied screenshot doesn't also get inserted as text.
     if (pastedFileCount == 0) {
       try {
         final imageBytes = await _readClipboardImage();
         if (imageBytes != null && imageBytes.isNotEmpty) {
           final path = await _savePastedImage(imageBytes);
-          if (mounted) setState(() => _attachmentPaths.add(path));
-          return; // Screenshot takes priority over any stray text.
+          if (mounted) setState(() => _imagePaths.add(path));
+          return;
         }
-      } catch (_) {
-        // Image paste is best-effort.
-      }
+      } catch (_) {}
 
-      // 3. Plain text paste — fallback when no files or images.
       try {
         final textData = await Clipboard.getData(Clipboard.kTextPlain);
         if (textData?.text != null && textData!.text!.isNotEmpty) {
@@ -166,9 +360,7 @@ class _ChatInputState extends State<ChatInput> {
           if (_tryAddImageFile(text)) return;
           _insertText(text);
         }
-      } catch (_) {
-        // Ignore clipboard read failures.
-      }
+      } catch (_) {}
     }
   }
 
@@ -236,13 +428,12 @@ class _ChatInputState extends State<ChatInput> {
     return ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'].contains(ext);
   }
 
-  /// If [text] is a path to an existing image file, add it to
-  /// [_attachmentPaths] and return true. Otherwise return false.
+  /// If [text] is a path to an existing image file, add it and return true.
   bool _tryAddImageFile(String text) {
     final trimmed = text.trim();
     try {
       if (File(trimmed).existsSync() && _isImageFile(trimmed)) {
-        setState(() => _attachmentPaths.add(trimmed));
+        setState(() => _imagePaths.add(trimmed));
         return true;
       }
     } catch (_) {
@@ -286,7 +477,8 @@ class _ChatInputState extends State<ChatInput> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final hasAttachments = _attachmentPaths.isNotEmpty;
+    final hasAttachments =
+        _imagePaths.isNotEmpty || _fileAttachments.isNotEmpty;
     return Container(
       decoration: BoxDecoration(
         color: context.surface,
@@ -312,15 +504,29 @@ class _ChatInputState extends State<ChatInput> {
                   height: 40,
                   child: IconButton(
                     padding: EdgeInsets.zero,
-                    onPressed: widget.enabled && !_pickingImage
-                        ? _pickImage
+                    onPressed:
+                        !widget.sending && !_pickingImage && !_pickingFile
+                        ? _toggleToolbar
                         : null,
-                    icon: Icon(Icons.add_photo_alternate_outlined),
+                    icon: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, anim) => RotationTransition(
+                        turns: Tween<double>(begin: 0.125, end: 0.0)
+                            .animate(anim),
+                        child: FadeTransition(opacity: anim, child: child),
+                      ),
+                      child: Icon(
+                        _toolbarOpen ? Icons.close : Icons.add,
+                        key: ValueKey<bool>(_toolbarOpen),
+                      ),
+                    ),
                     color: context.textSecondary,
-                    tooltip: l10n.imageAttachTooltip,
+                    tooltip: l10n.chatToolsTooltip,
                   ),
                 ),
-                SizedBox(width: 6),
+                const SizedBox(width: 6),
                 Expanded(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(
@@ -349,7 +555,9 @@ class _ChatInputState extends State<ChatInput> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                             ),
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                            ),
                             elevation: 0,
                           ),
                           child: const Icon(Icons.stop_rounded, size: 18),
@@ -364,13 +572,23 @@ class _ChatInputState extends State<ChatInput> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                             ),
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                            ),
                             elevation: 0,
                           ),
                           child: const Icon(Icons.send_rounded, size: 18),
                         ),
                 ),
               ],
+            ),
+            ClipRect(
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: _toolbarOpen ? _buildToolbar(context) : const SizedBox.shrink(),
+              ),
             ),
           ],
         ),
@@ -385,19 +603,30 @@ class _ChatInputState extends State<ChatInput> {
         height: 78,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
-          itemCount: _attachmentPaths.length,
+          itemCount: _imagePaths.length + _fileAttachments.length,
           separatorBuilder: (_, _) => const SizedBox(width: 6),
           itemBuilder: (context, index) {
-            final path = _attachmentPaths[index];
-            final isImage = _isImageFile(path);
+            if (index < _imagePaths.length) {
+              final path = _imagePaths[index];
+              return _AttachmentThumbnail(
+                path: path,
+                name: p.basename(path),
+                isImage: true,
+                onRemove: () => setState(() => _imagePaths.removeAt(index)),
+                onTap: () => ImagePreviewPage.showLocal(context, path),
+                removeTooltip: l10n.imageRemoveTooltip,
+              );
+            }
+            final fileIndex = index - _imagePaths.length;
+            final file = _fileAttachments[fileIndex];
             return _AttachmentThumbnail(
-              path: path,
-              isImage: isImage,
-              onRemove: () => setState(() => _attachmentPaths.removeAt(index)),
-              onTap: isImage
-                  ? () => ImagePreviewPage.showLocal(context, path)
-                  : null,
-              removeTooltip: l10n.imageRemoveTooltip,
+              path: file.path,
+              name: file.name,
+              isImage: false,
+              onRemove: () =>
+                  setState(() => _fileAttachments.removeAt(fileIndex)),
+              onTap: null,
+              removeTooltip: l10n.fileRemoveTooltip,
             );
           },
         ),
@@ -605,6 +834,7 @@ class _InputField extends StatelessWidget {
 class _AttachmentThumbnail extends StatelessWidget {
   const _AttachmentThumbnail({
     required this.path,
+    required this.name,
     required this.isImage,
     required this.onRemove,
     required this.onTap,
@@ -612,6 +842,7 @@ class _AttachmentThumbnail extends StatelessWidget {
   });
 
   final String path;
+  final String name;
   final bool isImage;
   final VoidCallback onRemove;
   final VoidCallback? onTap;
@@ -619,7 +850,6 @@ class _AttachmentThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = p.basename(path);
     return SizedBox(
       width: 64,
       height: 64,

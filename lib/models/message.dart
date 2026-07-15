@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'download.dart';
+import 'file_attachment.dart';
 
 enum MessageRole { user, assistant, system, tool }
 
@@ -152,6 +153,7 @@ class ChatMessage {
   /// Empty for messages without images. The files live in the app's
   /// documents directory and persist across app restarts.
   final List<String> imagePaths;
+  final List<ChatFileAttachment> fileAttachments;
 
   /// Set on synthetic "system" messages that the chat provider
   /// appends to the conversation out-of-band (currently used for
@@ -170,6 +172,7 @@ class ChatMessage {
     this.streaming = false,
     this.toolCalls = const [],
     this.imagePaths = const [],
+    this.fileAttachments = const [],
     this.hidden = false,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -180,6 +183,7 @@ class ChatMessage {
     bool? streaming,
     List<ToolCall>? toolCalls,
     List<String>? imagePaths,
+    List<ChatFileAttachment>? fileAttachments,
     bool? hidden,
   }) {
     return ChatMessage(
@@ -191,6 +195,7 @@ class ChatMessage {
       streaming: streaming ?? this.streaming,
       toolCalls: toolCalls ?? this.toolCalls,
       imagePaths: imagePaths ?? this.imagePaths,
+      fileAttachments: fileAttachments ?? this.fileAttachments,
       hidden: hidden ?? this.hidden,
     );
   }
@@ -203,6 +208,8 @@ class ChatMessage {
     'createdAt': createdAt.toIso8601String(),
     'toolCalls': toolCalls.map((t) => t.toJson()).toList(),
     'imagePaths': imagePaths,
+    if (fileAttachments.isNotEmpty)
+      'fileAttachments': fileAttachments.map((f) => f.toJson()).toList(),
     // Only serialize when set so v1 records (no `hidden` key)
     // round-trip identically. Default on read is `false`.
     if (hidden) 'hidden': true,
@@ -211,6 +218,7 @@ class ChatMessage {
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     final tcRaw = json['toolCalls'] as List?;
     final imgRaw = json['imagePaths'] as List?;
+    final fileRaw = json['fileAttachments'] as List?;
     return ChatMessage(
       id: json['id'] as String,
       role: MessageRole.values.firstWhere(
@@ -228,6 +236,15 @@ class ChatMessage {
                 .map((e) => ToolCall.fromJson(e as Map<String, dynamic>))
                 .toList(),
       imagePaths: imgRaw?.cast<String>() ?? const [],
+      fileAttachments: fileRaw == null
+          ? const []
+          : fileRaw
+                .map(
+                  (e) => ChatFileAttachment.fromJson(
+                    (e as Map).cast<String, dynamic>(),
+                  ),
+                )
+                .toList(),
       hidden: json['hidden'] as bool? ?? false,
     );
   }

@@ -7,12 +7,14 @@ import 'package:uuid/uuid.dart';
 import '../l10n/app_localizations.dart';
 import '../models/chat_session.dart';
 import '../models/download.dart';
+import '../models/file_attachment.dart';
 import '../models/mcp_provider.dart';
 import '../models/message.dart';
 import '../models/skill.dart';
 import '../models/timer_task.dart';
 import '../services/api_service.dart';
 import '../services/download_service.dart';
+import '../services/file_attachment_service.dart';
 import '../services/image_service.dart';
 import '../services/local_llm_service.dart';
 import '../services/storage_service.dart';
@@ -31,6 +33,7 @@ class ChatProvider extends ChangeNotifier {
     this._localLlm,
     this._settings,
     this._downloads,
+    this._fileAttachments,
   ) {
     _restoreActiveSession();
     // Wire the timer queue: when a task fires, the service calls
@@ -48,6 +51,7 @@ class ChatProvider extends ChangeNotifier {
   final LocalLlmService _localLlm;
   final SettingsProvider _settings;
   final DownloadService _downloads;
+  final FileAttachmentService _fileAttachments;
   final _uuid = const Uuid();
 
   /// Owns the multi-round tool-calling loop. Stateless from the
@@ -298,9 +302,11 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  /// Returns up to 3 system prompt parts: [baseSystem, rolePrompt, skillsPrompt].
-  /// Empty strings are filtered out so the caller only gets non-empty parts.
+  /// Returns the active system prompt parts.
   List<String> _buildSystemPrompts() {
+    final thinkingPrompt = _settings.thinkingModeEnabled
+        ? '当前已开启思考模式。请在回答前进行更充分的分析与推理，再给出准确、清晰的结论。'
+        : '';
     String? rolePrompt;
     final role = _settings.activeRole;
     if (role != null && role.systemPrompt.isNotEmpty) {
@@ -334,6 +340,10 @@ class ChatProvider extends ChangeNotifier {
                 '每个工具的参数 schema 已经准确列出,按参数说明使用即可。'
                 '当前已启用 ${mcpServers.length} 个 MCP 服务器。'
           : '';
+      final workingDirectory = _settings.modelWorkingDirectory;
+      final workingDirectoryHint = workingDirectory == null
+          ? ''
+          : '\n- 模型默认工作目录: $workingDirectory。file 和 run_command 的相对路径都基于此目录。';
       baseSystem =
           '你是一个有用、诚实的助手。\n'
           '\n'
@@ -350,7 +360,7 @@ class ChatProvider extends ChangeNotifier {
           '没头绪就先 list。\n'
           '- location(位置):获取当前位置,别主动问用户。\n'
           '- ask_user(问用户):需要用户选择或确认时用。\n'
-          '- file(文件):读/写/删/改名/列目录/查属性。给绝对路径。\n'
+          '- file(文件):读/写/删/改名/列目录/查属性。优先使用相对路径。\n'
           '- timer(计时):用户说"X 分钟后提醒我 Y"就用这个。'
           'create 时给 delay_seconds(或 fire_at_iso)、label 必填,'
           'prompt 写提醒正文,action_hint 写"调用 notification 通知用户…"这种建议。'
@@ -361,11 +371,12 @@ class ChatProvider extends ChangeNotifier {
           'action=list_tabs 先拿表名,read/update/append/clear 用 A1 表示法(range),'
           'create_tab/delete_tab 增删整张表,format 改文字/格子属性。'
           '插入数据给二维数组 values,字符串以 `=` 开头会被当公式。\n'
-          '- 其他工具按参数说明用就行。$mcpHint';
+          '- 其他工具按参数说明用就行。$workingDirectoryHint$mcpHint';
     }
 
     return [
       if (baseSystem != null && baseSystem.isNotEmpty) baseSystem,
+      if (thinkingPrompt.isNotEmpty) thinkingPrompt,
       if (rolePrompt != null && rolePrompt.isNotEmpty) rolePrompt,
       if (skillsPrompt != null && skillsPrompt.isNotEmpty) skillsPrompt,
     ];
@@ -450,6 +461,7 @@ class ChatProvider extends ChangeNotifier {
   String _appendUserAndAssistantPlaceholders(
     String userContent,
     List<String> imagePaths,
+    List<ChatFileAttachment> fileAttachments,
   ) {
     final s = _activeSession;
     if (s == null) {
@@ -458,13 +470,18 @@ class ChatProvider extends ChangeNotifier {
       // session in place, but we keep the guard for testability.
       final blank = _createBlankSessionInternal();
       _setActiveSession(blank);
-      return _appendUserAndAssistantPlaceholders(userContent, imagePaths);
+      return _appendUserAndAssistantPlaceholders(
+        userContent,
+        imagePaths,
+        fileAttachments,
+      );
     }
     final userMsg = ChatMessage(
       id: _uuid.v4(),
       role: MessageRole.user,
       content: userContent,
       imagePaths: List.unmodifiable(imagePaths),
+      fileAttachments: List.unmodifiable(fileAttachments),
     );
     final assistantId = _uuid.v4();
     final assistantMsg = ChatMessage(
@@ -477,9 +494,13 @@ class ChatProvider extends ChangeNotifier {
 
     // If this is the first user message of a fresh session,
     // derive a title for the session list.
-    if (s.messages.isEmpty && userContent.isNotEmpty) {
+    if (s.messages.isEmpty &&
+        (userContent.isNotEmpty || fileAttachments.isNotEmpty)) {
+      final titleSource = userContent.isNotEmpty
+          ? userContent
+          : fileAttachments.first.name;
       final titled = _activeSession!.copyWith(
-        title: ChatSession.deriveTitle(userContent),
+        title: ChatSession.deriveTitle(titleSource),
       );
       _setActiveSession(titled);
     }
@@ -963,10 +984,14 @@ class ChatProvider extends ChangeNotifier {
     BuildContext context,
     String text, {
     List<String> imagePaths = const [],
+    List<ChatFileAttachment> fileAttachments = const [],
   }) async {
     final l10n = AppLocalizations.of(context);
     final trimmed = text.trim();
-    if ((trimmed.isEmpty && imagePaths.isEmpty) || _sending) return;
+    if ((trimmed.isEmpty && imagePaths.isEmpty && fileAttachments.isEmpty) ||
+        _sending) {
+      return;
+    }
     _cachedContext = context;
     final useLocal = _settings.useLocalModel;
     final provider = _settings.activeProvider;
@@ -1029,6 +1054,7 @@ class ChatProvider extends ChangeNotifier {
     final assistantId = _appendUserAndAssistantPlaceholders(
       trimmed,
       imagePaths,
+      fileAttachments,
     );
     _sending = true;
     await _storage.sessions.save(_activeSession!);
@@ -1100,8 +1126,13 @@ class ChatProvider extends ChangeNotifier {
       if (m.role != MessageRole.user && m.role != MessageRole.assistant) {
         continue;
       }
-      if (m.content.isEmpty && m.imagePaths.isEmpty) continue;
+      if (m.content.isEmpty &&
+          m.imagePaths.isEmpty &&
+          m.fileAttachments.isEmpty) {
+        continue;
+      }
       final dataUrls = <String>[];
+      final preparedFiles = <PreparedFileAttachment>[];
       for (final path in m.imagePaths) {
         if (!useLocal) {
           try {
@@ -1112,12 +1143,33 @@ class ChatProvider extends ChangeNotifier {
           }
         }
       }
+      for (final attachment in m.fileAttachments) {
+        try {
+          preparedFiles.add(
+            await _fileAttachments.prepare(
+              attachment,
+              includeBinaryData: !useLocal,
+            ),
+          );
+        } catch (e) {
+          preparedFiles.add(
+            PreparedFileAttachment(
+              name: attachment.name,
+              path: attachment.path,
+              size: attachment.size,
+              mimeType: attachment.mimeType,
+              textContent: '[Unable to read attached file: $e]',
+            ),
+          );
+        }
+      }
       requestMessages.add(
         ChatRequestMessage(
           role: m.role,
           content: m.content,
           imageDataUrls: dataUrls,
           imagePaths: useLocal ? List.unmodifiable(m.imagePaths) : const [],
+          fileAttachments: List.unmodifiable(preparedFiles),
         ),
       );
     }
@@ -1136,6 +1188,7 @@ class ChatProvider extends ChangeNotifier {
             systemPrompts: systemPrompts,
             messages: requestMessages,
             tools: tools,
+            enableThinking: _settings.thinkingModeEnabled,
             onToolCall: (tc) => _onToolCall(context, tc, assistantId),
             orchestrator: _orchestrator,
             boundSessionId: _activeSession?.id,
@@ -1149,6 +1202,7 @@ class ChatProvider extends ChangeNotifier {
             messages: requestMessages,
             systemPrompts: systemPrompts.isEmpty ? null : systemPrompts,
             tools: tools.isEmpty ? null : tools,
+            enableThinking: _settings.thinkingModeEnabled,
             onToolCall: (tc) => _onToolCall(context, tc, assistantId),
             orchestrator: _orchestrator,
           );

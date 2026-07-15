@@ -798,6 +798,34 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatInputHintReplying => 'Model is replying…';
 
   @override
+  String get chatToolsTooltip => 'More tools';
+
+  @override
+  String get chatToolImage => 'Image';
+
+  @override
+  String get chatToolFile => 'File';
+
+  @override
+  String get chatToolWorkingDirectory => 'Workdir';
+
+  @override
+  String get chatToolThinking => 'Thinking';
+
+  @override
+  String get fileRemoveTooltip => 'Remove file';
+
+  @override
+  String fileErrorFailedToAttach(String error) {
+    return 'Failed to attach file: $error';
+  }
+
+  @override
+  String workingDirectoryError(String error) {
+    return 'Failed to choose working directory: $error';
+  }
+
+  @override
   String get imageAttachTooltip => 'Attach image';
 
   @override

@@ -51,6 +51,7 @@ class ToolService {
     StorageService? storage,
     GoogleSheetsService? googleSheets,
   }) {
+    _storage = storage;
     if (notesBox != null) {
       _notes = NotesService()..open(preopened: notesBox);
     }
@@ -98,9 +99,11 @@ class ToolService {
   NotificationService? _notifications;
   McpService? _mcp;
   GoogleSheetsService? _googleSheets;
+  StorageService? _storage;
 
   /// The shared HTTP client used by [FetchWebTool].
   http.Client get httpClient => _client;
+  String? get workingDirectory => _storage?.modelWorkingDirectory;
 
   CalendarService get calendar {
     _calendar ??= createCalendarService();

@@ -762,6 +762,34 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatInputHintReplying => '模型回复中…';
 
   @override
+  String get chatToolsTooltip => '更多工具';
+
+  @override
+  String get chatToolImage => '图片';
+
+  @override
+  String get chatToolFile => '文件';
+
+  @override
+  String get chatToolWorkingDirectory => '工作目录';
+
+  @override
+  String get chatToolThinking => '思考模式';
+
+  @override
+  String get fileRemoveTooltip => '移除文件';
+
+  @override
+  String fileErrorFailedToAttach(String error) {
+    return '添加文件失败: $error';
+  }
+
+  @override
+  String workingDirectoryError(String error) {
+    return '选择工作目录失败: $error';
+  }
+
+  @override
   String get imageAttachTooltip => '添加图片';
 
   @override

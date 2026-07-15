@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/file_attachment.dart';
 import '../models/message.dart';
 import '../providers/chat_provider.dart';
 import '../theme/app_theme.dart';
@@ -160,6 +161,8 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   Widget _buildUser(BuildContext context, ChatMessage m) {
     final hasImages = m.imagePaths.isNotEmpty;
+    final hasFiles = m.fileAttachments.isNotEmpty;
+    final hasAttachments = hasImages || hasFiles;
     return Padding(
       padding: const EdgeInsets.fromLTRB(48, 4, 12, 4),
       child: Row(
@@ -171,7 +174,9 @@ class _MessageBubbleState extends State<MessageBubble> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 if (hasImages) _buildUserImages(context, m.imagePaths),
-                if (hasImages && m.content.isNotEmpty)
+                if (hasImages && hasFiles) const SizedBox(height: 6),
+                if (hasFiles) _buildUserFiles(context, m.fileAttachments),
+                if (hasAttachments && m.content.isNotEmpty)
                   const SizedBox(height: 6),
                 if (m.content.isNotEmpty)
                   Container(
@@ -294,6 +299,68 @@ class _MessageBubbleState extends State<MessageBubble> {
         },
       ),
     );
+  }
+
+  Widget _buildUserFiles(BuildContext context, List<ChatFileAttachment> files) {
+    return Wrap(
+      alignment: WrapAlignment.end,
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        for (final file in files)
+          Container(
+            constraints: const BoxConstraints(maxWidth: 230),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: context.bubbleAssistant,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: context.appBorder),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.insert_drive_file_outlined,
+                  size: 20,
+                  color: AppTheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        file.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        _formatFileSize(file.size),
+                        style: TextStyle(
+                          color: context.textSecondary,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
   }
 
   Widget _buildGroupedToolCalls(

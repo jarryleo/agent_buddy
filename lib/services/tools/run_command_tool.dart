@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:path/path.dart' as p;
 
 import '../tool_service.dart';
 import 'tool_base.dart';
@@ -32,7 +33,7 @@ class RunCommandTool extends ToolBase {
               'type': 'string',
               'description': '要执行的命令(通过系统 shell 运行)',
             },
-            'cwd': {'type': 'string', 'description': '工作目录,可选,默认当前'},
+            'cwd': {'type': 'string', 'description': '工作目录,可选,默认使用用户选择的模型工作目录'},
             'timeout_seconds': {
               'type': 'integer',
               'description': '超时秒数,默认 30,超时自动杀掉',
@@ -64,7 +65,13 @@ class RunCommandTool extends ToolBase {
     if (command.isEmpty) {
       throw ToolException('command must not be empty');
     }
-    final cwd = args['cwd'] as String?;
+    final requestedCwd = (args['cwd'] as String?)?.trim();
+    final defaultCwd = services.workingDirectory;
+    final cwd = requestedCwd == null || requestedCwd.isEmpty
+        ? defaultCwd
+        : p.isAbsolute(requestedCwd) || defaultCwd == null
+        ? requestedCwd
+        : p.normalize(p.join(defaultCwd, requestedCwd));
     final timeoutSeconds = (args['timeout_seconds'] as num?)?.toInt() ?? 30;
 
     final Process process;

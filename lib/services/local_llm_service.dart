@@ -32,6 +32,7 @@ class LocalLlmService extends ChangeNotifier {
   /// regression test in `test/local_llm_service_test.dart`.
   int _localToolCallSeq = 0;
   static const _uuid = Uuid();
+  static const _useNativeBackend = true;
 
   bool get isReady => _engine != null && _session != null;
   bool get isLoading => _loading;
@@ -39,6 +40,8 @@ class LocalLlmService extends ChangeNotifier {
   Object? get loadError => _loadError;
   bool get supportsVision => _supportsVision;
   bool get supportsAudio => _supportsAudio;
+  bool get _supportsThinking =>
+      _engine != null && _session != null && !_useNativeBackend;
 
   /// Clear the last load error. Call after showing it to the user.
   void clearLoadError() {
@@ -106,6 +109,7 @@ class LocalLlmService extends ChangeNotifier {
     required List<String> systemPrompts,
     required List<ChatRequestMessage> messages,
     required List<Map<String, dynamic>> tools,
+    bool enableThinking = false,
     Future<String> Function(Map<String, dynamic> toolCall)? onToolCall,
     ToolOrchestrator? orchestrator,
 
@@ -205,6 +209,7 @@ class LocalLlmService extends ChangeNotifier {
             ),
             tools: llamaTools.isEmpty ? null : llamaTools,
             toolChoice: llamaTools.isEmpty ? ToolChoice.none : ToolChoice.auto,
+            enableThinking: enableThinking && _supportsThinking,
           )) {
             if (chunk.choices.isEmpty) continue;
             final delta = chunk.choices.first.delta;
@@ -412,11 +417,9 @@ class LocalLlmService extends ChangeNotifier {
       final role = m.role == MessageRole.user
           ? LlamaChatRole.user
           : LlamaChatRole.assistant;
-      if (m.role == MessageRole.user && m.imagePaths.isNotEmpty) {
-        final parts = <LlamaContentPart>[
-          if (m.content.isNotEmpty) LlamaTextContent(m.content),
-          for (final p in m.imagePaths) LlamaImageContent(path: p),
-        ];
+      if (m.role == MessageRole.user &&
+          (m.imagePaths.isNotEmpty || m.fileAttachments.isNotEmpty)) {
+        final parts = _buildContentParts(m);
         session.addMessage(
           LlamaChatMessage.withContent(role: role, content: parts),
         );
@@ -434,15 +437,38 @@ class LocalLlmService extends ChangeNotifier {
     for (var i = messages.length - 1; i >= 0; i--) {
       final m = messages[i];
       if (m.role != MessageRole.user) continue;
-      if (m.imagePaths.isNotEmpty) {
-        return <LlamaContentPart>[
-          if (m.content.isNotEmpty) LlamaTextContent(m.content),
-          for (final p in m.imagePaths) LlamaImageContent(path: p),
-        ];
+      if (m.imagePaths.isNotEmpty || m.fileAttachments.isNotEmpty) {
+        return _buildContentParts(m);
       }
       return <LlamaContentPart>[LlamaTextContent(m.content)];
     }
     return const <LlamaContentPart>[];
+  }
+
+  List<LlamaContentPart> _buildContentParts(ChatRequestMessage message) {
+    final text = StringBuffer(message.content);
+    final fileImages = <String>[];
+    for (final file in message.fileAttachments) {
+      if (file.textContent != null) {
+        if (text.isNotEmpty) text.write('\n\n');
+        text
+          ..writeln('<attached_file name="${file.name}">')
+          ..writeln(file.textContent)
+          ..write('</attached_file>');
+      } else if (file.mimeType.startsWith('image/') && file.path.isNotEmpty) {
+        fileImages.add(file.path);
+      } else {
+        if (text.isNotEmpty) text.write('\n\n');
+        text.write(
+          '[Attached file: ${file.name}, type=${file.mimeType}, path=${file.path}]',
+        );
+      }
+    }
+    return <LlamaContentPart>[
+      if (text.isNotEmpty) LlamaTextContent(text.toString()),
+      for (final path in message.imagePaths) LlamaImageContent(path: path),
+      for (final path in fileImages) LlamaImageContent(path: path),
+    ];
   }
 
   List<Map<String, dynamic>> _lastToolCalls(

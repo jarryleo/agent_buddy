@@ -1,3 +1,4 @@
+import 'package:agent_buddy/models/file_attachment.dart';
 import 'package:agent_buddy/models/message.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -48,6 +49,31 @@ void main() {
       final round = m.copyWith(content: 'updated');
       expect(round.hidden, isTrue);
       expect(round.content, 'updated');
+    });
+
+    test('file attachments round-trip and legacy messages default to none', () {
+      final message = ChatMessage(
+        id: 'file',
+        role: MessageRole.user,
+        fileAttachments: const [
+          ChatFileAttachment(
+            name: 'notes.txt',
+            path: 'C:/files/notes.txt',
+            size: 12,
+            mimeType: 'text/plain',
+          ),
+        ],
+      );
+      final roundTrip = ChatMessage.fromJson(message.toJson());
+      expect(roundTrip.fileAttachments, hasLength(1));
+      expect(roundTrip.fileAttachments.single.name, 'notes.txt');
+      expect(
+        ChatMessage.fromJson({
+          'id': 'legacy-file',
+          'role': 'user',
+        }).fileAttachments,
+        isEmpty,
+      );
     });
 
     test('copyWith can flip the flag', () {

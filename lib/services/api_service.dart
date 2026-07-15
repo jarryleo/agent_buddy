@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../models/file_attachment.dart';
 import '../models/message.dart';
 import '../models/provider.dart';
 import 'tool_orchestrator.dart';
@@ -81,6 +82,7 @@ class ChatRequestMessage {
   /// Used by the local LLM service which can read images directly from
   /// disk instead of decoding base64 data URLs.
   final List<String> imagePaths;
+  final List<PreparedFileAttachment> fileAttachments;
 
   /// For tool-result messages only: the id of the tool call this
   /// result is responding to. Protocol layers (OpenAI / Anthropic)
@@ -110,6 +112,7 @@ class ChatRequestMessage {
     this.thinking = '',
     this.imageDataUrls = const [],
     this.imagePaths = const [],
+    this.fileAttachments = const [],
     this.toolCallId,
     this.toolName,
     this.toolCallsWire,
@@ -118,10 +121,15 @@ class ChatRequestMessage {
 }
 
 class ApiService {
-  final http.Client _client = http.Client();
+  ApiService({http.Client? client})
+    : _client = client ?? http.Client(),
+      _ownsClient = client == null;
+
+  final http.Client _client;
+  final bool _ownsClient;
 
   void dispose() {
-    _client.close();
+    if (_ownsClient) _client.close();
   }
 
   Future<bool> testConnection(ModelProvider provider) async {
@@ -214,6 +222,7 @@ class ApiService {
     required List<ChatRequestMessage> messages,
     List<String>? systemPrompts,
     List<Map<String, dynamic>>? tools,
+    bool enableThinking = false,
     Future<String> Function(Map<String, dynamic> toolCall)? onToolCall,
     ToolOrchestrator? orchestrator,
   }) async* {
@@ -227,6 +236,7 @@ class ApiService {
         messages: messages,
         systemPrompts: systemPrompts,
         tools: tools,
+        enableThinking: enableThinking,
       );
       return;
     }
@@ -250,6 +260,7 @@ class ApiService {
             history: h,
             systemPrompts: systemPrompts,
             tools: tools,
+            enableThinking: enableThinking,
           );
         case ProviderProtocol.anthropic:
           return _runAnthropicTurn(
@@ -258,6 +269,7 @@ class ApiService {
             history: h,
             systemPrompts: systemPrompts,
             tools: tools,
+            enableThinking: enableThinking,
           );
       }
     }
@@ -322,6 +334,7 @@ class ApiService {
     required List<ChatRequestMessage> messages,
     List<String>? systemPrompts,
     List<Map<String, dynamic>>? tools,
+    required bool enableThinking,
   }) async* {
     switch (provider.protocol) {
       case ProviderProtocol.openai:
@@ -331,6 +344,7 @@ class ApiService {
           messages: messages,
           systemPrompts: systemPrompts,
           tools: tools,
+          enableThinking: enableThinking,
         );
         break;
       case ProviderProtocol.anthropic:
@@ -340,6 +354,7 @@ class ApiService {
           messages: messages,
           systemPrompts: systemPrompts,
           tools: tools,
+          enableThinking: enableThinking,
         );
         break;
     }
@@ -351,6 +366,7 @@ class ApiService {
     required List<ChatRequestMessage> messages,
     List<String>? systemPrompts,
     List<Map<String, dynamic>>? tools,
+    required bool enableThinking,
   }) async* {
     // Backward-compat wrapper: run a single turn, ignore any tool
     // calls the model emits, just stream the text. (No orchestrator
@@ -362,6 +378,7 @@ class ApiService {
       history: messages,
       systemPrompts: systemPrompts,
       tools: tools,
+      enableThinking: enableThinking,
     )) {
       if (ev.kind == OrchestratorEventKind.turnDone) {
         finalResult = ev.turnResult;
@@ -391,12 +408,14 @@ class ApiService {
     required List<ChatRequestMessage> history,
     required List<String>? systemPrompts,
     required List<Map<String, dynamic>>? tools,
+    required bool enableThinking,
   }) async* {
     final payload = <String, dynamic>{
       'model': model,
       'stream': true,
       'messages': _buildOpenAIMessages(history, systemPrompts),
     };
+    _applyOpenAIThinking(payload, model, enableThinking);
     if (tools != null && tools.isNotEmpty) {
       payload['tools'] = tools;
     }
@@ -579,6 +598,7 @@ class ApiService {
     required List<ChatRequestMessage> messages,
     List<String>? systemPrompts,
     List<Map<String, dynamic>>? tools,
+    required bool enableThinking,
   }) async* {
     // Backward-compat wrapper: run a single turn, ignore any tool
     // calls the model emits, just stream the text. (No orchestrator
@@ -590,6 +610,7 @@ class ApiService {
       history: messages,
       systemPrompts: systemPrompts,
       tools: tools,
+      enableThinking: enableThinking,
     )) {
       if (ev.kind == OrchestratorEventKind.turnDone) {
         finalResult = ev.turnResult;
@@ -616,6 +637,7 @@ class ApiService {
     required List<ChatRequestMessage> history,
     required List<String>? systemPrompts,
     required List<Map<String, dynamic>>? tools,
+    required bool enableThinking,
   }) async* {
     final payload = <String, dynamic>{
       'model': model,
@@ -623,6 +645,9 @@ class ApiService {
       'max_tokens': 4096,
       'messages': _buildAnthropicMessages(history),
     };
+    if (enableThinking) {
+      payload['thinking'] = {'type': 'enabled', 'budget_tokens': 2048};
+    }
     if (systemPrompts != null && systemPrompts.isNotEmpty) {
       payload['system'] = systemPrompts
           .map((p) => {'type': 'text', 'text': p})
@@ -656,6 +681,7 @@ class ApiService {
     var currentStopReason = '';
     var currentContent = '';
     var currentReasoning = '';
+    var currentThinkingSignature = '';
     var anyContent = false;
 
     void emitContent(String chunk) {
@@ -699,6 +725,11 @@ class ApiService {
               if (text is String && text.isNotEmpty) {
                 emitReasoning(text);
                 yield OrchestratorEvent.reasoning(text);
+              }
+            } else if (deltaType == 'signature_delta') {
+              final signature = delta['signature'];
+              if (signature is String && signature.isNotEmpty) {
+                currentThinkingSignature += signature;
               }
             } else if (deltaType == 'text_delta') {
               final text = delta['text'];
@@ -760,27 +791,23 @@ class ApiService {
       });
     }
 
-    final hasBlocks = contentBlocks.isNotEmpty;
     if (currentContent.isNotEmpty) {
       contentBlocks.insert(0, {'type': 'text', 'text': currentContent});
     }
-    if (currentReasoning.isNotEmpty) {
-      // Anthropic puts thinking into its own `thinking` content
-      // block, but for the purposes of feeding back to the model we
-      // treat it as a text block. The reasoning has already been
-      // streamed to the UI via `emitReasoning`; the assistant
-      // content blocks we serialize here are only for the wire
-      // payload.
-      contentBlocks.insert(0, {'type': 'text', 'text': currentReasoning});
+    if (currentReasoning.isNotEmpty && currentThinkingSignature.isNotEmpty) {
+      contentBlocks.insert(0, {
+        'type': 'thinking',
+        'thinking': currentReasoning,
+        'signature': currentThinkingSignature,
+      });
     }
 
+    final hasBlocks = contentBlocks.isNotEmpty;
     final assistantTurn = ChatRequestMessage(
       role: MessageRole.assistant,
       content: currentContent,
       thinking: currentReasoning,
-      anthropicContentBlocks: hasBlocks || currentContent.isNotEmpty
-          ? contentBlocks
-          : null,
+      anthropicContentBlocks: hasBlocks ? contentBlocks : null,
     );
 
     if (currentStopReason == 'refusal') {
@@ -819,10 +846,20 @@ class ApiService {
     for (final m in messages) {
       switch (m.role) {
         case MessageRole.user:
-          if (m.imageDataUrls.isNotEmpty) {
+          if (m.imageDataUrls.isNotEmpty || m.fileAttachments.isNotEmpty) {
             final parts = <Map<String, dynamic>>[];
             if (m.content.isNotEmpty) {
               parts.add({'type': 'text', 'text': m.content});
+            }
+            for (final file in m.fileAttachments) {
+              if (file.textContent != null) {
+                parts.add({'type': 'text', 'text': _textFileContent(file)});
+              } else if (file.base64Data != null) {
+                parts.add({
+                  'type': 'file',
+                  'file': {'filename': file.name, 'file_data': file.dataUrl},
+                });
+              }
             }
             for (final url in m.imageDataUrls) {
               parts.add({
@@ -845,6 +882,7 @@ class ApiService {
               'role': 'assistant',
               if (m.content.isNotEmpty) 'content': m.content,
               if (m.content.isEmpty) 'content': null,
+              if (m.thinking.isNotEmpty) 'reasoning_content': m.thinking,
               'tool_calls': m.toolCallsWire,
             });
           } else {
@@ -875,14 +913,37 @@ class ApiService {
     for (final m in messages) {
       switch (m.role) {
         case MessageRole.user:
-          if (m.imageDataUrls.isNotEmpty) {
+          if (m.imageDataUrls.isNotEmpty || m.fileAttachments.isNotEmpty) {
             final parts = <Map<String, dynamic>>[];
             if (m.content.isNotEmpty) {
               parts.add({'type': 'text', 'text': m.content});
             }
+            for (final file in m.fileAttachments) {
+              if (file.textContent != null) {
+                parts.add({'type': 'text', 'text': _textFileContent(file)});
+              } else if (file.base64Data != null &&
+                  file.mimeType.startsWith('image/')) {
+                parts.add({
+                  'type': 'image',
+                  'source': {
+                    'type': 'base64',
+                    'media_type': file.mimeType,
+                    'data': file.base64Data,
+                  },
+                });
+              } else if (file.base64Data != null) {
+                parts.add({
+                  'type': 'document',
+                  'source': {
+                    'type': 'base64',
+                    'media_type': file.mimeType,
+                    'data': file.base64Data,
+                  },
+                  'title': file.name,
+                });
+              }
+            }
             for (final url in m.imageDataUrls) {
-              // OpenAI-style data URLs (`data:image/...;base64,...`)
-              // round-trip into Anthropic's expected source object.
               final mediaType = _mediaTypeFromDataUrl(url);
               final data = _dataFromDataUrl(url);
               parts.add({
@@ -956,6 +1017,32 @@ class ApiService {
       // pass it through directly.
       return t;
     }).toList();
+  }
+
+  void _applyOpenAIThinking(
+    Map<String, dynamic> payload,
+    String model,
+    bool enabled,
+  ) {
+    if (!enabled) return;
+    final value = model.toLowerCase();
+    if (value.contains('qwen')) {
+      payload['enable_thinking'] = true;
+    } else if (value.contains('doubao') || value.contains('seed')) {
+      payload['thinking'] = {'type': 'enabled'};
+    } else if (value.startsWith('o1') ||
+        value.startsWith('o3') ||
+        value.startsWith('o4') ||
+        value.contains('gpt-5')) {
+      payload['reasoning_effort'] = 'medium';
+    }
+  }
+
+  String _textFileContent(PreparedFileAttachment file) {
+    final safeName = file.name.replaceAll('"', '&quot;');
+    return '<attached_file name="$safeName" type="${file.mimeType}">\n'
+        '${file.textContent ?? ''}\n'
+        '</attached_file>';
   }
 
   String _mediaTypeFromDataUrl(String dataUrl) {

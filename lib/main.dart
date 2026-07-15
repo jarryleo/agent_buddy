@@ -21,6 +21,7 @@ import 'services/api_service.dart';
 import 'services/builtin_model_download_service.dart';
 import 'services/chat_session_repository.dart';
 import 'services/download_service.dart';
+import 'services/file_attachment_service.dart';
 import 'services/google_sheets_service.dart';
 import 'services/image_service.dart';
 import 'services/local_llm_service.dart';
@@ -160,6 +161,9 @@ class AgentBuddyApp extends StatelessWidget {
           ),
         ),
         Provider<ImageService>(create: (_) => ImageService()),
+        Provider<FileAttachmentService>(
+          create: (_) => const FileAttachmentService(),
+        ),
         Provider<DownloadService>(create: (_) => DownloadService()),
         ChangeNotifierProvider<MemoryProvider>(
           create: (_) => MemoryProvider(memoryRepo),
@@ -167,12 +171,13 @@ class AgentBuddyApp extends StatelessWidget {
         ChangeNotifierProvider<LocalLlmService>(
           create: (_) => LocalLlmService(),
         ),
-        ChangeNotifierProxyProvider5<
+        ChangeNotifierProxyProvider6<
           SettingsProvider,
           ApiService,
           ToolService,
           ImageService,
           DownloadService,
+          FileAttachmentService,
           ChatProvider
         >(
           create: (ctx) => ChatProvider(
@@ -183,8 +188,9 @@ class AgentBuddyApp extends StatelessWidget {
             ctx.read<LocalLlmService>(),
             ctx.read<SettingsProvider>(),
             ctx.read<DownloadService>(),
+            ctx.read<FileAttachmentService>(),
           ),
-          update: (ctx, settings, api, tools, images, downloads, prev) =>
+          update: (ctx, settings, api, tools, images, downloads, files, prev) =>
               prev ??
               ChatProvider(
                 storage,
@@ -194,6 +200,7 @@ class AgentBuddyApp extends StatelessWidget {
                 ctx.read<LocalLlmService>(),
                 settings,
                 downloads,
+                files,
               ),
         ),
       ],

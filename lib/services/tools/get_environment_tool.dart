@@ -88,7 +88,7 @@ class GetEnvironmentTool extends ToolBase {
           Platform.environment['SHELL'] ??
           Platform.environment['COMSPEC'] ??
           '',
-      'cwd': Directory.current.path,
+      'cwd': services.workingDirectory ?? Directory.current.path,
       'num_processors': Platform.numberOfProcessors,
       'kernel': kernel.isEmpty ? Platform.operatingSystemVersion : kernel,
     });

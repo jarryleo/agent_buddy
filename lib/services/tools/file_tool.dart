@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 import '../tool_service.dart';
 import 'tool_base.dart';
 
@@ -42,7 +44,7 @@ class FileTool extends ToolBase {
             },
             'path': {
               'type': 'string',
-              'description': '文件或目录的绝对路径。Windows 用反斜杠,Unix 用正斜杠。',
+              'description': '文件或目录路径。相对路径基于用户选择的模型工作目录。',
             },
             'content': {
               'type': 'string',
@@ -74,10 +76,11 @@ class FileTool extends ToolBase {
     }
 
     final action = args['action'] as String? ?? '';
-    final path = (args['path'] as String? ?? '').trim();
-    if (path.isEmpty) {
+    final rawPath = (args['path'] as String? ?? '').trim();
+    if (rawPath.isEmpty) {
       throw ToolException('"path" is required');
     }
+    final path = _resolvePath(rawPath, services);
 
     switch (action) {
       case 'read':
@@ -94,11 +97,11 @@ class FileTool extends ToolBase {
         final recursive = args['recursive'] as bool? ?? false;
         return _delete(path, recursive);
       case 'rename':
-        final newPath = (args['new_path'] as String? ?? '').trim();
-        if (newPath.isEmpty) {
+        final rawNewPath = (args['new_path'] as String? ?? '').trim();
+        if (rawNewPath.isEmpty) {
           throw ToolException('"new_path" is required for rename');
         }
-        return _rename(path, newPath);
+        return _rename(path, _resolvePath(rawNewPath, services));
       case 'list_dir':
         final recursive = args['recursive'] as bool? ?? false;
         return _listDir(path, recursive);
@@ -107,6 +110,15 @@ class FileTool extends ToolBase {
           'unknown action: $action (expected read/read_attr/write/append/delete/rename/list_dir)',
         );
     }
+  }
+
+  String _resolvePath(String input, ToolService services) {
+    if (p.isAbsolute(input)) return p.normalize(input);
+    final workingDirectory = services.workingDirectory;
+    if (workingDirectory == null || workingDirectory.isEmpty) {
+      return p.normalize(input);
+    }
+    return p.normalize(p.join(workingDirectory, input));
   }
 
   Future<String> _read(String path) async {

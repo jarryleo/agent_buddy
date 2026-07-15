@@ -1512,6 +1512,54 @@ abstract class AppLocalizations {
   /// **'Model is replying…'**
   String get chatInputHintReplying;
 
+  /// No description provided for @chatToolsTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'More tools'**
+  String get chatToolsTooltip;
+
+  /// No description provided for @chatToolImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Image'**
+  String get chatToolImage;
+
+  /// No description provided for @chatToolFile.
+  ///
+  /// In en, this message translates to:
+  /// **'File'**
+  String get chatToolFile;
+
+  /// No description provided for @chatToolWorkingDirectory.
+  ///
+  /// In en, this message translates to:
+  /// **'Workdir'**
+  String get chatToolWorkingDirectory;
+
+  /// No description provided for @chatToolThinking.
+  ///
+  /// In en, this message translates to:
+  /// **'Thinking'**
+  String get chatToolThinking;
+
+  /// No description provided for @fileRemoveTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove file'**
+  String get fileRemoveTooltip;
+
+  /// No description provided for @fileErrorFailedToAttach.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to attach file: {error}'**
+  String fileErrorFailedToAttach(String error);
+
+  /// No description provided for @workingDirectoryError.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to choose working directory: {error}'**
+  String workingDirectoryError(String error);
+
   /// No description provided for @imageAttachTooltip.
   ///
   /// In en, this message translates to:

@@ -6,6 +6,7 @@ import '../l10n/app_localizations.dart';
 import '../models/message.dart';
 import '../providers/chat_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/file_attachment_service.dart';
 import '../services/image_service.dart';
 import '../services/local_llm_service.dart';
 import '../theme/app_theme.dart';
@@ -423,7 +424,7 @@ class _ChatInputArea extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final settings = context.read<SettingsProvider>();
+    final settings = context.watch<SettingsProvider>();
     final bool ready;
     if (settings.useLocalModel) {
       ready = settings.activeLocalProvider != null;
@@ -437,8 +438,13 @@ class _ChatInputArea extends StatelessWidget {
       enabled: ready && !sending,
       sending: sending,
       imageService: context.read<ImageService>(),
+      fileAttachmentService: context.read<FileAttachmentService>(),
+      workingDirectory: settings.modelWorkingDirectory,
+      thinkingEnabled: settings.thinkingModeEnabled,
+      onWorkingDirectoryChanged: settings.setModelWorkingDirectory,
+      onThinkingChanged: settings.setThinkingModeEnabled,
       onStop: () => chat.stopGeneration(),
-      onSend: (text, imagePaths) {
+      onSend: (text, imagePaths, fileAttachments) {
         // Mark the next auto-scroll as "force" so the latest
         // message comes into view even if the user had
         // scrolled up. Must run before sendMessage so the
@@ -446,7 +452,12 @@ class _ChatInputArea extends StatelessWidget {
         // triggered by sendMessage's first notifyListeners)
         // sees the flag.
         onBeforeSend();
-        chat.sendMessage(context, text, imagePaths: imagePaths);
+        chat.sendMessage(
+          context,
+          text,
+          imagePaths: imagePaths,
+          fileAttachments: fileAttachments,
+        );
       },
     );
   }

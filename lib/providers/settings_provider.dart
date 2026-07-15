@@ -43,6 +43,8 @@ class SettingsProvider extends ChangeNotifier {
   bool _toolsEnabled = true;
   String _themeMode = 'system';
   String _localeCode = 'system';
+  String? _modelWorkingDirectory;
+  bool _thinkingModeEnabled = false;
   GoogleSheetConfig _googleSheetConfig = GoogleSheetConfig.empty;
 
   List<ModelProvider> get providers => List.unmodifiable(_providers);
@@ -61,6 +63,8 @@ class SettingsProvider extends ChangeNotifier {
   bool get toolsEnabled => _toolsEnabled;
   String get themeMode => _themeMode;
   String get localeCode => _localeCode;
+  String? get modelWorkingDirectory => _modelWorkingDirectory;
+  bool get thinkingModeEnabled => _thinkingModeEnabled;
   GoogleSheetConfig get googleSheetConfig => _googleSheetConfig;
 
   /// Called whenever `GoogleSheetsService` notifies (config writes,
@@ -142,6 +146,8 @@ class SettingsProvider extends ChangeNotifier {
     _toolsEnabled = _storage.toolsEnabled;
     _themeMode = _storage.themeMode;
     _localeCode = _storage.localeCode;
+    _modelWorkingDirectory = _storage.modelWorkingDirectory;
+    _thinkingModeEnabled = _storage.thinkingModeEnabled;
     _googleSheetConfig = _storage.loadGoogleSheetConfig();
 
     // Seed built-in tools. Fresh installs hit the `isEmpty` branch and
@@ -655,6 +661,21 @@ class SettingsProvider extends ChangeNotifier {
   Future<void> setLocaleCode(String code) async {
     _localeCode = code;
     await _storage.setLocaleCode(code);
+    notifyListeners();
+  }
+
+  Future<void> setModelWorkingDirectory(String? path) async {
+    final normalized = path?.trim();
+    _modelWorkingDirectory = normalized == null || normalized.isEmpty
+        ? null
+        : normalized;
+    await _storage.setModelWorkingDirectory(_modelWorkingDirectory);
+    notifyListeners();
+  }
+
+  Future<void> setThinkingModeEnabled(bool enabled) async {
+    _thinkingModeEnabled = enabled;
+    await _storage.setThinkingModeEnabled(enabled);
     notifyListeners();
   }
 }

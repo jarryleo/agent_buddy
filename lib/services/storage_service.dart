@@ -36,6 +36,8 @@ class StorageService {
   static const _kThemeMode = 'theme_mode';
   static const _kLocaleCode = 'locale_code';
   static const _kGoogleSheetConfig = 'google_sheet_config';
+  static const _kModelWorkingDirectory = 'model_working_directory';
+  static const _kThinkingModeEnabled = 'thinking_mode_enabled';
 
   late final SharedPreferences _prefs;
   final ChatSessionRepository _sessions = ChatSessionRepository();
@@ -265,5 +267,23 @@ class StorageService {
 
   Future<void> saveGoogleSheetConfig(GoogleSheetConfig config) async {
     await _prefs.setString(_kGoogleSheetConfig, config.toRawJson());
+  }
+
+  String? get modelWorkingDirectory =>
+      _prefs.getString(_kModelWorkingDirectory);
+
+  Future<void> setModelWorkingDirectory(String? path) async {
+    if (path == null || path.trim().isEmpty) {
+      await _prefs.remove(_kModelWorkingDirectory);
+    } else {
+      await _prefs.setString(_kModelWorkingDirectory, path.trim());
+    }
+  }
+
+  bool get thinkingModeEnabled =>
+      _prefs.getBool(_kThinkingModeEnabled) ?? false;
+
+  Future<void> setThinkingModeEnabled(bool enabled) async {
+    await _prefs.setBool(_kThinkingModeEnabled, enabled);
   }
 }
