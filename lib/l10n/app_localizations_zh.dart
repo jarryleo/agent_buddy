@@ -434,8 +434,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolsMasterSwitchTitle => '使用工具';
 
   @override
-  String get toolsMasterSwitchDescription =>
-      '所有内置工具的总开关';
+  String get toolsMasterSwitchDescription => '所有内置工具的总开关';
 
   @override
   String get toolsMasterOffHint => '工具已全部关闭,模型只会用纯文字回复。';
@@ -493,6 +492,60 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get toolDescCallMcp => '调用外部 MCP 服务器上的工具。';
+
+  @override
+  String get toolNameFetchWeb => 'Fetch Web';
+
+  @override
+  String get toolNameCurrentTime => '当前时间';
+
+  @override
+  String get toolNameAskUser => '询问用户';
+
+  @override
+  String get toolNameRunCommand => '命令行执行';
+
+  @override
+  String get toolNameGetEnvironment => '环境信息';
+
+  @override
+  String get toolNameCalendar => '日历';
+
+  @override
+  String get toolNameReminders => '提醒事项';
+
+  @override
+  String get toolNameNotes => '笔记';
+
+  @override
+  String get toolNameTasks => '任务';
+
+  @override
+  String get toolNameMemory => '记忆';
+
+  @override
+  String get toolNameLocation => '位置';
+
+  @override
+  String get toolNameDownload => '下载文件';
+
+  @override
+  String get toolNameFile => '文件';
+
+  @override
+  String get toolNameLoadSkill => '加载技能';
+
+  @override
+  String get toolNameNotification => '通知';
+
+  @override
+  String get toolNameTimer => '计时器';
+
+  @override
+  String get toolNameGoogleSheet => 'Google Sheet';
+
+  @override
+  String get toolNameCallMcp => '调用 MCP 工具';
 
   @override
   String get downloadStatusPending => '等待中…';

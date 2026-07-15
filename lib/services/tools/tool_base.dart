@@ -15,8 +15,25 @@ abstract class ToolBase {
   /// Unique snake_case identifier (e.g. `'fetch_web'`).
   String get id;
 
-  /// Human-readable name in simplified Chinese (for UI display).
+  /// Human-readable name in simplified Chinese. Persisted into
+  /// the on-device `AgentTool` JSON so existing installs keep a
+  /// usable label after a downgrade or refresh; the Settings →
+  /// Tools tab prefers the [userNameKey] translation, falling
+  /// back to this default when the locale has no entry.
   String get name;
+
+  /// ARB key for the user-facing display name shown in the
+  /// settings Tools tab. The default derives `toolName<PascalId>`
+  /// from [id], e.g. `'memory'` → `'toolNameMemory'`,
+  /// `'fetch_web'` → `'toolNameFetchWeb'`. Subclasses override
+  /// only when they want a custom key name.
+  String get userNameKey {
+    final camel = id
+        .split('_')
+        .map((p) => p.isEmpty ? p : (p[0].toUpperCase() + p.substring(1)))
+        .join();
+    return 'toolName$camel';
+  }
 
   /// Description in simplified Chinese — sent to the model as the
   /// tool's function description. **Not** the user-facing copy in

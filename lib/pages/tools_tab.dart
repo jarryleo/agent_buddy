@@ -43,7 +43,10 @@ class ToolsTab extends StatelessWidget {
                 final t = tools[index];
                 final active = settings.activeToolIds.contains(t.id);
                 final toolDef = ToolRegistry.byId(t.id);
-                final name = toolDef?.name ?? t.name;
+                final userName = _toolUserName(l10n, t.id);
+                final name = userName.isNotEmpty
+                    ? userName
+                    : (toolDef?.name ?? t.name);
                 final userDescription = _toolUserDescription(l10n, t.id);
                 final description = userDescription.isNotEmpty
                     ? userDescription
@@ -139,6 +142,55 @@ class ToolsTab extends StatelessWidget {
   Future<bool?> _openGoogleSheetSettings(BuildContext context) async {
     final tools = context.read<ToolService>();
     return GoogleSheetSettingsSheet.show(context, tools.googleSheets);
+  }
+}
+
+/// Display name shown on each tool card in the Settings → Tools
+/// tab. Pulled from ARB so it can be translated; the persisted
+/// [AgentTool.name] (the Chinese default) is the fallback when
+/// the locale has no entry. Returns an empty string for unknown
+/// ids, which the caller treats as "fall back to the tool's
+/// own name".
+String _toolUserName(AppLocalizations l10n, String id) {
+  switch (id) {
+    case 'fetch_web':
+      return l10n.toolNameFetchWeb;
+    case 'current_time':
+      return l10n.toolNameCurrentTime;
+    case 'ask_user':
+      return l10n.toolNameAskUser;
+    case 'run_command':
+      return l10n.toolNameRunCommand;
+    case 'get_environment':
+      return l10n.toolNameGetEnvironment;
+    case 'calendar':
+      return l10n.toolNameCalendar;
+    case 'reminders':
+      return l10n.toolNameReminders;
+    case 'notes':
+      return l10n.toolNameNotes;
+    case 'tasks':
+      return l10n.toolNameTasks;
+    case 'memory':
+      return l10n.toolNameMemory;
+    case 'location':
+      return l10n.toolNameLocation;
+    case 'download':
+      return l10n.toolNameDownload;
+    case 'file':
+      return l10n.toolNameFile;
+    case 'load_skill':
+      return l10n.toolNameLoadSkill;
+    case 'notification':
+      return l10n.toolNameNotification;
+    case 'timer':
+      return l10n.toolNameTimer;
+    case 'google_sheet':
+      return l10n.toolNameGoogleSheet;
+    case 'call_mcp':
+      return l10n.toolNameCallMcp;
+    default:
+      return '';
   }
 }
 

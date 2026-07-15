@@ -201,7 +201,7 @@
 
   "toolsListEmpty": "No built-in tools",
   "toolsMasterSwitchTitle": "Use Tools",
-  "toolsMasterSwitchDescription": "Master switch for all built-in tools. Turn off for a pure chat experience to save tokens — the model won't see or call any tool until you turn this back on. Individual tool settings below are preserved.",
+  "toolsMasterSwitchDescription": "Master switch for all built-in tools.",
   "toolsMasterOffHint": "All tools are off. The model will reply in plain text only.",
 
   "toolDescFetchWeb": "Fetch and parse web pages.",
@@ -222,6 +222,25 @@
   "toolDescTimer": "Schedule a delayed callback to the model (only while the app is running).",
   "toolDescGoogleSheet": "Read and edit your Google Sheet (desktop only).",
   "toolDescCallMcp": "Call tools on a configured MCP server.",
+
+  "toolNameFetchWeb": "Fetch Web",
+  "toolNameCurrentTime": "Current Time",
+  "toolNameAskUser": "Ask User",
+  "toolNameRunCommand": "Run Command",
+  "toolNameGetEnvironment": "Environment",
+  "toolNameCalendar": "Calendar",
+  "toolNameReminders": "Reminders",
+  "toolNameNotes": "Notes",
+  "toolNameTasks": "Tasks",
+  "toolNameMemory": "Memory",
+  "toolNameLocation": "Location",
+  "toolNameDownload": "Download",
+  "toolNameFile": "Files",
+  "toolNameLoadSkill": "Load Skill",
+  "toolNameNotification": "Notifications",
+  "toolNameTimer": "Timer",
+  "toolNameGoogleSheet": "Google Sheet",
+  "toolNameCallMcp": "MCP Tools",
 
 
   "downloadStatusPending": "Waiting…",

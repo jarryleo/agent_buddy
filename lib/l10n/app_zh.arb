@@ -145,7 +145,7 @@
 
   "toolsListEmpty": "暂无内置工具",
   "toolsMasterSwitchTitle": "使用工具",
-  "toolsMasterSwitchDescription": "所有内置工具的总开关。关闭后进入纯聊天模式,可节省 token —— 模型既看不到也无法调用任何工具,直到你重新打开总开关。下方每个工具的独立开关会保留。",
+  "toolsMasterSwitchDescription": "所有内置工具的总开关",
   "toolsMasterOffHint": "工具已全部关闭,模型只会用纯文字回复。",
 
   "toolDescFetchWeb": "抓取并解析网页内容。",
@@ -166,6 +166,25 @@
   "toolDescTimer": "在指定时间后让模型再次回复你(仅运行时有效)。",
   "toolDescGoogleSheet": "读写你账号下的 Google 表格(仅桌面端)。",
   "toolDescCallMcp": "调用外部 MCP 服务器上的工具。",
+
+  "toolNameFetchWeb": "Fetch Web",
+  "toolNameCurrentTime": "当前时间",
+  "toolNameAskUser": "询问用户",
+  "toolNameRunCommand": "命令行执行",
+  "toolNameGetEnvironment": "环境信息",
+  "toolNameCalendar": "日历",
+  "toolNameReminders": "提醒事项",
+  "toolNameNotes": "笔记",
+  "toolNameTasks": "任务",
+  "toolNameMemory": "记忆",
+  "toolNameLocation": "位置",
+  "toolNameDownload": "下载文件",
+  "toolNameFile": "文件",
+  "toolNameLoadSkill": "加载技能",
+  "toolNameNotification": "通知",
+  "toolNameTimer": "计时器",
+  "toolNameGoogleSheet": "Google Sheet",
+  "toolNameCallMcp": "调用 MCP 工具",
 
 
   "downloadStatusPending": "等待中…",

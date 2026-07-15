@@ -525,6 +525,60 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolDescCallMcp => 'Call tools on a configured MCP server.';
 
   @override
+  String get toolNameFetchWeb => 'Fetch Web';
+
+  @override
+  String get toolNameCurrentTime => 'Current Time';
+
+  @override
+  String get toolNameAskUser => 'Ask User';
+
+  @override
+  String get toolNameRunCommand => 'Run Command';
+
+  @override
+  String get toolNameGetEnvironment => 'Environment';
+
+  @override
+  String get toolNameCalendar => 'Calendar';
+
+  @override
+  String get toolNameReminders => 'Reminders';
+
+  @override
+  String get toolNameNotes => 'Notes';
+
+  @override
+  String get toolNameTasks => 'Tasks';
+
+  @override
+  String get toolNameMemory => 'Memory';
+
+  @override
+  String get toolNameLocation => 'Location';
+
+  @override
+  String get toolNameDownload => 'Download';
+
+  @override
+  String get toolNameFile => 'Files';
+
+  @override
+  String get toolNameLoadSkill => 'Load Skill';
+
+  @override
+  String get toolNameNotification => 'Notifications';
+
+  @override
+  String get toolNameTimer => 'Timer';
+
+  @override
+  String get toolNameGoogleSheet => 'Google Sheet';
+
+  @override
+  String get toolNameCallMcp => 'MCP Tools';
+
+  @override
   String get downloadStatusPending => 'Waiting…';
 
   @override

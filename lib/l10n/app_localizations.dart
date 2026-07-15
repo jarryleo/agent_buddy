@@ -899,7 +899,7 @@ abstract class AppLocalizations {
   /// No description provided for @toolsMasterSwitchDescription.
   ///
   /// In en, this message translates to:
-  /// **'Master switch for all built-in tools. Turn off for a pure chat experience to save tokens — the model won\'t see or call any tool until you turn this back on. Individual tool settings below are preserved.'**
+  /// **'Master switch for all built-in tools.'**
   String get toolsMasterSwitchDescription;
 
   /// No description provided for @toolsMasterOffHint.
@@ -1015,6 +1015,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Call tools on a configured MCP server.'**
   String get toolDescCallMcp;
+
+  /// No description provided for @toolNameFetchWeb.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetch Web'**
+  String get toolNameFetchWeb;
+
+  /// No description provided for @toolNameCurrentTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Current Time'**
+  String get toolNameCurrentTime;
+
+  /// No description provided for @toolNameAskUser.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask User'**
+  String get toolNameAskUser;
+
+  /// No description provided for @toolNameRunCommand.
+  ///
+  /// In en, this message translates to:
+  /// **'Run Command'**
+  String get toolNameRunCommand;
+
+  /// No description provided for @toolNameGetEnvironment.
+  ///
+  /// In en, this message translates to:
+  /// **'Environment'**
+  String get toolNameGetEnvironment;
+
+  /// No description provided for @toolNameCalendar.
+  ///
+  /// In en, this message translates to:
+  /// **'Calendar'**
+  String get toolNameCalendar;
+
+  /// No description provided for @toolNameReminders.
+  ///
+  /// In en, this message translates to:
+  /// **'Reminders'**
+  String get toolNameReminders;
+
+  /// No description provided for @toolNameNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'Notes'**
+  String get toolNameNotes;
+
+  /// No description provided for @toolNameTasks.
+  ///
+  /// In en, this message translates to:
+  /// **'Tasks'**
+  String get toolNameTasks;
+
+  /// No description provided for @toolNameMemory.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory'**
+  String get toolNameMemory;
+
+  /// No description provided for @toolNameLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Location'**
+  String get toolNameLocation;
+
+  /// No description provided for @toolNameDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get toolNameDownload;
+
+  /// No description provided for @toolNameFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Files'**
+  String get toolNameFile;
+
+  /// No description provided for @toolNameLoadSkill.
+  ///
+  /// In en, this message translates to:
+  /// **'Load Skill'**
+  String get toolNameLoadSkill;
+
+  /// No description provided for @toolNameNotification.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications'**
+  String get toolNameNotification;
+
+  /// No description provided for @toolNameTimer.
+  ///
+  /// In en, this message translates to:
+  /// **'Timer'**
+  String get toolNameTimer;
+
+  /// No description provided for @toolNameGoogleSheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Google Sheet'**
+  String get toolNameGoogleSheet;
+
+  /// No description provided for @toolNameCallMcp.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP Tools'**
+  String get toolNameCallMcp;
 
   /// No description provided for @downloadStatusPending.
   ///
