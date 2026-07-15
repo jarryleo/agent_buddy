@@ -395,6 +395,90 @@ class AppLocalizationsEn extends AppLocalizations {
   String get localProviderClearMmproj => 'Clear';
 
   @override
+  String get builtinModelSectionTitle => 'Built-in Models';
+
+  @override
+  String get builtinModelDownload => 'Download';
+
+  @override
+  String get builtinModelNotConfigured => 'Not configured';
+
+  @override
+  String get builtinModelConfigured => 'Configured';
+
+  @override
+  String get builtinModelEditTitle => 'Edit Built-in Model';
+
+  @override
+  String get builtinModelReconfigure => 'Re-configure';
+
+  @override
+  String get builtinModelRedownload => 'Re-download';
+
+  @override
+  String get builtinModelCancelDownload => 'Cancel download';
+
+  @override
+  String get builtinModelDownloadRequired =>
+      'Please complete the model download first';
+
+  @override
+  String builtinModelApproxSize(String size) {
+    return 'approx. $size';
+  }
+
+  @override
+  String get builtinModelDownloaded => 'Downloaded';
+
+  @override
+  String get builtinModelFiles => 'Model files';
+
+  @override
+  String get builtinModelWeightsFile => 'Model weights (.gguf)';
+
+  @override
+  String get builtinModelMmprojFile => 'Multimodal projector (mmproj)';
+
+  @override
+  String get builtinModelQueued => 'Waiting for the previous file…';
+
+  @override
+  String get builtinModelWaiting => 'Not started yet';
+
+  @override
+  String builtinModelProgress(String received, String total) {
+    return '$received / $total';
+  }
+
+  @override
+  String builtinModelProgressIndeterminate(Object received) {
+    return '$received downloaded';
+  }
+
+  @override
+  String builtinModelDownloadFailed(String error) {
+    return 'Download failed: $error';
+  }
+
+  @override
+  String get builtinModelStatusPending => 'Pending';
+
+  @override
+  String get builtinModelStatusRunning => 'Downloading';
+
+  @override
+  String get builtinModelStatusCompleted => 'Done';
+
+  @override
+  String get builtinModelStatusFailed => 'Failed';
+
+  @override
+  String get builtinModelStatusCancelled => 'Cancelled';
+
+  @override
+  String get builtinModelStatusDownloaded => 'Downloaded';
+
+  @override
   String get roleListEmpty =>
       'No roles added yet.\nTap \"Add\" in the bottom right to create your first role.';
 

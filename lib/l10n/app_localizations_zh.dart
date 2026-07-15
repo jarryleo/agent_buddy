@@ -384,6 +384,89 @@ class AppLocalizationsZh extends AppLocalizations {
   String get localProviderClearMmproj => '清除';
 
   @override
+  String get builtinModelSectionTitle => '内置模型';
+
+  @override
+  String get builtinModelDownload => '下载';
+
+  @override
+  String get builtinModelNotConfigured => '未配置';
+
+  @override
+  String get builtinModelConfigured => '已配置';
+
+  @override
+  String get builtinModelEditTitle => '编辑内置模型';
+
+  @override
+  String get builtinModelReconfigure => '重新配置';
+
+  @override
+  String get builtinModelRedownload => '重新下载';
+
+  @override
+  String get builtinModelCancelDownload => '取消下载';
+
+  @override
+  String get builtinModelDownloadRequired => '请先完成模型文件下载';
+
+  @override
+  String builtinModelApproxSize(String size) {
+    return '约 $size';
+  }
+
+  @override
+  String get builtinModelDownloaded => '已下载';
+
+  @override
+  String get builtinModelFiles => '模型文件';
+
+  @override
+  String get builtinModelWeightsFile => '模型权重 (.gguf)';
+
+  @override
+  String get builtinModelMmprojFile => '多模态投影 (mmproj)';
+
+  @override
+  String get builtinModelQueued => '等待上一个文件完成…';
+
+  @override
+  String get builtinModelWaiting => '尚未开始下载';
+
+  @override
+  String builtinModelProgress(String received, String total) {
+    return '$received / $total';
+  }
+
+  @override
+  String builtinModelProgressIndeterminate(Object received) {
+    return '已下载 $received';
+  }
+
+  @override
+  String builtinModelDownloadFailed(String error) {
+    return '下载失败: $error';
+  }
+
+  @override
+  String get builtinModelStatusPending => '等待中';
+
+  @override
+  String get builtinModelStatusRunning => '下载中';
+
+  @override
+  String get builtinModelStatusCompleted => '已完成';
+
+  @override
+  String get builtinModelStatusFailed => '失败';
+
+  @override
+  String get builtinModelStatusCancelled => '已取消';
+
+  @override
+  String get builtinModelStatusDownloaded => '已下载';
+
+  @override
   String get roleListEmpty => '还没有添加任何角色\n点击右下角\"新增\"创建你的第一个角色';
 
   @override

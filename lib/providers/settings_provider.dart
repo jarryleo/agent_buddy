@@ -374,6 +374,26 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   // Local providers
+
+  /// User-added local providers (i.e. ones NOT managed by a
+  /// built-in model card). The local model settings list renders
+  /// this view — built-in providers are surfaced by the built-in
+  /// cards themselves to avoid showing the same model twice.
+  List<LocalProvider> get customLocalProviders =>
+      _localProviders.where((p) => p.builtinModelId == null).toList();
+
+  /// Returns the configured [LocalProvider] linked to the given
+  /// built-in model id, or `null` when the user hasn't completed
+  /// the download + save flow for that built-in yet. Used by the
+  /// built-in cards in the local model settings tab to surface the
+  /// "已配置 / 未配置" state.
+  LocalProvider? localProviderForBuiltin(String builtinModelId) {
+    for (final p in _localProviders) {
+      if (p.builtinModelId == builtinModelId) return p;
+    }
+    return null;
+  }
+
   Future<LocalProvider> addLocalProvider({
     required String name,
     required String modelPath,
@@ -385,6 +405,7 @@ class SettingsProvider extends ChangeNotifier {
     String cacheTypeK = 'f16',
     String cacheTypeV = 'f16',
     int batchSize = LocalProvider.kDefaultBatchSize,
+    String? builtinModelId,
   }) async {
     final provider = LocalProvider(
       id: _uuid.v4(),
@@ -398,6 +419,7 @@ class SettingsProvider extends ChangeNotifier {
       cacheTypeK: cacheTypeK,
       cacheTypeV: cacheTypeV,
       batchSize: batchSize,
+      builtinModelId: builtinModelId,
     );
     _localProviders = [..._localProviders, provider];
     if (_activeLocalProviderId == null) {

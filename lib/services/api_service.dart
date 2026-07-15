@@ -947,10 +947,9 @@ class ApiService {
         return <String, dynamic>{
           'name': fn['name'] ?? '',
           'description': fn['description'] ?? '',
-          'input_schema': fn['parameters'] ?? {
-            'type': 'object',
-            'properties': <String, dynamic>{},
-          },
+          'input_schema':
+              fn['parameters'] ??
+              {'type': 'object', 'properties': <String, dynamic>{}},
         };
       }
       // If the tool is already in Anthropic format (no `function` wrapper),

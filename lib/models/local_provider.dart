@@ -12,6 +12,17 @@ class LocalProvider {
   final bool enabled;
   final DateTime createdAt;
 
+  /// Stable id of the [BuiltinModel] this provider was created from,
+  /// or `null` for a user-added local provider that points at a
+  /// hand-picked .gguf file.
+  ///
+  /// A non-null value marks the row as "owned" by the matching
+  /// built-in card in the local model settings tab — the providers
+  /// list filters such rows out (the user can't double-edit them via
+  /// the regular card), and the built-in card itself becomes the
+  /// entry point for editing the row's parameters.
+  final String? builtinModelId;
+
   /// Quantization for the K half of the KV cache. `q8_0` ≈ 0.5× the memory
   /// of `f16`; `q4_0` ≈ 0.25×. Non-f16 requires flash attention.
   final String cacheTypeK;
@@ -47,6 +58,7 @@ class LocalProvider {
     this.cacheTypeK = 'f16',
     this.cacheTypeV = 'f16',
     this.batchSize = kDefaultBatchSize,
+    this.builtinModelId,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -76,6 +88,7 @@ class LocalProvider {
       cacheTypeK: cacheTypeK ?? this.cacheTypeK,
       cacheTypeV: cacheTypeV ?? this.cacheTypeV,
       batchSize: batchSize ?? this.batchSize,
+      builtinModelId: builtinModelId,
       createdAt: createdAt,
     );
   }
@@ -98,6 +111,7 @@ class LocalProvider {
     'cacheTypeK': cacheTypeK,
     'cacheTypeV': cacheTypeV,
     'batchSize': batchSize,
+    'builtinModelId': builtinModelId,
     'createdAt': createdAt.toIso8601String(),
   };
 
@@ -119,6 +133,7 @@ class LocalProvider {
       // an older app version used to mean "= n_ctx" in llama.cpp,
       // which is the actual bug we're fixing, so we never honour it.
       batchSize: rawBatch > 0 ? rawBatch : kDefaultBatchSize,
+      builtinModelId: json['builtinModelId'] as String?,
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.now(),

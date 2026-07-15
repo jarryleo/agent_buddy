@@ -10,8 +10,8 @@ import '../l10n/app_localizations.dart';
 import '../models/local_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/gguf_metadata.dart';
-import '../services/memory_estimator.dart';
 import '../theme/app_theme.dart';
+import 'widgets/local_provider_form_fields.dart';
 
 class AddLocalProviderPage extends StatefulWidget {
   const AddLocalProviderPage({
@@ -44,20 +44,6 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
   ModelArchitecture? _modelArch;
   bool _archLoading = false;
   bool _busy = false;
-
-  static const _contextPresets = <int>[
-    512,
-    1024,
-    2048,
-    4096,
-    8192,
-    16384,
-    32768,
-    65536,
-    131072,
-  ];
-  static const _maxTokensPresets = <int>[128, 256, 512, 1024, 2048, 4096];
-  static const _batchSizePresets = <int>[256, 512, 1024, 2048, 4096];
 
   @override
   void initState() {
@@ -336,7 +322,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
           children: [
-            _Label(text: l10n.localProviderName),
+            LocalProviderFormLabel(text: l10n.localProviderName),
             TextFormField(
               controller: _name,
               decoration: InputDecoration(hintText: l10n.localProviderNameHint),
@@ -345,7 +331,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
                   : null,
             ),
             const SizedBox(height: 14),
-            _Label(text: l10n.localProviderModelFile),
+            LocalProviderFormLabel(text: l10n.localProviderModelFile),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -375,7 +361,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
               ],
             ),
             const SizedBox(height: 14),
-            _Label(text: l10n.localProviderMmprojFile),
+            LocalProviderFormLabel(text: l10n.localProviderMmprojFile),
             Text(
               l10n.localProviderMmprojHint,
               style: TextStyle(
@@ -384,7 +370,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
                 height: 1.4,
               ),
             ),
-            SizedBox(height: 6),
+            const SizedBox(height: 6),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -416,7 +402,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
               ),
             ],
             const SizedBox(height: 20),
-            _MemoryEstimateCard(
+            MemoryEstimateCard(
               modelFileSize: _modelFileSize,
               arch: _modelArch,
               loading: _archLoading,
@@ -432,16 +418,16 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
               loadingLabel: l10n.localProviderMemLoading,
             ),
             const SizedBox(height: 16),
-            _Label(text: l10n.localProviderParams),
+            LocalProviderFormLabel(text: l10n.localProviderParams),
             const SizedBox(height: 4),
-            _ContextSizeSlider(
+            ContextSizeSlider(
               value: _contextSize,
-              presets: _contextPresets,
+              presets: LocalProviderPresets.contextSize,
               onChanged: (v) => setState(() => _contextSize = v),
               label: l10n.localProviderContextSize,
             ),
             const SizedBox(height: 16),
-            _SliderField(
+            SliderField(
               value: _temperature,
               min: 0.0,
               max: 2.0,
@@ -451,37 +437,37 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
               display: _temperature.toStringAsFixed(2),
             ),
             const SizedBox(height: 16),
-            _GpuLayersField(
+            GpuLayersField(
               value: _gpuLayers,
               onChanged: (v) => setState(() => _gpuLayers = v),
               label: l10n.localProviderGpuLayers,
               hint: l10n.localProviderGpuLayersHint,
             ),
             const SizedBox(height: 16),
-            _MaxTokensSlider(
+            MaxTokensSlider(
               value: _maxTokens,
-              presets: _maxTokensPresets,
+              presets: LocalProviderPresets.maxTokens,
               onChanged: (v) => setState(() => _maxTokens = v),
               label: l10n.localProviderMaxTokens,
             ),
             const SizedBox(height: 16),
-            _KvCacheTypeField(
+            KvCacheTypeField(
               label: l10n.localProviderKvCacheK,
               hint: l10n.localProviderKvCacheHint,
               value: _cacheTypeK,
               onChanged: (v) => setState(() => _cacheTypeK = v),
             ),
             const SizedBox(height: 12),
-            _KvCacheTypeField(
+            KvCacheTypeField(
               label: l10n.localProviderKvCacheV,
               hint: null,
               value: _cacheTypeV,
               onChanged: (v) => setState(() => _cacheTypeV = v),
             ),
             const SizedBox(height: 16),
-            _BatchSizeSlider(
+            BatchSizeSlider(
               value: _batchSize,
-              presets: _batchSizePresets,
+              presets: LocalProviderPresets.batchSize,
               onChanged: (v) => setState(() => _batchSize = v),
               label: l10n.localProviderBatchSize,
               hint: l10n.localProviderBatchSizeHint,
@@ -513,556 +499,6 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _Label extends StatelessWidget {
-  const _Label({required this.text});
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6, left: 2),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: context.textSecondary,
-        ),
-      ),
-    );
-  }
-}
-
-class _ContextSizeSlider extends StatelessWidget {
-  const _ContextSizeSlider({
-    required this.value,
-    required this.presets,
-    required this.onChanged,
-    required this.label,
-  });
-
-  final int value;
-  final List<int> presets;
-  final ValueChanged<int> onChanged;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: context.textSecondary,
-                ),
-              ),
-            ),
-            Text(
-              '$value',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-        Slider(
-          value: presets.contains(value)
-              ? presets.indexOf(value).toDouble()
-              : 0,
-          min: 0,
-          max: (presets.length - 1).toDouble(),
-          divisions: presets.length - 1,
-          label: '$value',
-          onChanged: (v) => onChanged(presets[v.round()]),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: presets
-              .map(
-                (p) => Text(
-                  '$p',
-                  style: TextStyle(fontSize: 10, color: context.textSecondary),
-                ),
-              )
-              .toList(),
-        ),
-      ],
-    );
-  }
-}
-
-class _MaxTokensSlider extends StatelessWidget {
-  const _MaxTokensSlider({
-    required this.value,
-    required this.presets,
-    required this.onChanged,
-    required this.label,
-  });
-
-  final int value;
-  final List<int> presets;
-  final ValueChanged<int> onChanged;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: context.textSecondary,
-                ),
-              ),
-            ),
-            Text(
-              '$value',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-        Slider(
-          value: presets.contains(value)
-              ? presets.indexOf(value).toDouble()
-              : 0,
-          min: 0,
-          max: (presets.length - 1).toDouble(),
-          divisions: presets.length - 1,
-          label: '$value',
-          onChanged: (v) => onChanged(presets[v.round()]),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: presets
-              .map(
-                (p) => Text(
-                  '$p',
-                  style: TextStyle(fontSize: 10, color: context.textSecondary),
-                ),
-              )
-              .toList(),
-        ),
-      ],
-    );
-  }
-}
-
-class _SliderField extends StatelessWidget {
-  const _SliderField({
-    required this.value,
-    required this.min,
-    required this.max,
-    required this.divisions,
-    required this.onChanged,
-    required this.label,
-    required this.display,
-  });
-
-  final double value;
-  final double min;
-  final double max;
-  final int divisions;
-  final ValueChanged<double> onChanged;
-  final String label;
-  final String display;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: context.textSecondary,
-                ),
-              ),
-            ),
-            Text(
-              display,
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-        Slider(
-          value: value.clamp(min, max),
-          min: min,
-          max: max,
-          divisions: divisions,
-          label: display,
-          onChanged: onChanged,
-        ),
-      ],
-    );
-  }
-}
-
-class _GpuLayersField extends StatefulWidget {
-  const _GpuLayersField({
-    required this.value,
-    required this.onChanged,
-    required this.label,
-    required this.hint,
-  });
-
-  final int value;
-  final ValueChanged<int> onChanged;
-  final String label;
-  final String hint;
-
-  @override
-  State<_GpuLayersField> createState() => _GpuLayersFieldState();
-}
-
-class _GpuLayersFieldState extends State<_GpuLayersField> {
-  late TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: '${widget.value}');
-  }
-
-  @override
-  void didUpdateWidget(covariant _GpuLayersField oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.value.toString() != _controller.text) {
-      _controller.text = '${widget.value}';
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                widget.label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: context.textSecondary,
-                ),
-              ),
-            ),
-            SizedBox(
-              width: 70,
-              child: TextField(
-                controller: _controller,
-                keyboardType: TextInputType.number,
-                textAlign: TextAlign.right,
-                decoration: InputDecoration(
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(
-                    vertical: 6,
-                    horizontal: 8,
-                  ),
-                ),
-                onChanged: (v) {
-                  final parsed = int.tryParse(v.trim());
-                  if (parsed != null && parsed >= 0) {
-                    widget.onChanged(parsed);
-                  }
-                },
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Text(
-          widget.hint,
-          style: TextStyle(fontSize: 10, color: context.textSecondary),
-        ),
-      ],
-    );
-  }
-}
-
-class _KvCacheTypeField extends StatelessWidget {
-  const _KvCacheTypeField({
-    required this.label,
-    required this.value,
-    required this.onChanged,
-    this.hint,
-  });
-
-  final String label;
-  final String value;
-  final ValueChanged<String> onChanged;
-  final String? hint;
-
-  static const _options = <String>['f16', 'q8_0', 'q4_0'];
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: context.textSecondary,
-                ),
-              ),
-            ),
-            DropdownButton<String>(
-              value: value,
-              isDense: true,
-              underline: const SizedBox.shrink(),
-              items: [
-                for (final opt in _options)
-                  DropdownMenuItem(value: opt, child: Text(opt)),
-              ],
-              onChanged: (v) {
-                if (v != null) onChanged(v);
-              },
-            ),
-          ],
-        ),
-        if (hint != null) ...[
-          const SizedBox(height: 2),
-          Text(
-            hint!,
-            style: TextStyle(fontSize: 10, color: context.textSecondary),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _BatchSizeSlider extends StatelessWidget {
-  const _BatchSizeSlider({
-    required this.value,
-    required this.presets,
-    required this.onChanged,
-    required this.label,
-    this.hint,
-  });
-
-  final int value;
-  final List<int> presets;
-  final ValueChanged<int> onChanged;
-  final String label;
-  final String? hint;
-
-  @override
-  Widget build(BuildContext context) {
-    final safeValue = presets.contains(value)
-        ? value
-        : LocalProvider.kDefaultBatchSize;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: context.textSecondary,
-                ),
-              ),
-            ),
-            Text(
-              '$value',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-        Slider(
-          value: presets.indexOf(safeValue).toDouble(),
-          min: 0,
-          max: (presets.length - 1).toDouble(),
-          divisions: presets.length - 1,
-          label: '$value',
-          onChanged: (v) => onChanged(presets[v.round()]),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: presets
-              .map(
-                (p) => Text(
-                  '$p',
-                  style: TextStyle(fontSize: 10, color: context.textSecondary),
-                ),
-              )
-              .toList(),
-        ),
-        if (hint != null) ...[
-          const SizedBox(height: 4),
-          Text(
-            hint!,
-            style: TextStyle(fontSize: 10, color: context.textSecondary),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _MemoryEstimateCard extends StatelessWidget {
-  const _MemoryEstimateCard({
-    required this.modelFileSize,
-    required this.arch,
-    required this.loading,
-    required this.contextSize,
-    required this.batchSize,
-    required this.cacheTypeK,
-    required this.cacheTypeV,
-    required this.modelLabel,
-    required this.kvLabel,
-    required this.computeLabel,
-    required this.totalLabel,
-    required this.missingLabel,
-    required this.loadingLabel,
-  });
-
-  final int? modelFileSize;
-  final ModelArchitecture? arch;
-  final bool loading;
-  final int contextSize;
-  final int batchSize;
-  final String cacheTypeK;
-  final String cacheTypeV;
-  final String modelLabel;
-  final String kvLabel;
-  final String computeLabel;
-  final String totalLabel;
-  final String missingLabel;
-  final String loadingLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: context.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: context.textSecondary.withValues(alpha: 0.15),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (loading) ...[
-            Row(
-              children: [
-                const SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(strokeWidth: 1.5),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  loadingLabel,
-                  style: TextStyle(fontSize: 11, color: context.textSecondary),
-                ),
-              ],
-            ),
-          ] else if (modelFileSize == null) ...[
-            Text(
-              missingLabel,
-              style: TextStyle(fontSize: 11, color: context.textSecondary),
-            ),
-          ] else ...[
-            _row(
-              context,
-              totalLabel,
-              formatBytes(_breakdown.totalBytes),
-              emphasize: true,
-            ),
-            const SizedBox(height: 4),
-            _row(context, modelLabel, formatBytes(_breakdown.modelFileBytes)),
-            _row(context, kvLabel, formatBytes(_breakdown.kvCacheBytes)),
-            _row(
-              context,
-              computeLabel,
-              formatBytes(_breakdown.computeBufferBytes),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  MemoryBreakdown get _breakdown {
-    return const MemoryEstimator().estimate(
-      modelFileBytes: modelFileSize ?? 0,
-      arch: arch,
-      contextSize: contextSize,
-      batchSize: batchSize,
-      cacheTypeK: cacheTypeK,
-      cacheTypeV: cacheTypeV,
-    );
-  }
-
-  Widget _row(
-    BuildContext context,
-    String label,
-    String value, {
-    bool emphasize = false,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: emphasize ? 12 : 11,
-                color: context.textSecondary,
-                fontWeight: emphasize ? FontWeight.w600 : FontWeight.w400,
-              ),
-            ),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: emphasize ? 13 : 11,
-              color: context.textPrimary,
-              fontWeight: emphasize ? FontWeight.w700 : FontWeight.w500,
-            ),
-          ),
-        ],
       ),
     );
   }

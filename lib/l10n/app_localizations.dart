@@ -800,6 +800,156 @@ abstract class AppLocalizations {
   /// **'Clear'**
   String get localProviderClearMmproj;
 
+  /// No description provided for @builtinModelSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Built-in Models'**
+  String get builtinModelSectionTitle;
+
+  /// No description provided for @builtinModelDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get builtinModelDownload;
+
+  /// No description provided for @builtinModelNotConfigured.
+  ///
+  /// In en, this message translates to:
+  /// **'Not configured'**
+  String get builtinModelNotConfigured;
+
+  /// No description provided for @builtinModelConfigured.
+  ///
+  /// In en, this message translates to:
+  /// **'Configured'**
+  String get builtinModelConfigured;
+
+  /// No description provided for @builtinModelEditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit Built-in Model'**
+  String get builtinModelEditTitle;
+
+  /// No description provided for @builtinModelReconfigure.
+  ///
+  /// In en, this message translates to:
+  /// **'Re-configure'**
+  String get builtinModelReconfigure;
+
+  /// No description provided for @builtinModelRedownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Re-download'**
+  String get builtinModelRedownload;
+
+  /// No description provided for @builtinModelCancelDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel download'**
+  String get builtinModelCancelDownload;
+
+  /// No description provided for @builtinModelDownloadRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Please complete the model download first'**
+  String get builtinModelDownloadRequired;
+
+  /// No description provided for @builtinModelApproxSize.
+  ///
+  /// In en, this message translates to:
+  /// **'approx. {size}'**
+  String builtinModelApproxSize(String size);
+
+  /// No description provided for @builtinModelDownloaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded'**
+  String get builtinModelDownloaded;
+
+  /// No description provided for @builtinModelFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Model files'**
+  String get builtinModelFiles;
+
+  /// No description provided for @builtinModelWeightsFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Model weights (.gguf)'**
+  String get builtinModelWeightsFile;
+
+  /// No description provided for @builtinModelMmprojFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Multimodal projector (mmproj)'**
+  String get builtinModelMmprojFile;
+
+  /// No description provided for @builtinModelQueued.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for the previous file…'**
+  String get builtinModelQueued;
+
+  /// No description provided for @builtinModelWaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Not started yet'**
+  String get builtinModelWaiting;
+
+  /// No description provided for @builtinModelProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'{received} / {total}'**
+  String builtinModelProgress(String received, String total);
+
+  /// No description provided for @builtinModelProgressIndeterminate.
+  ///
+  /// In en, this message translates to:
+  /// **'{received} downloaded'**
+  String builtinModelProgressIndeterminate(Object received);
+
+  /// No description provided for @builtinModelDownloadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Download failed: {error}'**
+  String builtinModelDownloadFailed(String error);
+
+  /// No description provided for @builtinModelStatusPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get builtinModelStatusPending;
+
+  /// No description provided for @builtinModelStatusRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading'**
+  String get builtinModelStatusRunning;
+
+  /// No description provided for @builtinModelStatusCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get builtinModelStatusCompleted;
+
+  /// No description provided for @builtinModelStatusFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get builtinModelStatusFailed;
+
+  /// No description provided for @builtinModelStatusCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get builtinModelStatusCancelled;
+
+  /// No description provided for @builtinModelStatusDownloaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded'**
+  String get builtinModelStatusDownloaded;
+
   /// No description provided for @roleListEmpty.
   ///
   /// In en, this message translates to:

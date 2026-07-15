@@ -179,6 +179,48 @@
   },
   "localProviderClearMmproj": "Clear",
 
+  "builtinModelSectionTitle": "Built-in Models",
+  "builtinModelDownload": "Download",
+  "builtinModelNotConfigured": "Not configured",
+  "builtinModelConfigured": "Configured",
+  "builtinModelEditTitle": "Edit Built-in Model",
+  "builtinModelReconfigure": "Re-configure",
+  "builtinModelRedownload": "Re-download",
+  "builtinModelCancelDownload": "Cancel download",
+  "builtinModelDownloadRequired": "Please complete the model download first",
+  "builtinModelApproxSize": "approx. {size}",
+  "@builtinModelApproxSize": {
+    "placeholders": {
+      "size": { "type": "String" }
+    }
+  },
+  "builtinModelDownloaded": "Downloaded",
+  "builtinModelFiles": "Model files",
+  "builtinModelWeightsFile": "Model weights (.gguf)",
+  "builtinModelMmprojFile": "Multimodal projector (mmproj)",
+  "builtinModelQueued": "Waiting for the previous file…",
+  "builtinModelWaiting": "Not started yet",
+  "builtinModelProgress": "{received} / {total}",
+  "builtinModelProgressIndeterminate": "{received} downloaded",
+  "@builtinModelProgress": {
+    "placeholders": {
+      "received": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "builtinModelDownloadFailed": "Download failed: {error}",
+  "@builtinModelDownloadFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "builtinModelStatusPending": "Pending",
+  "builtinModelStatusRunning": "Downloading",
+  "builtinModelStatusCompleted": "Done",
+  "builtinModelStatusFailed": "Failed",
+  "builtinModelStatusCancelled": "Cancelled",
+  "builtinModelStatusDownloaded": "Downloaded",
+
   "roleListEmpty": "No roles added yet.\nTap \"Add\" in the bottom right to create your first role.",
   "roleAddTitle": "Add Role",
   "roleEditTitle": "Edit Role",

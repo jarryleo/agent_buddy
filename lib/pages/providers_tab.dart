@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/builtin_model.dart';
 import '../models/local_provider.dart';
 import '../models/provider.dart';
 import '../providers/settings_provider.dart';
@@ -8,6 +9,7 @@ import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import 'add_local_provider_page.dart';
 import 'add_provider_page.dart';
+import 'builtin_model_download_page.dart';
 import 'settings_page.dart';
 
 class ProvidersTab extends StatelessWidget {
@@ -48,6 +50,23 @@ class ProvidersTab extends StatelessWidget {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => AddLocalProviderPage(settings: settings, existing: p),
+      ),
+    );
+    onChanged();
+  }
+
+  Future<void> _openBuiltinDownload(
+    BuildContext context,
+    BuiltinModel model, [
+    LocalProvider? existing,
+  ]) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BuiltinModelDownloadPage(
+          settings: settings,
+          model: model,
+          existing: existing,
+        ),
       ),
     );
     onChanged();
@@ -135,6 +154,8 @@ class ProvidersTab extends StatelessWidget {
                     l10n: l10n,
                     onChanged: onChanged,
                     onEdit: (p) => _openEditLocal(context, p),
+                    onOpenBuiltinDownload: (m, existing) =>
+                        _openBuiltinDownload(context, m, existing),
                   )
                 : _CloudList(
                     settings: settings,
@@ -227,60 +248,354 @@ class _LocalList extends StatelessWidget {
     required this.l10n,
     required this.onChanged,
     required this.onEdit,
+    required this.onOpenBuiltinDownload,
   });
 
   final SettingsProvider settings;
   final AppLocalizations l10n;
   final VoidCallback onChanged;
   final ValueChanged<LocalProvider> onEdit;
+  final void Function(BuiltinModel model, LocalProvider? existing)
+  onOpenBuiltinDownload;
 
   @override
   Widget build(BuildContext context) {
-    final providers = settings.localProviders;
-    if (providers.isEmpty) {
+    // Only show user-added (non-built-in) local providers here.
+    // Built-in providers are surfaced by the [BuiltinModelCard]s
+    // below — we don't want the same model to appear twice.
+    final providers = settings.customLocalProviders;
+    final builtins = BuiltinModels.all;
+    if (providers.isEmpty && builtins.isEmpty) {
       return EmptyHint(
         text: l10n.localProviderListEmpty,
         icon: Icons.memory_outlined,
       );
     }
-    return ListView.separated(
+    return ListView(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
-      itemCount: providers.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final p = providers[index];
-        return _LocalProviderCard(
-          provider: p,
-          isActive: settings.activeLocalProviderId == p.id,
-          l10n: l10n,
-          onTap: () => onEdit(p),
-          onToggle: (v) => settings.toggleLocalProvider(p.id, v),
-          onSetActive: () => settings.setActiveLocalProvider(p.id),
-          onDelete: () async {
-            final confirm = await showDialog<bool>(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                title: Text(l10n.localProviderDeleteTitle),
-                content: Text(l10n.localProviderDeleteConfirm(p.name)),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: Text(l10n.commonCancel),
+      children: [
+        for (var i = 0; i < providers.length; i++) ...[
+          if (i > 0) const SizedBox(height: 10),
+          _LocalProviderCard(
+            provider: providers[i],
+            isActive: settings.activeLocalProviderId == providers[i].id,
+            l10n: l10n,
+            onTap: () => onEdit(providers[i]),
+            onToggle: (v) => settings.toggleLocalProvider(providers[i].id, v),
+            onSetActive: () => settings.setActiveLocalProvider(providers[i].id),
+            onDelete: () async {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: Text(l10n.localProviderDeleteTitle),
+                  content: Text(
+                    l10n.localProviderDeleteConfirm(providers[i].name),
                   ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: Text(l10n.commonDelete),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: Text(l10n.commonCancel),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: Text(l10n.commonDelete),
+                    ),
+                  ],
+                ),
+              );
+              if (confirm == true) {
+                await settings.deleteLocalProvider(providers[i].id);
+                onChanged();
+              }
+            },
+          ),
+        ],
+        if (builtins.isNotEmpty) ...[
+          if (providers.isNotEmpty) const SizedBox(height: 20),
+          _BuiltInModelsSection(
+            settings: settings,
+            l10n: l10n,
+            onOpen: onOpenBuiltinDownload,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Renders a section header + one card per [BuiltinModel] entry.
+/// Each card surfaces "configured / not configured" status (we
+/// use the linked [LocalProvider] for that, not the file system —
+/// the user hasn't actually "installed" the model until they
+/// save the parameter form) and opens the
+/// [BuiltinModelDownloadPage] in the right mode on tap.
+class _BuiltInModelsSection extends StatefulWidget {
+  const _BuiltInModelsSection({
+    required this.settings,
+    required this.l10n,
+    required this.onOpen,
+  });
+
+  final SettingsProvider settings;
+  final AppLocalizations l10n;
+  final void Function(BuiltinModel model, LocalProvider? existing) onOpen;
+
+  @override
+  State<_BuiltInModelsSection> createState() => _BuiltInModelsSectionState();
+}
+
+class _BuiltInModelsSectionState extends State<_BuiltInModelsSection> {
+  @override
+  Widget build(BuildContext context) {
+    final builtins = BuiltinModels.all;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionTitle(widget.l10n.builtinModelSectionTitle),
+        for (var i = 0; i < builtins.length; i++) ...[
+          if (i > 0) const SizedBox(height: 10),
+          Builder(
+            builder: (context) {
+              final provider = widget.settings.localProviderForBuiltin(
+                builtins[i].id,
+              );
+              return _BuiltinModelCard(
+                model: builtins[i],
+                configured: provider != null,
+                provider: provider,
+                isActive:
+                    provider != null &&
+                    widget.settings.activeLocalProviderId == provider.id,
+                onTap: () => widget.onOpen(builtins[i], provider),
+                onToggle: provider == null
+                    ? (_) {}
+                    : (v) =>
+                          widget.settings.toggleLocalProvider(provider.id, v),
+                onSetActive: provider == null
+                    ? () {}
+                    : () => widget.settings.setActiveLocalProvider(provider.id),
+              );
+            },
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Single row in the built-in models section. Three states:
+///   * **not configured** — icon + name + "未配置" pill, tap
+///     opens the download page.
+///   * **configured, inactive** — same shape plus a Switch (the
+///     user-added card has one too) and a "设为默认" button.
+///   * **active** — same as above, but the card border thickens
+///     and a "使用中" pill is rendered next to the name.
+class _BuiltinModelCard extends StatelessWidget {
+  const _BuiltinModelCard({
+    required this.model,
+    required this.configured,
+    required this.provider,
+    required this.isActive,
+    required this.onTap,
+    required this.onToggle,
+    required this.onSetActive,
+  });
+
+  final BuiltinModel model;
+
+  /// Whether the user has finished the download + configure flow
+  /// for this built-in model. Drives the action row visibility.
+  final bool configured;
+
+  /// The linked [LocalProvider] when [configured] is `true`. Used
+  /// for the Switch + "设为默认" button. `null` when not configured.
+  final LocalProvider? provider;
+
+  /// Whether the linked provider is the active one. The card
+  /// border + "使用中" pill reflect this.
+  final bool isActive;
+
+  final VoidCallback onTap;
+  final ValueChanged<bool> onToggle;
+  final VoidCallback onSetActive;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Material(
+      color: context.surface,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isActive ? AppTheme.primary : context.appBorder,
+              width: isActive ? 1.4 : 0.6,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      configured ? Icons.tune : Icons.cloud_download_outlined,
+                      color: AppTheme.primary,
+                      size: 20,
+                    ),
                   ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                provider?.name ?? model.displayName,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (isActive)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primary,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  l10n.commonInUse,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          configured
+                              ? (provider?.displayModelName ??
+                                    model.description)
+                              : model.description,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: context.textSecondary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (configured && provider != null)
+                    Switch(value: provider!.enabled, onChanged: onToggle)
+                  else
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        l10n.builtinModelNotConfigured,
+                        style: TextStyle(
+                          color: AppTheme.primary,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                 ],
               ),
-            );
-            if (confirm == true) {
-              await settings.deleteLocalProvider(p.id);
-              onChanged();
-            }
-          },
-        );
-      },
+              if (configured && provider != null) ...[
+                if (provider!.mmprojPath != null &&
+                    provider!.mmprojPath!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.image_outlined,
+                        size: 14,
+                        color: context.textSecondary,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          provider!.mmprojPath!.split(RegExp(r'[\\/]')).last,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: context.textSecondary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    _ParamChip(label: 'ctx ${provider!.contextSize}'),
+                    _ParamChip(
+                      label: 'T ${provider!.temperature.toStringAsFixed(2)}',
+                    ),
+                    _ParamChip(label: 'gpu ${provider!.gpuLayers}'),
+                    _ParamChip(label: 'max ${provider!.maxTokens}'),
+                    _ParamChip(
+                      label:
+                          'kv ${provider!.cacheTypeK}/${provider!.cacheTypeV}',
+                    ),
+                    _ParamChip(label: 'batch ${provider!.batchSize}'),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    TextButton.icon(
+                      onPressed: isActive ? null : onSetActive,
+                      icon: const Icon(Icons.check_circle_outline, size: 16),
+                      label: Text(l10n.localProviderSetAsDefault),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        minimumSize: const Size(0, 32),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
