@@ -405,6 +405,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get builtinModelRedownload => '重新下载';
 
   @override
+  String get builtinModelResume => '继续下载';
+
+  @override
+  String get builtinModelRetry => '重试';
+
+  @override
   String get builtinModelCancelDownload => '取消下载';
 
   @override
@@ -442,6 +448,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String builtinModelProgressIndeterminate(Object received) {
     return '已下载 $received';
   }
+
+  @override
+  String builtinModelProgressWithPercent(
+    String received,
+    String total,
+    String percent,
+  ) {
+    return '$received / $total ($percent%)';
+  }
+
+  @override
+  String get builtinModelDeleteFileTooltip => '删除文件';
+
+  @override
+  String get builtinModelDeleteFileConfirm => '确定要删除此文件吗?删除后需要重新下载。';
 
   @override
   String builtinModelDownloadFailed(String error) {

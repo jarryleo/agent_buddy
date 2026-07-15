@@ -135,6 +135,8 @@
   "builtinModelEditTitle": "编辑内置模型",
   "builtinModelReconfigure": "重新配置",
   "builtinModelRedownload": "重新下载",
+  "builtinModelResume": "继续下载",
+  "builtinModelRetry": "重试",
   "builtinModelCancelDownload": "取消下载",
   "builtinModelDownloadRequired": "请先完成模型文件下载",
   "builtinModelApproxSize": "约 {size}",
@@ -146,6 +148,16 @@
   "builtinModelWaiting": "尚未开始下载",
   "builtinModelProgress": "{received} / {total}",
   "builtinModelProgressIndeterminate": "已下载 {received}",
+  "builtinModelProgressWithPercent": "{received} / {total} ({percent}%)",
+  "@builtinModelProgressWithPercent": {
+    "placeholders": {
+      "received": { "type": "String" },
+      "total": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "builtinModelDeleteFileTooltip": "删除文件",
+  "builtinModelDeleteFileConfirm": "确定要删除此文件吗?删除后需要重新下载。",
   "builtinModelDownloadFailed": "下载失败: {error}",
   "builtinModelStatusPending": "等待中",
   "builtinModelStatusRunning": "下载中",

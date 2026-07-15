@@ -18,6 +18,7 @@ import 'providers/chat_provider.dart';
 import 'providers/memory_provider.dart';
 import 'providers/settings_provider.dart';
 import 'services/api_service.dart';
+import 'services/builtin_model_download_service.dart';
 import 'services/chat_session_repository.dart';
 import 'services/download_service.dart';
 import 'services/google_sheets_service.dart';
@@ -65,6 +66,12 @@ Future<void> main() async {
   await NotificationService.instance.initialize();
   final timerService = TimerService();
   final googleSheets = GoogleSheetsService(storage: storage)..load();
+  // Long-lived built-in model download service. Lives for the
+  // app's lifetime so background downloads (the user navigates
+  // away from the settings page) can keep running, and so
+  // re-opening the page reattaches to the in-flight state
+  // instead of starting a fresh download.
+  final builtinDownloadService = BuiltinModelDownloadService();
   runApp(
     AgentBuddyApp(
       storage: storage,
@@ -74,6 +81,7 @@ Future<void> main() async {
       memoryRepo: memoryRepo,
       timerService: timerService,
       googleSheets: googleSheets,
+      builtinDownloadService: builtinDownloadService,
     ),
   );
 }
@@ -117,6 +125,7 @@ class AgentBuddyApp extends StatelessWidget {
     required this.memoryRepo,
     required this.timerService,
     required this.googleSheets,
+    required this.builtinDownloadService,
   });
   final StorageService storage;
   final Box<Note> notesBox;
@@ -125,6 +134,7 @@ class AgentBuddyApp extends StatelessWidget {
   final MemoryRepository memoryRepo;
   final TimerService timerService;
   final GoogleSheetsService googleSheets;
+  final BuiltinModelDownloadService builtinDownloadService;
 
   @override
   Widget build(BuildContext context) {
@@ -136,6 +146,9 @@ class AgentBuddyApp extends StatelessWidget {
         Provider<ApiService>(create: (_) => ApiService()),
         ChangeNotifierProvider<TimerService>.value(value: timerService),
         ChangeNotifierProvider<GoogleSheetsService>.value(value: googleSheets),
+        ChangeNotifierProvider<BuiltinModelDownloadService>.value(
+          value: builtinDownloadService,
+        ),
         Provider<ToolService>(
           create: (_) => ToolService(
             notesBox: notesBox,

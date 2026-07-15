@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -30,6 +31,14 @@ class BuiltinFileDownload {
   final String? error;
   final String? localPath;
 
+  /// True when the file on disk is non-empty (i.e. there's
+  /// something to resume from). `false` on web / when path
+  /// resolution failed.
+  bool get hasPartial =>
+      bytesReceived > 0 && status != BuiltinFileStatus.completed;
+
+  /// 0.0 → 1.0. Falls back to indeterminate when the server
+  /// didn't send a Content-Length.
   double? get fraction {
     if (bytesTotal <= 0) return null;
     final f = bytesReceived / bytesTotal;
@@ -84,6 +93,21 @@ class BuiltinModelDownloadState {
       overall == BuiltinModelDownloadPhase.cancelled;
 
   bool get isCompleted => overall == BuiltinModelDownloadPhase.completed;
+  bool get isFailed => overall == BuiltinModelDownloadPhase.failed;
+  bool get isCancelled => overall == BuiltinModelDownloadPhase.cancelled;
+
+  /// True if the user cancelled (or the download failed) AND
+  /// there's still a partial file on disk worth resuming.
+  bool get canResume {
+    if (overall != BuiltinModelDownloadPhase.cancelled &&
+        overall != BuiltinModelDownloadPhase.failed) {
+      return false;
+    }
+    if (modelFile.hasPartial) return true;
+    final mp = mmprojFile;
+    if (mp != null && mp.hasPartial) return true;
+    return false;
+  }
 
   /// Local absolute paths the user can pass to [LocalProvider] when
   /// they hit save. `null` for any file that hasn't finished
@@ -125,24 +149,44 @@ enum BuiltinModelDownloadPhase {
   completed,
 
   /// One of the files failed. `modelFile.error` / `mmprojFile.error`
-  /// carry the reason.
+  /// carry the reason. A partial file may still exist on disk —
+  /// the user can resume.
   failed,
 
-  /// User cancelled mid-flight.
+  /// User cancelled mid-flight. A partial file may still exist on
+  /// disk — the user can resume.
   cancelled,
 }
 
-/// Downloads a [BuiltinModel]'s weights (and optional mmproj) into
-/// the app's documents directory and surfaces byte-level progress
-/// to the settings page so the user can watch the bar fill up.
+/// Long-lived download service for built-in models.
 ///
-/// Files live in `<app docs>/local_models/<id>/<modelFilename>` and
-/// `<app docs>/local_models/<id>/<mmprojFilename>`. The directory
-/// layout matches what `LocalProvider` expects (a single folder
-/// containing the model + projector side by side), so the rest of
-/// the pipeline (auto-detect, hand-edit mmproj path) keeps working
-/// unchanged.
-class BuiltinModelDownloadService {
+/// The service is provided via DI in `main.dart` and stays alive
+/// for the lifetime of the app. This is what enables **background
+/// downloads**: a download started on the settings page continues
+/// even after the user navigates away. The page re-attaches to the
+/// in-flight download by calling [stateFor] when it's re-opened.
+///
+/// Each download is identified by [BuiltinModel.id]. At most one
+/// download per model can be active at a time — calling
+/// [startDownload] for a model that's already downloading is a
+/// no-op. The actual HTTP transfer is **resumable**: if a partial
+/// file is on disk (from a previous cancel / app kill / failed
+/// download), the next [startDownload] sends a `Range: bytes=N-`
+/// header and the server is expected to respond with
+/// `206 Partial Content`. Servers that don't support range
+/// requests respond with `200 OK`; we then drop the partial and
+/// start over from scratch.
+///
+/// Lifecycle of a single file:
+///   * `pending` → never been touched.
+///   * `running` → bytes are streaming in.
+///   * `completed` → server sent the full file, disk write
+///     succeeded.
+///   * `cancelled` → user tapped Cancel. Partial file is kept on
+///     disk so they can resume.
+///   * `failed` → network / HTTP / I/O error. Partial file is
+///     kept on disk so they can resume.
+class BuiltinModelDownloadService extends ChangeNotifier {
   BuiltinModelDownloadService({
     http.Client? httpClient,
     Future<Directory> Function()? docsDirResolver,
@@ -154,12 +198,37 @@ class BuiltinModelDownloadService {
   final Future<Directory> Function() _docsDirResolver;
   final bool _ownsClient;
 
+  /// Per-model download state. Survives across page pop / push so
+  /// a backgrounded download can be re-displayed on the next visit.
+  final Map<String, BuiltinModelDownloadState> _states = {};
+
+  /// Per-model active subscription, so we can cancel an in-flight
+  /// download. The subscription lives on the service (not on a
+  /// page) so the download keeps running even if the page is
+  /// disposed.
   final Map<String, _ActiveDownload> _active = {};
 
-  /// Resolves the destination directory for [model] and creates it
-  /// if needed. Lazy because we don't want to hit the platform
-  /// channel for a directory the user may never visit.
-  Future<Directory> _resolveModelDir(BuiltinModel model) async {
+  /// Per-model cancel flag, flipped by [cancel] and read by the
+  /// file stream's loop.
+  final Map<String, _CancelFlag> _cancelFlags = {};
+
+  /// Returns the current download state for a model, or `null` if
+  /// no download has been started for it (or the state was
+  /// cleared). The page uses this to render the download card
+  /// (which may show live progress, a terminal status, or nothing
+  /// if the user hasn't touched it yet).
+  BuiltinModelDownloadState? stateFor(String builtinModelId) {
+    return _states[builtinModelId];
+  }
+
+  /// True when a download is currently in progress for [model].
+  /// Used by the page to show "取消下载" instead of "下载".
+  bool isActive(String builtinModelId) => _active.containsKey(builtinModelId);
+
+  /// Resolves the destination directory for [model] and creates
+  /// it if needed. Lazy so the platform channel only fires when
+  /// the user actually visits the download flow.
+  Future<Directory> resolveModelDir(BuiltinModel model) async {
     final docs = await _docsDirResolver();
     final dir = Directory(p.join(docs.path, 'local_models', model.id));
     if (!await dir.exists()) {
@@ -168,14 +237,14 @@ class BuiltinModelDownloadService {
     return dir;
   }
 
-  /// Returns the destination directory + the absolute path the
-  /// model weights would land in, even before the download starts.
-  /// Used by the settings page to render the "Will be saved to ..."
-  /// hint.
+  /// Returns the destination directory + the absolute paths the
+  /// model weights / mmproj will land in, even before the download
+  /// starts. Used by the settings page to render the "Will be
+  /// saved to ..." hint.
   Future<({Directory dir, String modelPath, String? mmprojPath})> resolvePaths(
     BuiltinModel model,
   ) async {
-    final dir = await _resolveModelDir(model);
+    final dir = await resolveModelDir(model);
     final modelPath = p.join(dir.path, model.modelFilename);
     final mmprojPath = model.hasMmproj
         ? p.join(dir.path, model.mmprojFilename!)
@@ -184,9 +253,12 @@ class BuiltinModelDownloadService {
   }
 
   /// True when both the model and (if applicable) the mmproj file
-  /// are already on disk and non-empty. The settings page uses this
-  /// to render the "Downloaded" badge instead of the download
-  /// button.
+  /// are on disk and the file is non-empty. The settings page
+  /// uses this to render the "已下载" badge.
+  ///
+  /// Note: this only checks file presence + size. It does NOT
+  /// require a [BuiltinModelDownloadState] — the file may have
+  /// landed via a previous app session that we don't remember.
   Future<bool> isInstalled(BuiltinModel model) async {
     try {
       final paths = await resolvePaths(model);
@@ -204,18 +276,284 @@ class BuiltinModelDownloadService {
     }
   }
 
-  /// Starts the download. Emits an initial `idle` snapshot so the
-  /// UI can render the two rows before any bytes arrive, then a
-  /// series of `running` snapshots with byte-level progress, and
-  /// finally a terminal `completed` / `failed` / `cancelled`
-  /// snapshot.
+  /// Reads the current on-disk size of the model file. Useful
+  /// for the "downloaded X MB so far" hint on a partial download
+  /// (e.g. the user re-opens the page after killing the app).
+  Future<int> partialModelSize(BuiltinModel model) async {
+    try {
+      final paths = await resolvePaths(model);
+      final f = File(paths.modelPath);
+      if (!await f.exists()) return 0;
+      return await f.length();
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<int> partialMmprojSize(BuiltinModel model) async {
+    if (!model.hasMmproj) return 0;
+    try {
+      final paths = await resolvePaths(model);
+      final f = File(paths.mmprojPath!);
+      if (!await f.exists()) return 0;
+      return await f.length();
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Start (or resume) a download for [model].
   ///
-  /// Each `running` snapshot is emitted as soon as the underlying
-  /// file stream yields a progress update (throttled to ~128 KB
-  /// per update inside [_streamFile]). This is what drives the
-  /// live progress bar in the download card.
-  Stream<BuiltinModelDownloadState> download(BuiltinModel model) async* {
-    final paths = await resolvePaths(model);
+  /// If a download is already in progress for this model (the
+  /// user navigated away and came back, or tapped the button
+  /// twice in a row), this is a no-op — the existing download
+  /// keeps running and the existing state stays.
+  ///
+  /// If a previous download is in a terminal state (cancelled /
+  /// failed / completed) but hasn't been fully cleaned up yet
+  /// — e.g. the onDone callback hasn't fired yet, but the
+  /// state is already terminal — we drop the stale `_active`
+  /// entry and start a fresh run. This is what makes "tap
+  /// Resume" right after "tap Cancel" work without races.
+  ///
+  /// If a partial file is on disk from a previous run, the next
+  /// HTTP request goes out with `Range: bytes=<size>-` and the
+  /// server is expected to answer with `206 Partial Content`. If
+  /// the server doesn't support range requests, we drop the
+  /// partial and start over.
+  ///
+  /// The actual transfer runs in the background. The page
+  /// receives state updates via [ChangeNotifier.notifyListeners];
+  /// the underlying [notifyListeners] calls are throttled by the
+  /// stream's yield cadence (every ~128 KB of bytes).
+  void startDownload(BuiltinModel model) {
+    final existing = _states[model.id];
+    if (_active.containsKey(model.id) &&
+        (existing == null || !existing.isTerminal)) {
+      return;
+    }
+    // A previous run has fully wound down (or hasn't started).
+    // Clean up any stale _active entry before we start a new
+    // one.
+    _active.remove(model.id);
+    _cancelFlags.remove(model.id);
+    _spawnDownload(model);
+  }
+
+  /// Cancel an in-flight download. The active subscription is
+  /// closed and the per-file status is flipped to `cancelled`.
+  /// **The partial file is kept on disk** so the user can resume
+  /// from the breakpoint by calling [startDownload] again.
+  ///
+  /// Safe to call when no download is active (no-op).
+  void cancel(String builtinModelId) {
+    final flag = _cancelFlags.remove(builtinModelId);
+    if (flag != null) flag.value = true;
+  }
+
+  /// Drop the in-memory state for [model]. Used after a
+  /// successful save (the file is on disk + a LocalProvider
+  /// points to it; the in-memory state would just be stale
+  /// noise). The on-disk partial file is **not** touched.
+  void clearState(String builtinModelId) {
+    if (_states.remove(builtinModelId) != null) {
+      notifyListeners();
+    }
+  }
+
+  /// Drop the on-disk model + mmproj files for [model] (best
+  /// effort). Used when the user picks "重新下载" — we want the
+  /// next [startDownload] to start from a clean slate.
+  Future<void> deleteDownloadedFiles(BuiltinModel model) async {
+    try {
+      final paths = await resolvePaths(model);
+      for (final path in [paths.modelPath, paths.mmprojPath]) {
+        if (path == null) continue;
+        final f = File(path);
+        if (await f.exists()) {
+          try {
+            await f.delete();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {
+      // Best-effort. If the platform refuses, the next download
+      // will overwrite the file (or fail explicitly if it's
+      // locked) — we don't block the UI on this.
+    }
+  }
+
+  /// Drop a single downloaded file (best effort) for [model],
+  /// identified by the [BuiltinFileDownload] object the page is
+  /// currently rendering. Used by the per-file "Delete" button
+  /// on the download card. The on-disk file is removed and the
+  /// in-memory state for that slot is reset to a fresh
+  /// `pending` snapshot, with the overall phase recomputed.
+  ///
+  /// No-op if the model has no state, or if [file] doesn't
+  /// match either of the two slots the service knows about.
+  Future<void> deleteDownloadedFile(
+    BuiltinModel model,
+    BuiltinFileDownload file,
+  ) async {
+    final state = _states[model.id];
+    final localPath = file.localPath;
+    if (localPath != null) {
+      try {
+        final f = File(localPath);
+        if (await f.exists()) {
+          try {
+            await f.delete();
+          } catch (_) {}
+        }
+      } catch (_) {
+        // Best-effort. Don't block the UI on I/O errors.
+      }
+    }
+    if (state == null) return;
+    final isModel = file.url == model.modelUrl;
+    final BuiltinModelDownloadState newState;
+    if (isModel) {
+      newState = BuiltinModelDownloadState(
+        model: state.model,
+        modelFile: BuiltinFileDownload(
+          url: model.modelUrl,
+          filename: model.modelFilename,
+        ),
+        mmprojFile: state.mmprojFile,
+        overall: _recomputeOverallPhase(
+          modelFile: BuiltinFileDownload(
+            url: model.modelUrl,
+            filename: model.modelFilename,
+          ),
+          mmprojFile: state.mmprojFile,
+        ),
+      );
+    } else {
+      newState = BuiltinModelDownloadState(
+        model: state.model,
+        modelFile: state.modelFile,
+        mmprojFile: BuiltinFileDownload(
+          url: model.mmprojUrl!,
+          filename: model.mmprojFilename!,
+        ),
+        overall: _recomputeOverallPhase(
+          modelFile: state.modelFile,
+          mmprojFile: BuiltinFileDownload(
+            url: model.mmprojUrl!,
+            filename: model.mmprojFilename!,
+          ),
+        ),
+      );
+    }
+    _states[model.id] = newState;
+    notifyListeners();
+  }
+
+  /// Compute the top-level phase from the two per-file slots.
+  /// Mirrors the rules baked into [_runDownload] so the page
+  /// renders the same overall state after a per-file delete.
+  static BuiltinModelDownloadPhase _recomputeOverallPhase({
+    required BuiltinFileDownload modelFile,
+    BuiltinFileDownload? mmprojFile,
+  }) {
+    if (modelFile.status == BuiltinFileStatus.running) {
+      return BuiltinModelDownloadPhase.downloadingModel;
+    }
+    if (mmprojFile?.status == BuiltinFileStatus.running) {
+      return BuiltinModelDownloadPhase.downloadingMmproj;
+    }
+    final modelDone = modelFile.status == BuiltinFileStatus.completed;
+    final mmprojDone =
+        mmprojFile == null || mmprojFile.status == BuiltinFileStatus.completed;
+    if (modelDone && mmprojDone) {
+      return BuiltinModelDownloadPhase.completed;
+    }
+    if (modelFile.status == BuiltinFileStatus.failed ||
+        mmprojFile?.status == BuiltinFileStatus.failed) {
+      return BuiltinModelDownloadPhase.failed;
+    }
+    if (modelFile.status == BuiltinFileStatus.cancelled ||
+        mmprojFile?.status == BuiltinFileStatus.cancelled) {
+      return BuiltinModelDownloadPhase.cancelled;
+    }
+    return BuiltinModelDownloadPhase.idle;
+  }
+
+  void _spawnDownload(BuiltinModel model) {
+    final cancelFlag = _CancelFlag();
+    _cancelFlags[model.id] = cancelFlag;
+
+    // Seed the state with a "starting" snapshot so the UI can
+    // render the two rows from the very first frame. localPath
+    // is left as null — it'll be filled in by the first yield
+    // from _runDownload after resolvePaths completes.
+    final initial = BuiltinModelDownloadState(
+      model: model,
+      modelFile: BuiltinFileDownload(
+        url: model.modelUrl,
+        filename: model.modelFilename,
+      ),
+      mmprojFile: model.hasMmproj
+          ? BuiltinFileDownload(
+              url: model.mmprojUrl!,
+              filename: model.mmprojFilename!,
+            )
+          : null,
+      overall: BuiltinModelDownloadPhase.downloadingModel,
+    );
+    _states[model.id] = initial;
+    notifyListeners();
+
+    // Track that an active download is running so
+    // [isActive] returns the right value.
+    _active[model.id] = _ActiveDownload();
+
+    // Resolve the destination paths up-front. The resolvePaths
+    // call hits path_provider; do it before subscribing so the
+    // UI knows where the file is going to land.
+    _runDownload(
+      model: model,
+      cancelFlag: cancelFlag,
+      pathResolver: () => resolvePaths(model),
+    ).listen(
+      (s) {
+        _states[model.id] = s;
+        notifyListeners();
+      },
+      onDone: () {
+        _active.remove(model.id);
+        _cancelFlags.remove(model.id);
+        notifyListeners();
+      },
+      onError: (Object e, StackTrace st) {
+        // _runDownload shouldn't throw (it surfaces errors via
+        // the stream), but if it does, mark the model as failed.
+        final cur = _states[model.id];
+        if (cur != null) {
+          _states[model.id] = cur.copyWith(
+            overall: BuiltinModelDownloadPhase.failed,
+          );
+        }
+        _active.remove(model.id);
+        _cancelFlags.remove(model.id);
+        notifyListeners();
+      },
+    );
+  }
+
+  /// Runs the full download for [model] (model weights, then
+  /// mmproj if any). The output stream is what the page + the
+  /// service's [notifyListeners] plumbing both consume.
+  Stream<BuiltinModelDownloadState> _runDownload({
+    required BuiltinModel model,
+    required _CancelFlag cancelFlag,
+    required Future<({Directory dir, String modelPath, String? mmprojPath})>
+    Function()
+    pathResolver,
+  }) async* {
+    final paths = await pathResolver();
+
     final modelFile = BuiltinFileDownload(
       url: model.modelUrl,
       filename: model.modelFilename,
@@ -226,14 +564,6 @@ class BuiltinModelDownloadService {
             filename: model.mmprojFilename!,
           )
         : null;
-
-    var cancelled = false;
-    final active = _ActiveDownload(
-      cancel: () {
-        cancelled = true;
-      },
-    );
-    _active[model.id] = active;
 
     var state = BuiltinModelDownloadState(
       model: model,
@@ -259,11 +589,12 @@ class BuiltinModelDownloadService {
       await for (final progress in _streamFile(
         url: model.modelUrl,
         destPath: paths.modelPath,
-        cancelled: () => cancelled,
+        cancelled: () => cancelFlag.value,
       )) {
         if (progress.cancelled) {
           state = state.copyWith(
             modelFile: state.modelFile.copyWith(
+              bytesReceived: progress.bytesReceived,
               status: BuiltinFileStatus.cancelled,
               error: 'cancelled',
             ),
@@ -275,6 +606,13 @@ class BuiltinModelDownloadService {
         if (progress.errorMessage != null) {
           modelFailed = true;
           modelError = progress.errorMessage;
+          // Preserve the bytes-received on the failed row so the
+          // UI can show "downloaded X so far" + "retry from X".
+          state = state.copyWith(
+            modelFile: state.modelFile.copyWith(
+              bytesReceived: progress.bytesReceived,
+            ),
+          );
           break;
         }
         if (progress.success) {
@@ -326,11 +664,12 @@ class BuiltinModelDownloadService {
         await for (final progress in _streamFile(
           url: model.mmprojUrl!,
           destPath: paths.mmprojPath!,
-          cancelled: () => cancelled,
+          cancelled: () => cancelFlag.value,
         )) {
           if (progress.cancelled) {
             state = state.copyWith(
               mmprojFile: state.mmprojFile!.copyWith(
+                bytesReceived: progress.bytesReceived,
                 status: BuiltinFileStatus.cancelled,
                 error: 'cancelled',
               ),
@@ -342,6 +681,11 @@ class BuiltinModelDownloadService {
           if (progress.errorMessage != null) {
             mmprojFailed = true;
             mmprojError = progress.errorMessage;
+            state = state.copyWith(
+              mmprojFile: state.mmprojFile!.copyWith(
+                bytesReceived: progress.bytesReceived,
+              ),
+            );
             break;
           }
           if (progress.success) {
@@ -379,51 +723,29 @@ class BuiltinModelDownloadService {
 
       state = state.copyWith(overall: BuiltinModelDownloadPhase.completed);
       yield state;
-    } finally {
-      _active.remove(model.id);
+    } catch (e) {
+      // _streamFile surfaces errors via the stream, so this catch
+      // is only for unexpected programmer errors. Best-effort:
+      // mark the download as failed and propagate.
+      yield state.copyWith(
+        overall: BuiltinModelDownloadPhase.failed,
+        modelFile: state.modelFile.copyWith(
+          status: BuiltinFileStatus.failed,
+          error: e.toString(),
+        ),
+      );
     }
   }
 
-  /// Cancels an in-flight download by built-in model id. Safe to
-  /// call multiple times and safe to call after the download has
-  /// already finished (no-op in that case).
-  void cancel(String modelId) {
-    final active = _active[modelId];
-    if (active != null) active.cancel();
-  }
-
-  /// Best-effort cleanup of partial files for [model]. Called when
-  /// the user backs out of the download page mid-flight so we
-  /// don't leave a half-written GGUF in the data dir.
-  Future<void> cleanup(BuiltinModel model) async {
-    cancel(model.id);
-    try {
-      final paths = await resolvePaths(model);
-      for (final path in [paths.modelPath, paths.mmprojPath]) {
-        if (path == null) continue;
-        final f = File(path);
-        if (await f.exists()) {
-          try {
-            await f.delete();
-          } catch (_) {}
-        }
-      }
-    } catch (_) {
-      // Best-effort. If the platform refuses, the next download
-      // overwrites the file anyway.
-    }
-  }
-
-  /// Streams `url` to `destPath`. Yields [_FileProgress] events as
-  /// bytes arrive (throttled to one update per ~128 KB so the UI
-  /// doesn't drown in notifications on a 1.7 GB model). Terminal
-  /// result is communicated via the final [_FileProgress.success]
-  /// flag (or [BuiltinFileDownloadState]'s `failed` / `cancelled`
-  /// phase when the consumer is structured to read it from there).
+  /// Streams `url` to `destPath`. Resumable: if a non-empty file
+  /// already exists at `destPath`, sends a `Range: bytes=N-`
+  /// request and appends the response body. If the server
+  /// responds with `200` (doesn't honour the range), the partial
+  /// is discarded and the file is re-downloaded from scratch.
   ///
-  /// Cancellation is signalled via the `cancelled` callback —
-  /// the consumer's [BuiltinModelDownloadState.overall] flips to
-  /// `cancelled` and the partial file is removed.
+  /// Yields [_FileProgress] events as bytes arrive. Exactly one
+  /// terminal event — `success`, `cancelled`, or
+  /// `errorMessage != null` — is emitted at the end.
   Stream<_FileProgress> _streamFile({
     required String url,
     required String destPath,
@@ -438,26 +760,72 @@ class BuiltinModelDownloadService {
       yield _FileProgress.failure('only http(s) URLs are supported: $url');
       return;
     }
-    final file = File(destPath);
-    final sink = file.openWrite();
-    var bytesReceived = 0;
-    var bytesTotal = -1;
-    try {
-      final req = http.Request('GET', uri);
-      req.headers['User-Agent'] =
-          'Mozilla/5.0 (compatible; AgentBuddy/1.0; +https://agent.buddy)';
-      final response = await _client.send(req);
 
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        await response.stream.drain<void>().catchError((_) {});
-        await _disposeSink(sink, file);
-        yield _FileProgress.failure('HTTP ${response.statusCode}');
+    final file = File(destPath);
+    var resumeFrom = 0;
+    if (await file.exists()) {
+      resumeFrom = await file.length();
+    }
+
+    http.StreamedResponse response;
+    var resumableAttempted = false;
+
+    // Try to resume if we have a partial on disk.
+    if (resumeFrom > 0) {
+      resumableAttempted = true;
+      final req = http.Request('GET', uri);
+      req.headers['Range'] = 'bytes=$resumeFrom-';
+      final r = await _client.send(req);
+      if (r.statusCode == 206) {
+        response = r;
+      } else {
+        // Server didn't honour the range. Drain + discard, then
+        // re-request from scratch below.
+        await r.stream.drain<void>().catchError((_) {});
+        if (await file.exists()) {
+          try {
+            await file.delete();
+          } catch (_) {}
+        }
+        resumeFrom = 0;
+        final fallback = http.Request('GET', uri);
+        final fr = await _client.send(fallback);
+        if (fr.statusCode < 200 || fr.statusCode >= 300) {
+          await fr.stream.drain<void>().catchError((_) {});
+          yield _FileProgress.failure('HTTP ${fr.statusCode}');
+          return;
+        }
+        response = fr;
+      }
+    } else {
+      final req = http.Request('GET', uri);
+      final r = await _client.send(req);
+      if (r.statusCode < 200 || r.statusCode >= 300) {
+        await r.stream.drain<void>().catchError((_) {});
+        yield _FileProgress.failure('HTTP ${r.statusCode}');
         return;
       }
-      final cl = response.contentLength;
-      if (cl != null && cl >= 0) bytesTotal = cl;
-      yield _FileProgress(bytesReceived: 0, bytesTotal: bytesTotal);
+      response = r;
+    }
 
+    // We append when the server honoured our range, and we
+    // overwrite otherwise (either the server returned 200 or
+    // there was no partial to begin with).
+    final isAppend = resumableAttempted && response.statusCode == 206;
+    final sink = file.openWrite(
+      mode: isAppend ? FileMode.append : FileMode.write,
+    );
+    var bytesReceived = resumeFrom;
+    var bytesTotal = response.contentLength ?? -1;
+    if (bytesTotal > 0 && isAppend) {
+      // Content-Length of a partial response is the length of
+      // the remainder; add the offset so the UI can show a
+      // consistent total.
+      bytesTotal = resumeFrom + bytesTotal;
+    }
+    yield _FileProgress(bytesReceived: bytesReceived, bytesTotal: bytesTotal);
+
+    try {
       // 32 KB buffer — same trade-off as the chat download service:
       // big enough to amortize writes, small enough for smooth
       // progress repaints.
@@ -473,8 +841,8 @@ class BuiltinModelDownloadService {
         bytesReceived += chunk.length;
         // Throttle: yield progress every 128 KB worth of bytes
         // (4 × chunkSize). The settings page repaints frequently
-        // enough that per-chunk updates would just stall the UI on
-        // a 1.7 GB model.
+        // enough that per-chunk updates would just stall the UI
+        // on a 1.7 GB model.
         if (bytesReceived % (chunkSize * 4) < chunkSize) {
           yield _FileProgress(
             bytesReceived: bytesReceived,
@@ -486,12 +854,37 @@ class BuiltinModelDownloadService {
       if (bytesTotal < 0) bytesTotal = bytesReceived;
 
       if (cancelled()) {
-        await _disposeSink(sink, file);
-        yield _FileProgress.cancelled();
+        // Flush + close the sink, but keep the partial file on
+        // disk so a future call to startDownload can resume from
+        // the breakpoint. The `bytesReceived` is preserved on
+        // the cancelled event so the outer state machine can
+        // surface "downloaded X so far" + "Resume".
+        try {
+          await sink.flush();
+        } catch (_) {}
+        try {
+          await sink.close();
+        } catch (_) {}
+        yield _FileProgress(
+          bytesReceived: bytesReceived,
+          bytesTotal: bytesTotal,
+          cancelled: true,
+        );
         return;
       }
-      if (bytesReceived == 0) {
+      if (bytesReceived == resumeFrom) {
+        // We didn't receive any new bytes. This is unexpected
+        // (the server reported 200/206 but sent no body) — treat
+        // as a hard failure.
         await _disposeSink(sink, file);
+        if (resumeFrom > 0) {
+          // Drop the partial so the next attempt starts clean.
+          if (await file.exists()) {
+            try {
+              await file.delete();
+            } catch (_) {}
+          }
+        }
         yield _FileProgress.failure('empty response');
         return;
       }
@@ -506,9 +899,7 @@ class BuiltinModelDownloadService {
       try {
         await sink.close();
       } catch (_) {}
-      try {
-        if (await file.exists()) await file.delete();
-      } catch (_) {}
+      // The partial file is left on disk so the user can resume.
       yield _FileProgress.failure(e.toString());
     }
   }
@@ -526,21 +917,44 @@ class BuiltinModelDownloadService {
     }
   }
 
+  @override
   void dispose() {
+    // Cancel every active download. We intentionally keep the
+    // partial files on disk — the next session can resume from
+    // the breakpoint.
+    for (final flag in _cancelFlags.values) {
+      flag.value = true;
+    }
+    _cancelFlags.clear();
+    _active.clear();
     if (_ownsClient) _client.close();
+    super.dispose();
   }
 }
 
+/// Holds the in-flight subscription for an active download. We
+/// don't currently need to do anything with the subscription
+/// itself (the listen() returned by `_runDownload` holds the
+/// reference), but the map itself is what makes
+/// [BuiltinModelDownloadService.isActive] return the right value.
 class _ActiveDownload {
-  _ActiveDownload({required this.cancel});
-  final void Function() cancel;
+  _ActiveDownload();
+}
+
+/// Mutable boolean holder. Used as the cancel flag for a
+/// per-file stream so [BuiltinModelDownloadService.cancel] can
+/// flip the value from the outside.
+class _CancelFlag {
+  bool value = false;
 }
 
 /// One event emitted by [_streamFile]. `bytesReceived` /
 /// `bytesTotal` carry the running counters; exactly one of
 /// `success` / `cancelled` / `errorMessage` is non-null on the
 /// terminal event (and all are null on intermediate progress
-/// updates).
+/// updates). `bytesReceived` is preserved on `cancelled` events
+/// so the outer state machine can decide whether there's a
+/// partial file worth resuming from.
 class _FileProgress {
   const _FileProgress({
     required this.bytesReceived,
@@ -551,8 +965,6 @@ class _FileProgress {
   });
   factory _FileProgress.failure(String error) =>
       _FileProgress(bytesReceived: 0, bytesTotal: -1, errorMessage: error);
-  factory _FileProgress.cancelled() =>
-      const _FileProgress(bytesReceived: 0, bytesTotal: -1, cancelled: true);
 
   final int bytesReceived;
   final int bytesTotal;

@@ -842,6 +842,18 @@ abstract class AppLocalizations {
   /// **'Re-download'**
   String get builtinModelRedownload;
 
+  /// No description provided for @builtinModelResume.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume'**
+  String get builtinModelResume;
+
+  /// No description provided for @builtinModelRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get builtinModelRetry;
+
   /// No description provided for @builtinModelCancelDownload.
   ///
   /// In en, this message translates to:
@@ -907,6 +919,28 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{received} downloaded'**
   String builtinModelProgressIndeterminate(Object received);
+
+  /// No description provided for @builtinModelProgressWithPercent.
+  ///
+  /// In en, this message translates to:
+  /// **'{received} / {total} ({percent}%)'**
+  String builtinModelProgressWithPercent(
+    String received,
+    String total,
+    String percent,
+  );
+
+  /// No description provided for @builtinModelDeleteFileTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete file'**
+  String get builtinModelDeleteFileTooltip;
+
+  /// No description provided for @builtinModelDeleteFileConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this file? You\'ll need to re-download it.'**
+  String get builtinModelDeleteFileConfirm;
 
   /// No description provided for @builtinModelDownloadFailed.
   ///

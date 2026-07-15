@@ -186,6 +186,8 @@
   "builtinModelEditTitle": "Edit Built-in Model",
   "builtinModelReconfigure": "Re-configure",
   "builtinModelRedownload": "Re-download",
+  "builtinModelResume": "Resume",
+  "builtinModelRetry": "Retry",
   "builtinModelCancelDownload": "Cancel download",
   "builtinModelDownloadRequired": "Please complete the model download first",
   "builtinModelApproxSize": "approx. {size}",
@@ -208,6 +210,16 @@
       "total": { "type": "String" }
     }
   },
+  "builtinModelProgressWithPercent": "{received} / {total} ({percent}%)",
+  "@builtinModelProgressWithPercent": {
+    "placeholders": {
+      "received": { "type": "String" },
+      "total": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "builtinModelDeleteFileTooltip": "Delete file",
+  "builtinModelDeleteFileConfirm": "Delete this file? You'll need to re-download it.",
   "builtinModelDownloadFailed": "Download failed: {error}",
   "@builtinModelDownloadFailed": {
     "placeholders": {

@@ -416,6 +416,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get builtinModelRedownload => 'Re-download';
 
   @override
+  String get builtinModelResume => 'Resume';
+
+  @override
+  String get builtinModelRetry => 'Retry';
+
+  @override
   String get builtinModelCancelDownload => 'Cancel download';
 
   @override
@@ -454,6 +460,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String builtinModelProgressIndeterminate(Object received) {
     return '$received downloaded';
   }
+
+  @override
+  String builtinModelProgressWithPercent(
+    String received,
+    String total,
+    String percent,
+  ) {
+    return '$received / $total ($percent%)';
+  }
+
+  @override
+  String get builtinModelDeleteFileTooltip => 'Delete file';
+
+  @override
+  String get builtinModelDeleteFileConfirm =>
+      'Delete this file? You\'ll need to re-download it.';
 
   @override
   String builtinModelDownloadFailed(String error) {

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/builtin_model.dart';
@@ -27,14 +28,21 @@ import 'widgets/local_provider_form_fields.dart';
 ///     values, the download section is collapsed to a "re-download
 ///     if you want" affordance, and Save updates the existing row
 ///     in place (no new card appears in the providers list).
+///
+/// The download is **stateful**: it lives on a long-lived
+/// [BuiltinModelDownloadService] (provided via DI). The page
+/// subscribes to it via `context.watch` so progress / errors /
+/// completion flow through the service even when the page is
+/// not on top. Closing the page does NOT cancel an in-flight
+/// download — the user can navigate away and come back to find
+/// it still running.
 class BuiltinModelDownloadPage extends StatefulWidget {
   const BuiltinModelDownloadPage({
     super.key,
     required this.settings,
     required this.model,
     this.existing,
-    BuiltinModelDownloadService? downloadService,
-  }) : _downloadService = downloadService;
+  });
 
   final SettingsProvider settings;
   final BuiltinModel model;
@@ -42,8 +50,6 @@ class BuiltinModelDownloadPage extends StatefulWidget {
   /// When non-null, the page is editing this existing built-in-
   /// backed [LocalProvider] instead of creating a new one.
   final LocalProvider? existing;
-
-  final BuiltinModelDownloadService? _downloadService;
 
   @override
   State<BuiltinModelDownloadPage> createState() =>
@@ -64,7 +70,8 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
   /// Resolved absolute paths to the files we should pass to the
   /// [LocalProvider]. In "edit" mode these start as the existing
   /// row's paths; in "new" mode they're set when the download
-  /// completes successfully.
+  /// completes successfully (or resumed from the on-disk partial
+  /// if the service had one in flight).
   String? _modelPath;
   String? _mmprojPath;
 
@@ -72,10 +79,6 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
   ModelArchitecture? _modelArch;
   bool _archLoading = false;
   bool _saving = false;
-
-  BuiltinModelDownloadState? _state;
-  StreamSubscription<BuiltinModelDownloadState>? _sub;
-  BuiltinModelDownloadService? _ownedDownloadService;
 
   bool get _isEdit => widget.existing != null;
 
@@ -104,7 +107,7 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
     } else {
       // New mode: pre-resolve the destination paths so the
       // download card has somewhere to point to.
-      _bootstrapDownloadService();
+      _bootstrapPaths();
     }
   }
 
@@ -121,15 +124,11 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
   static String _defaultKvCacheTypeK() => _isMobile ? 'q8_0' : 'f16';
   static String _defaultKvCacheTypeV() => _isMobile ? 'q4_0' : 'f16';
 
-  BuiltinModelDownloadService _service() {
-    final injected = widget._downloadService;
-    if (injected != null) return injected;
-    _ownedDownloadService ??= BuiltinModelDownloadService();
-    return _ownedDownloadService!;
-  }
+  BuiltinModelDownloadService get _service =>
+      context.read<BuiltinModelDownloadService>();
 
-  Future<void> _bootstrapDownloadService() async {
-    final service = _service();
+  Future<void> _bootstrapPaths() async {
+    final service = _service;
     try {
       final paths = await service.resolvePaths(widget.model);
       if (!mounted) return;
@@ -145,61 +144,82 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
 
   @override
   void dispose() {
-    _sub?.cancel();
     _name.dispose();
-    _ownedDownloadService?.dispose();
     super.dispose();
   }
 
-  Future<void> _startDownload() async {
-    final service = _service();
+  /// User actions — wired to the service.
+
+  void _startDownload() {
+    _service.startDownload(widget.model);
+  }
+
+  void _cancelDownload() {
+    _service.cancel(widget.model.id);
+  }
+
+  /// Re-download from scratch: drop the on-disk file (full or
+  /// partial) and start a fresh transfer. Used by the
+  /// "重新下载" affordance.
+  Future<void> _restartDownload() async {
+    await _service.deleteDownloadedFiles(widget.model);
+    if (!mounted) return;
+    // The on-disk files are gone, so the page's local path
+    // cache is now stale — drop it so the UI flips back to
+    // the "no file on disk" state until the next download
+    // populates it again.
     setState(() {
-      _state = null;
-      _sub?.cancel();
-    });
-    // Re-read GGUF metadata from the freshly downloaded file so
-    // the memory estimate card reflects the actual architecture.
-    setState(() {
-      _archLoading = true;
-      _modelArch = null;
+      _modelPath = null;
+      _mmprojPath = null;
       _modelFileSize = null;
+      _modelArch = null;
     });
-    final completer = Completer<void>();
-    _sub = service
-        .download(widget.model)
-        .listen(
-          (s) {
-            if (!mounted) return;
-            setState(() => _state = s);
-            if (s.isCompleted) {
-              _modelPath = s.modelPath;
-              _mmprojPath = s.mmprojPath;
-              _refreshModelMetadata(s.modelPath!);
-            }
-            if (s.isTerminal && !completer.isCompleted) {
-              completer.complete();
-            }
-          },
-          onError: (Object e, StackTrace st) {
-            if (!completer.isCompleted) completer.complete();
-          },
-          cancelOnError: true,
-        );
-    await completer.future;
+    _service.startDownload(widget.model);
   }
 
-  Future<void> _cancelDownload() async {
-    _service().cancel(widget.model.id);
-  }
-
-  /// If the user backs out of the page mid-download, drop any
-  /// half-written file so we don't leave a 1.5 GB orphan in the
-  /// data dir. Best-effort — we don't block the pop on it.
-  void _cleanupOnExit() {
-    final state = _state;
-    if (state == null) return;
-    if (!state.isActive) return;
-    unawaited(_service().cleanup(widget.model));
+  /// Per-file delete handler used by the inline trash icons on
+  /// [_DownloadFileRow] (new mode) and [_PathRow] (edit mode).
+  ///
+  /// The [file] argument is the [BuiltinFileDownload] object
+  /// the row is currently rendering (or a synthesised one for
+  /// the edit-mode `_PathRow`). The service identifies which
+  /// slot to reset by comparing the file's URL against the
+  /// model's [BuiltinModel.modelUrl] / [BuiltinModel.mmprojUrl].
+  ///
+  /// Pops a confirmation dialog before doing anything
+  /// destructive — deleting a fully downloaded model is a
+  /// user-visible loss, so we want a one-tap undo.
+  Future<void> _onDeleteFile(BuiltinFileDownload file) async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        content: Text(l10n.builtinModelDeleteFileConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.commonCancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.commonDelete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final isModel = file.url == widget.model.modelUrl;
+    await _service.deleteDownloadedFile(widget.model, file);
+    if (!mounted) return;
+    setState(() {
+      if (isModel) {
+        _modelPath = null;
+        _modelFileSize = null;
+        _modelArch = null;
+      } else {
+        _mmprojPath = null;
+      }
+    });
   }
 
   Future<void> _refreshModelMetadata(String path) async {
@@ -314,6 +334,12 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
       );
     }
     if (!mounted) return;
+    // Drop the in-memory download state — the file is on disk
+    // and a LocalProvider points to it; the snapshot in the
+    // service would just be stale noise. The next time the
+    // user re-opens the page in "edit" mode, the file existence
+    // is the source of truth.
+    _service.clearState(widget.model.id);
     setState(() => _saving = false);
     Navigator.of(context).pop();
   }
@@ -321,173 +347,194 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final state = _state;
-    final isEdit = _isEdit;
-    // `canSave` is true once the files are on disk AND the
-    // current run isn't in a failed/cancelled terminal state —
-    // i.e. the user can hit Save.
-    final canSave =
-        _hasFilesOnDisk &&
-        (state == null || state.isCompleted || !state.isActive) &&
-        (state == null || !state.overallFailed);
-    return PopScope(
-      canPop: state == null || !state.isActive,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _cleanupOnExit();
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(
-            isEdit ? l10n.builtinModelEditTitle : widget.model.displayName,
+    // Watch the service so progress updates rebuild the page.
+    // This is the bridge between the long-lived download
+    // (which keeps running even when the page is disposed) and
+    // the live UI.
+    return Consumer<BuiltinModelDownloadService>(
+      builder: (context, service, _) {
+        final state = service.stateFor(widget.model.id);
+        // Pull the latest local paths off the service's state
+        // so a download that completes while the page is
+        // backgrounded immediately reflects in our form.
+        if (state != null) {
+          if (state.modelPath != null) _modelPath = state.modelPath;
+          if (state.mmprojPath != null) _mmprojPath = state.mmprojPath;
+          if (state.modelFile.status == BuiltinFileStatus.completed &&
+              !_archLoading) {
+            // Re-read GGUF metadata from the freshly downloaded
+            // file so the memory estimate card reflects the
+            // actual architecture. The path may have been set
+            // before initState ran (e.g. if the user backgrounded
+            // a download and came back).
+            final mp = state.modelPath;
+            if (mp != null && _modelFileSize == null) {
+              _refreshModelMetadata(mp);
+            }
+          }
+        }
+        final canSave =
+            _hasFilesOnDisk &&
+            (state == null || !state.isActive) &&
+            (state == null ||
+                state.overall != BuiltinModelDownloadPhase.failed);
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(
+              _isEdit ? l10n.builtinModelEditTitle : widget.model.displayName,
+            ),
           ),
-        ),
-        body: Form(
-          key: _formKey,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-            children: [
-              _BuiltinHeader(
-                model: widget.model,
-                isEdit: isEdit,
-                downloaded: _hasFilesOnDisk,
-              ),
-              const SizedBox(height: 14),
-              LocalProviderFormLabel(text: l10n.localProviderName),
-              TextFormField(
-                controller: _name,
-                decoration: InputDecoration(
-                  hintText: l10n.localProviderNameHint,
-                ),
-                validator: (v) => (v == null || v.trim().isEmpty)
-                    ? l10n.localProviderNameRequired
-                    : null,
-              ),
-              const SizedBox(height: 14),
-              if (!isEdit) ...[
-                _DownloadSection(
+          body: Form(
+            key: _formKey,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              children: [
+                _BuiltinHeader(
                   model: widget.model,
-                  state: state,
-                  onDownload: _startDownload,
-                  onCancel: _cancelDownload,
+                  isEdit: _isEdit,
+                  downloaded: _hasFilesOnDisk,
                 ),
-                const SizedBox(height: 20),
-              ] else ...[
-                _InstalledFilesRow(
-                  model: widget.model,
-                  modelPath: _modelPath,
-                  mmprojPath: _mmprojPath,
-                  onRedownload: _startDownload,
-                  state: state,
-                ),
-                const SizedBox(height: 20),
-              ],
-              MemoryEstimateCard(
-                modelFileSize: _modelFileSize,
-                arch: _modelArch,
-                loading: _archLoading,
-                contextSize: _contextSize,
-                batchSize: _batchSize,
-                cacheTypeK: _cacheTypeK,
-                cacheTypeV: _cacheTypeV,
-                modelLabel: l10n.localProviderMemModel,
-                kvLabel: l10n.localProviderMemKv,
-                computeLabel: l10n.localProviderMemCompute,
-                totalLabel: l10n.localProviderMemTotal,
-                missingLabel: l10n.localProviderMemMissing,
-                loadingLabel: l10n.localProviderMemLoading,
-              ),
-              const SizedBox(height: 16),
-              LocalProviderFormLabel(text: l10n.localProviderParams),
-              const SizedBox(height: 4),
-              ContextSizeSlider(
-                value: _contextSize,
-                presets: LocalProviderPresets.contextSize,
-                onChanged: (v) => setState(() => _contextSize = v),
-                label: l10n.localProviderContextSize,
-              ),
-              const SizedBox(height: 16),
-              SliderField(
-                value: _temperature,
-                min: 0.0,
-                max: 2.0,
-                divisions: 40,
-                onChanged: (v) => setState(() => _temperature = v),
-                label: l10n.localProviderTemperature,
-                display: _temperature.toStringAsFixed(2),
-              ),
-              const SizedBox(height: 16),
-              GpuLayersField(
-                value: _gpuLayers,
-                onChanged: (v) => setState(() => _gpuLayers = v),
-                label: l10n.localProviderGpuLayers,
-                hint: l10n.localProviderGpuLayersHint,
-              ),
-              const SizedBox(height: 16),
-              MaxTokensSlider(
-                value: _maxTokens,
-                presets: LocalProviderPresets.maxTokens,
-                onChanged: (v) => setState(() => _maxTokens = v),
-                label: l10n.localProviderMaxTokens,
-              ),
-              const SizedBox(height: 16),
-              KvCacheTypeField(
-                label: l10n.localProviderKvCacheK,
-                hint: l10n.localProviderKvCacheHint,
-                value: _cacheTypeK,
-                onChanged: (v) => setState(() => _cacheTypeK = v),
-              ),
-              const SizedBox(height: 12),
-              KvCacheTypeField(
-                label: l10n.localProviderKvCacheV,
-                hint: null,
-                value: _cacheTypeV,
-                onChanged: (v) => setState(() => _cacheTypeV = v),
-              ),
-              const SizedBox(height: 16),
-              BatchSizeSlider(
-                value: _batchSize,
-                presets: LocalProviderPresets.batchSize,
-                onChanged: (v) => setState(() => _batchSize = v),
-                label: l10n.localProviderBatchSize,
-                hint: l10n.localProviderBatchSizeHint,
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                height: 46,
-                child: ElevatedButton(
-                  onPressed: (_saving || !canSave) ? null : _save,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
+                const SizedBox(height: 14),
+                LocalProviderFormLabel(text: l10n.localProviderName),
+                TextFormField(
+                  controller: _name,
+                  decoration: InputDecoration(
+                    hintText: l10n.localProviderNameHint,
                   ),
-                  child: _saving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Text(l10n.commonSave),
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? l10n.localProviderNameRequired
+                      : null,
                 ),
-              ),
-            ],
+                const SizedBox(height: 14),
+                if (!_isEdit)
+                  _DownloadSection(
+                    model: widget.model,
+                    service: service,
+                    onStart: _startDownload,
+                    onCancel: _cancelDownload,
+                    onRestart: _restartDownload,
+                    onContinue: _startDownload,
+                    onDeleteFile: _onDeleteFile,
+                  )
+                else
+                  _InstalledFilesRow(
+                    model: widget.model,
+                    modelPath: _modelPath,
+                    mmprojPath: _mmprojPath,
+                    service: service,
+                    onStart: _startDownload,
+                    onCancel: _cancelDownload,
+                    onRestart: _restartDownload,
+                    onDeleteFile: _onDeleteFile,
+                  ),
+                const SizedBox(height: 20),
+                MemoryEstimateCard(
+                  modelFileSize: _modelFileSize,
+                  arch: _modelArch,
+                  loading: _archLoading,
+                  contextSize: _contextSize,
+                  batchSize: _batchSize,
+                  cacheTypeK: _cacheTypeK,
+                  cacheTypeV: _cacheTypeV,
+                  modelLabel: l10n.localProviderMemModel,
+                  kvLabel: l10n.localProviderMemKv,
+                  computeLabel: l10n.localProviderMemCompute,
+                  totalLabel: l10n.localProviderMemTotal,
+                  missingLabel: l10n.localProviderMemMissing,
+                  loadingLabel: l10n.localProviderMemLoading,
+                ),
+                const SizedBox(height: 16),
+                LocalProviderFormLabel(text: l10n.localProviderParams),
+                const SizedBox(height: 4),
+                ContextSizeSlider(
+                  value: _contextSize,
+                  presets: LocalProviderPresets.contextSize,
+                  onChanged: (v) => setState(() => _contextSize = v),
+                  label: l10n.localProviderContextSize,
+                ),
+                const SizedBox(height: 16),
+                SliderField(
+                  value: _temperature,
+                  min: 0.0,
+                  max: 2.0,
+                  divisions: 40,
+                  onChanged: (v) => setState(() => _temperature = v),
+                  label: l10n.localProviderTemperature,
+                  display: _temperature.toStringAsFixed(2),
+                ),
+                const SizedBox(height: 16),
+                GpuLayersField(
+                  value: _gpuLayers,
+                  onChanged: (v) => setState(() => _gpuLayers = v),
+                  label: l10n.localProviderGpuLayers,
+                  hint: l10n.localProviderGpuLayersHint,
+                ),
+                const SizedBox(height: 16),
+                MaxTokensSlider(
+                  value: _maxTokens,
+                  presets: LocalProviderPresets.maxTokens,
+                  onChanged: (v) => setState(() => _maxTokens = v),
+                  label: l10n.localProviderMaxTokens,
+                ),
+                const SizedBox(height: 16),
+                KvCacheTypeField(
+                  label: l10n.localProviderKvCacheK,
+                  hint: l10n.localProviderKvCacheHint,
+                  value: _cacheTypeK,
+                  onChanged: (v) => setState(() => _cacheTypeK = v),
+                ),
+                const SizedBox(height: 12),
+                KvCacheTypeField(
+                  label: l10n.localProviderKvCacheV,
+                  hint: null,
+                  value: _cacheTypeV,
+                  onChanged: (v) => setState(() => _cacheTypeV = v),
+                ),
+                const SizedBox(height: 16),
+                BatchSizeSlider(
+                  value: _batchSize,
+                  presets: LocalProviderPresets.batchSize,
+                  onChanged: (v) => setState(() => _batchSize = v),
+                  label: l10n.localProviderBatchSize,
+                  hint: l10n.localProviderBatchSizeHint,
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  height: 46,
+                  child: ElevatedButton(
+                    onPressed: (_saving || !canSave) ? null : _save,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: _saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(l10n.commonSave),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
 
 /// Top-of-page card showing the model name + one-line description
-/// + a "约 X GB" size hint + a status pill ("已下载" / "已配置" /
-/// "未配置"). Always visible so the user can read what they're
-/// about to install or edit.
+/// + a "约 X GB" size hint + a status pill. Always visible so
+/// the user can read what they're about to install or edit.
 class _BuiltinHeader extends StatelessWidget {
   const _BuiltinHeader({
     required this.model,
@@ -583,30 +630,39 @@ class _BuiltinHeader extends StatelessWidget {
   }
 }
 
-/// File picker replacement for the built-in flow. Renders one row
-/// per file (model + optional mmproj) with a progress bar that
-/// fills as bytes arrive, plus the Download / Cancel actions. The
-/// two rows are independent in the UI but the underlying service
-/// downloads them sequentially.
+/// New-mode download section. Drives the lifecycle of a single
+/// in-flight download via the shared [BuiltinModelDownloadService]:
+///
+///   * **no file on disk, no active download** → "下载" (fresh).
+///   * **downloading** → "取消" + live progress.
+///   * **completed (file on disk)** → "重新下载" (secondary).
+///   * **cancelled / failed with partial on disk** → "继续" (resume)
+///     + "重新下载" (start over).
+///   * **cancelled / failed with no partial** → "重试" (re-attempt).
 class _DownloadSection extends StatelessWidget {
   const _DownloadSection({
     required this.model,
-    required this.state,
-    required this.onDownload,
+    required this.service,
+    required this.onStart,
     required this.onCancel,
+    required this.onRestart,
+    required this.onContinue,
+    required this.onDeleteFile,
   });
 
   final BuiltinModel model;
-  final BuiltinModelDownloadState? state;
-  final VoidCallback onDownload;
+  final BuiltinModelDownloadService service;
+  final VoidCallback onStart;
   final VoidCallback onCancel;
+  final VoidCallback onRestart;
+  final VoidCallback onContinue;
+  final Future<void> Function(BuiltinFileDownload file) onDeleteFile;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final state = this.state;
-    final showDownloadButton = state == null || state.isTerminal;
-    final showCancelButton = state != null && state.isActive;
+    final state = service.stateFor(model.id);
+    final isActive = service.isActive(model.id);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -618,6 +674,7 @@ class _DownloadSection extends StatelessWidget {
               state?.overall == BuiltinModelDownloadPhase.downloadingModel,
           isQueued:
               state?.overall == BuiltinModelDownloadPhase.downloadingMmproj,
+          onDelete: (f) => onDeleteFile(f),
         ),
         if (model.hasMmproj) ...[
           const SizedBox(height: 8),
@@ -628,6 +685,7 @@ class _DownloadSection extends StatelessWidget {
                 state?.overall == BuiltinModelDownloadPhase.downloadingMmproj,
             isQueued:
                 state?.overall == BuiltinModelDownloadPhase.downloadingModel,
+            onDelete: (f) => onDeleteFile(f),
           ),
         ],
         if (state?.overall == BuiltinModelDownloadPhase.failed) ...[
@@ -640,130 +698,238 @@ class _DownloadSection extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 12),
-        Row(
-          children: [
-            if (showDownloadButton)
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: onDownload,
-                  icon: const Icon(Icons.download_outlined, size: 18),
-                  label: Text(l10n.builtinModelDownload),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                  ),
-                ),
-              ),
-            if (showCancelButton)
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onCancel,
-                  icon: const Icon(Icons.close, size: 18),
-                  label: Text(l10n.builtinModelCancelDownload),
-                  style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                  ),
-                ),
-              ),
-          ],
+        _ActionRow(
+          state: state,
+          isActive: isActive,
+          onStart: onStart,
+          onCancel: onCancel,
+          onRestart: onRestart,
+          onContinue: onContinue,
         ),
       ],
     );
   }
 }
 
-/// Shown in **edit** mode. Replaces the download section: the
-/// files are already on disk (we wouldn't be in edit mode
-/// otherwise) so we just show their paths + a re-download
-/// affordance, no progress bar.
+/// Renders the action buttons for the download card. The exact
+/// set of buttons depends on the current state:
+///
+///   * active  → "取消下载" (full width)
+///   * terminal + can resume  → "继续" + "重新下载"
+///   * terminal + no partial + completed → "重新下载" (secondary)
+///   * terminal + no partial + failed → "重试" + "重新下载"
+///   * nothing in flight, no file → "下载" (full width)
+class _ActionRow extends StatelessWidget {
+  const _ActionRow({
+    required this.state,
+    required this.isActive,
+    required this.onStart,
+    required this.onCancel,
+    required this.onRestart,
+    required this.onContinue,
+  });
+
+  final BuiltinModelDownloadState? state;
+  final bool isActive;
+  final VoidCallback onStart;
+  final VoidCallback onCancel;
+  final VoidCallback onRestart;
+  final VoidCallback onContinue;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    if (isActive) {
+      // The user can stop the background download at any time
+      // (the download survives closing the page).
+      return _PrimaryButton(
+        icon: Icons.close,
+        label: l10n.builtinModelCancelDownload,
+        onPressed: onCancel,
+        outlined: true,
+      );
+    }
+    final overall = state?.overall;
+    if (overall == BuiltinModelDownloadPhase.cancelled ||
+        overall == BuiltinModelDownloadPhase.failed) {
+      // We have a partial on disk — offer to resume from the
+      // breakpoint, or start over.
+      if (state?.canResume ?? false) {
+        return Row(
+          children: [
+            Expanded(
+              child: _PrimaryButton(
+                icon: Icons.play_arrow,
+                label: l10n.builtinModelResume,
+                onPressed: onContinue,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _PrimaryButton(
+                icon: Icons.refresh,
+                label: l10n.builtinModelRedownload,
+                onPressed: onRestart,
+                outlined: true,
+              ),
+            ),
+          ],
+        );
+      }
+      // No partial on disk — offer a retry + a from-scratch
+      // restart.
+      return _PrimaryButton(
+        icon: Icons.refresh,
+        label: l10n.builtinModelRetry,
+        onPressed: onStart,
+      );
+    }
+    if (overall == BuiltinModelDownloadPhase.completed) {
+      // File is on disk; show a secondary "重新下载" affordance
+      // (the user might want to refresh the model, e.g. after
+      // the upstream was updated, or after the file went
+      // missing).
+      return _PrimaryButton(
+        icon: Icons.refresh,
+        label: l10n.builtinModelRedownload,
+        onPressed: onRestart,
+        outlined: true,
+      );
+    }
+    // Nothing in flight, no file on disk — fresh download.
+    return _PrimaryButton(
+      icon: Icons.download_outlined,
+      label: l10n.builtinModelDownload,
+      onPressed: onStart,
+    );
+  }
+}
+
+class _PrimaryButton extends StatelessWidget {
+  const _PrimaryButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.outlined = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+  final bool outlined;
+
+  @override
+  Widget build(BuildContext context) {
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(10),
+    );
+    // Horizontal padding so the icon + label don't sit flush
+    // against the button edge; minimumSize keeps a consistent
+    // tap target even for short labels.
+    const padding = EdgeInsets.symmetric(horizontal: 16, vertical: 12);
+    const minimumSize = Size(0, 44);
+    if (outlined) {
+      return OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+          shape: shape,
+          padding: padding,
+          minimumSize: minimumSize,
+          side: BorderSide(color: context.appBorder, width: 0.8),
+        ),
+      );
+    }
+    return ElevatedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(label),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppTheme.primary,
+        foregroundColor: Colors.white,
+        shape: shape,
+        elevation: 0,
+        padding: padding,
+        minimumSize: minimumSize,
+      ),
+    );
+  }
+}
+
+/// Edit-mode card. Replaces the download section: the linked
+/// [LocalProvider] is already pointing at the on-disk file, so
+/// the primary action is "Save" and "重新下载" is a secondary
+/// affordance. Live progress is shown in-line when the user
+/// kicks off a re-download.
 class _InstalledFilesRow extends StatelessWidget {
   const _InstalledFilesRow({
     required this.model,
     required this.modelPath,
     required this.mmprojPath,
-    required this.onRedownload,
-    required this.state,
+    required this.service,
+    required this.onStart,
+    required this.onCancel,
+    required this.onRestart,
+    required this.onDeleteFile,
   });
 
   final BuiltinModel model;
   final String? modelPath;
   final String? mmprojPath;
-  final VoidCallback onRedownload;
-  final BuiltinModelDownloadState? state;
+  final BuiltinModelDownloadService service;
+  final VoidCallback onStart;
+  final VoidCallback onCancel;
+  final VoidCallback onRestart;
+  final Future<void> Function(BuiltinFileDownload file) onDeleteFile;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final state = this.state;
-    final showRedownload = state == null || state.isTerminal;
-    final showCancel = state != null && state.isActive;
+    final state = service.stateFor(model.id);
+    final isActive = service.isActive(model.id);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         LocalProviderFormLabel(text: l10n.builtinModelFiles),
-        _PathRow(label: l10n.builtinModelWeightsFile, path: modelPath),
+        _PathRow(
+          label: l10n.builtinModelWeightsFile,
+          path: modelPath,
+          isModel: true,
+          model: model,
+          onDelete: onDeleteFile,
+        ),
         if (model.hasMmproj) ...[
           const SizedBox(height: 8),
-          _PathRow(label: l10n.builtinModelMmprojFile, path: mmprojPath),
-        ],
-        if (state != null && state.isActive) ...[
-          const SizedBox(height: 10),
-          _LiveProgress(
-            state: state,
+          _PathRow(
+            label: l10n.builtinModelMmprojFile,
+            path: mmprojPath,
+            isModel: false,
             model: model,
-            onCancel: showCancel ? onRedownload : null,
+            onDelete: onDeleteFile,
           ),
         ],
-        if (state != null &&
-            state.overall == BuiltinModelDownloadPhase.failed) ...[
+        if (state != null && (state.isActive || state.canResume)) ...[
+          const SizedBox(height: 10),
+          _LiveProgress(state: state, model: model, onDeleteFile: onDeleteFile),
+        ],
+        if (state?.overall == BuiltinModelDownloadPhase.failed) ...[
           const SizedBox(height: 8),
           Text(
             l10n.builtinModelDownloadFailed(
-              state.modelFile.error ?? state.mmprojFile?.error ?? '',
+              state!.modelFile.error ?? state.mmprojFile?.error ?? '',
             ),
             style: const TextStyle(fontSize: 11, color: Color(0xFFD1242F)),
           ),
         ],
         const SizedBox(height: 12),
-        Row(
-          children: [
-            if (showRedownload)
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onRedownload,
-                  icon: const Icon(Icons.refresh, size: 18),
-                  label: Text(l10n.builtinModelRedownload),
-                  style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                  ),
-                ),
-              ),
-            if (showCancel)
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onRedownload,
-                  icon: const Icon(Icons.close, size: 18),
-                  label: Text(l10n.builtinModelCancelDownload),
-                  style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                  ),
-                ),
-              ),
-          ],
+        _ActionRow(
+          state: state,
+          isActive: isActive,
+          onStart: onStart,
+          onCancel: onCancel,
+          onRestart: onRestart,
+          onContinue: onStart,
         ),
       ],
     );
@@ -771,12 +937,33 @@ class _InstalledFilesRow extends StatelessWidget {
 }
 
 class _PathRow extends StatelessWidget {
-  const _PathRow({required this.label, required this.path});
+  const _PathRow({
+    required this.label,
+    required this.path,
+    required this.isModel,
+    required this.model,
+    required this.onDelete,
+  });
+
   final String label;
   final String? path;
 
+  /// True for the model-weights row, false for the mmproj row.
+  /// Used to construct a [BuiltinFileDownload] for the delete
+  /// callback (the service keys off the URL).
+  final bool isModel;
+
+  /// The model the row belongs to. Needed to look up the right
+  /// URL/filename when synthesizing the [BuiltinFileDownload]
+  /// for the delete callback.
+  final BuiltinModel model;
+
+  final Future<void> Function(BuiltinFileDownload file) onDelete;
+
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final hasFile = path != null && path!.isNotEmpty;
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -787,9 +974,38 @@ class _PathRow extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (hasFile)
+                _DeleteFileIconButton(
+                  tooltip: l10n.builtinModelDeleteFileTooltip,
+                  onPressed: () {
+                    final file = isModel
+                        ? BuiltinFileDownload(
+                            url: model.modelUrl,
+                            filename: model.modelFilename,
+                            localPath: path,
+                            status: BuiltinFileStatus.completed,
+                          )
+                        : BuiltinFileDownload(
+                            url: model.mmprojUrl!,
+                            filename: model.mmprojFilename!,
+                            localPath: path,
+                            status: BuiltinFileStatus.completed,
+                          );
+                    onDelete(file);
+                  },
+                ),
+            ],
           ),
           const SizedBox(height: 4),
           Text(
@@ -804,17 +1020,19 @@ class _PathRow extends StatelessWidget {
   }
 }
 
-/// Live progress widget for the edit-mode "re-download" flow.
+/// Live progress widget used by the edit-mode "re-download"
+/// flow. Mirrors the new-mode card so the user gets a
+/// consistent look no matter which entry point they used.
 class _LiveProgress extends StatelessWidget {
   const _LiveProgress({
     required this.state,
     required this.model,
-    required this.onCancel,
+    required this.onDeleteFile,
   });
 
   final BuiltinModelDownloadState state;
   final BuiltinModel model;
-  final VoidCallback? onCancel;
+  final Future<void> Function(BuiltinFileDownload file) onDeleteFile;
 
   @override
   Widget build(BuildContext context) {
@@ -829,6 +1047,7 @@ class _LiveProgress extends StatelessWidget {
               state.overall == BuiltinModelDownloadPhase.downloadingModel,
           isQueued:
               state.overall == BuiltinModelDownloadPhase.downloadingMmproj,
+          onDelete: (f) => onDeleteFile(f),
         ),
         if (model.hasMmproj) ...[
           const SizedBox(height: 8),
@@ -839,6 +1058,7 @@ class _LiveProgress extends StatelessWidget {
                 state.overall == BuiltinModelDownloadPhase.downloadingMmproj,
             isQueued:
                 state.overall == BuiltinModelDownloadPhase.downloadingModel,
+            onDelete: (f) => onDeleteFile(f),
           ),
         ],
       ],
@@ -846,29 +1066,35 @@ class _LiveProgress extends StatelessWidget {
   }
 }
 
-/// One row inside [_DownloadSection] — filename + progress bar +
+/// One row inside the download section — filename + progress bar +
 /// status. Three render modes:
 ///   * **idle / not yet started** — no progress bar, just a
-///     "waiting" hint. This is the default before the user taps
-///     "Download".
+///     "waiting" hint.
 ///   * **running** — determinate bar (when the server reported
 ///     Content-Length) or indeterminate bar (chunked transfer),
-///     with a live byte counter underneath.
-///   * **terminal** — completed / failed / cancelled. Completed
-///     shows a 100% bar; failed / cancelled drop the bar and
-///     surface the reason in a small line.
+///     with a live byte counter.
+///   * **terminal** — completed / failed / cancelled.
 class _DownloadFileRow extends StatelessWidget {
   const _DownloadFileRow({
     required this.title,
     required this.file,
     required this.isCurrent,
     required this.isQueued,
+    this.onDelete,
   });
 
   final String title;
   final BuiltinFileDownload? file;
   final bool isCurrent;
   final bool isQueued;
+
+  /// Optional delete-file callback. When non-null AND the file
+  /// is in a terminal state (failed / cancelled / completed),
+  /// a small delete icon is shown next to the status label.
+  /// The callback receives the [BuiltinFileDownload] object
+  /// the row is rendering, so the parent can dispatch to the
+  /// right slot (model weights vs. mmproj).
+  final void Function(BuiltinFileDownload file)? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -879,6 +1105,19 @@ class _DownloadFileRow extends StatelessWidget {
     final statusLabel = _statusLabel(l10n, status);
     final statusColor = _statusColor(status);
     final filename = file?.filename ?? '';
+    // Per-file delete is only meaningful once the file has
+    // stopped streaming (terminal) — not while it's pending or
+    // currently downloading.
+    final canDelete =
+        onDelete != null &&
+        file != null &&
+        (status == BuiltinFileStatus.failed ||
+            status == BuiltinFileStatus.cancelled ||
+            status == BuiltinFileStatus.completed);
+    // Capture locally so the closure below can call it without
+    // a null-check (Dart can't promote `this.onDelete` through
+    // an instance field inside an inline arrow).
+    final onDeleteFn = onDelete;
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -900,6 +1139,12 @@ class _DownloadFileRow extends StatelessWidget {
                   ),
                 ),
               ),
+              if (canDelete)
+                _DeleteFileIconButton(
+                  tooltip: l10n.builtinModelDeleteFileTooltip,
+                  onPressed: () => onDeleteFn!(file),
+                ),
+              const SizedBox(width: 4),
               Text(
                 statusLabel,
                 style: TextStyle(
@@ -933,8 +1178,6 @@ class _DownloadFileRow extends StatelessWidget {
     );
   }
 
-  /// Picks the right visual for the file's current state. See
-  /// the class docstring for the three render modes.
   Widget _buildProgressRow({
     required BuildContext context,
     required AppLocalizations l10n,
@@ -953,11 +1196,8 @@ class _DownloadFileRow extends StatelessWidget {
       );
     }
 
-    // 2) Idle / pre-download state. We don't have a live
-    // BuiltinFileDownload yet (state == null in the parent) OR
-    // the file is sitting in `pending` waiting for its turn. No
-    // bar — that's what was animating on its own before, looking
-    // like a "ghost" download.
+    // 2) Idle / pre-download state. No bar — that was animating
+    // on its own before, looking like a "ghost" download.
     if (file == null || (status == BuiltinFileStatus.pending && !isCurrent)) {
       return Text(
         l10n.builtinModelWaiting,
@@ -999,10 +1239,7 @@ class _DownloadFileRow extends StatelessWidget {
           if (file.bytesTotal > 0) ...[
             const SizedBox(height: 4),
             Text(
-              l10n.builtinModelProgress(
-                _bytesLabel(file.bytesReceived),
-                _bytesLabel(file.bytesTotal),
-              ),
+              _progressLabel(l10n, file, fraction),
               style: TextStyle(fontSize: 10, color: context.textSecondary),
             ),
           ],
@@ -1010,9 +1247,7 @@ class _DownloadFileRow extends StatelessWidget {
       );
     }
 
-    // 5) Running. Determinate if the server told us the size;
-    // otherwise indeterminate (chunked transfer) with a running
-    // byte counter.
+    // 5) Running.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1040,17 +1275,21 @@ class _DownloadFileRow extends StatelessWidget {
     );
   }
 
-  /// "123 MB / 1.7 GB" when the total is known, just "123 MB"
-  /// when the server is using chunked transfer.
   String _progressLabel(
     AppLocalizations l10n,
     BuiltinFileDownload file,
     double? fraction,
   ) {
     if (file.bytesTotal > 0) {
-      return l10n.builtinModelProgress(
+      // 2-decimal percent, clamped so an over-shoot (resume
+      // that briefly exceeds the previous total) doesn't print
+      // ">100.00%".
+      final fraction = file.bytesReceived / file.bytesTotal;
+      final pct = (fraction * 100).clamp(0.0, 100.0).toStringAsFixed(2);
+      return l10n.builtinModelProgressWithPercent(
         _bytesLabel(file.bytesReceived),
         _bytesLabel(file.bytesTotal),
+        pct,
       );
     }
     return l10n.builtinModelProgressIndeterminate(
@@ -1089,6 +1328,29 @@ class _DownloadFileRow extends StatelessWidget {
   static String _bytesLabel(int bytes) => formatBytes(bytes, decimals: 1);
 }
 
-extension on BuiltinModelDownloadState {
-  bool get overallFailed => overall == BuiltinModelDownloadPhase.failed;
+/// Small red delete icon used on the per-file download cards.
+/// Always paired with a confirmation dialog at the call site —
+/// the button itself just fires [onPressed].
+class _DeleteFileIconButton extends StatelessWidget {
+  const _DeleteFileIconButton({required this.tooltip, required this.onPressed});
+
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkResponse(
+        onTap: onPressed,
+        radius: 18,
+        // Tight tap target so the button sits nicely inline with
+        // the status label without inflating the row's height.
+        child: const Padding(
+          padding: EdgeInsets.all(4),
+          child: Icon(Icons.delete_outline, size: 16, color: Color(0xFFD1242F)),
+        ),
+      ),
+    );
+  }
 }
