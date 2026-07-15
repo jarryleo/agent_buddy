@@ -18,6 +18,14 @@ class MarkdownContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Decode images at the bubble's actual pixel footprint * dpr instead
+    // of full-resolution. Without `cacheWidth`/`cacheHeight` Flutter loads
+    // the full photo and then samples it on the GPU, which combined with the
+    // default FilterQuality.medium looks visibly soft in a chat bubble.
+    final media = MediaQuery.of(context);
+    final dpr = media.devicePixelRatio;
+    final bubbleCacheWidth = (media.size.width * dpr).round();
+    final bubbleCacheHeight = (320 * dpr).round();
     final theme = Theme.of(context);
     final base = MarkdownStyleSheet(
       p: TextStyle(fontSize: 15, height: 1.6, color: context.textPrimary),
@@ -136,6 +144,9 @@ class MarkdownContent extends StatelessWidget {
           image = Image.network(
             uri.toString(),
             fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+            cacheWidth: bubbleCacheWidth,
+            cacheHeight: bubbleCacheHeight,
             loadingBuilder: (context, child, progress) {
               if (progress == null) return child;
               return Container(
@@ -162,11 +173,20 @@ class MarkdownContent extends StatelessWidget {
           image = Image.file(
             File(filePath),
             fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+            cacheWidth: bubbleCacheWidth,
+            cacheHeight: bubbleCacheHeight,
             errorBuilder: (context, error, stack) =>
                 _imageError(context, alt ?? uri.toString()),
           );
         } else if (isData) {
-          image = _buildDataImage(context, uri, alt);
+          image = _buildDataImage(
+            context,
+            uri,
+            alt,
+            cacheWidth: bubbleCacheWidth,
+            cacheHeight: bubbleCacheHeight,
+          );
         } else {
           // Fallback: try as a local file path or relative path.
           final path = Uri.decodeComponent(uri.toString());
@@ -174,6 +194,9 @@ class MarkdownContent extends StatelessWidget {
             image = Image.file(
               File(path),
               fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
+              cacheWidth: bubbleCacheWidth,
+              cacheHeight: bubbleCacheHeight,
               errorBuilder: (context, error, stack) =>
                   _imageError(context, alt ?? path),
             );
@@ -247,7 +270,13 @@ Widget _imageError(BuildContext context, String label) {
 }
 
 /// Build an image widget from a `data:` URI (e.g. `data:image/png;base64,...`).
-Widget _buildDataImage(BuildContext context, Uri uri, String? alt) {
+Widget _buildDataImage(
+  BuildContext context,
+  Uri uri,
+  String? alt, {
+  int? cacheWidth,
+  int? cacheHeight,
+}) {
   try {
     final data = uri.toString();
     final comma = data.indexOf(',');
@@ -257,6 +286,9 @@ Widget _buildDataImage(BuildContext context, Uri uri, String? alt) {
     return Image.memory(
       decoded,
       fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
+      cacheWidth: cacheWidth,
+      cacheHeight: cacheHeight,
       errorBuilder: (context, error, stack) =>
           _imageError(context, alt ?? data),
     );

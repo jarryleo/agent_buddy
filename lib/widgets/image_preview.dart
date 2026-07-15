@@ -38,10 +38,21 @@ class ImagePreviewPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Tri-linear mipmap filtering + a cache sized for InteractiveViewer's
+    // max zoom (5x) on the device's physical pixels. Without FilterQuality.high
+    // the bilinear default visibly smears detail when the user pinches in;
+    // without a generous cacheWidth Flutter samples the GPU texture instead
+    // of decoding at a higher resolution, which is the dominant cause of
+    // "blurry image in the preview" complaints.
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final cacheSize = (MediaQuery.of(context).size.width * dpr * 5).round();
     final Widget image = (localPath != null)
         ? Image.file(
             File(localPath!),
             fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+            cacheWidth: cacheSize,
+            cacheHeight: cacheSize,
             errorBuilder: (context, error, stack) => const Padding(
               padding: EdgeInsets.all(24),
               child: Column(
@@ -64,6 +75,9 @@ class ImagePreviewPage extends StatelessWidget {
         : Image.network(
             url!,
             fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+            cacheWidth: cacheSize,
+            cacheHeight: cacheSize,
             loadingBuilder: (context, child, progress) {
               if (progress == null) return child;
               return SizedBox(

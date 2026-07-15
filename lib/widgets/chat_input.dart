@@ -856,6 +856,12 @@ class _AttachmentThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Decode the attachment thumbnail at the device pixel footprint
+    // (64dp * dpr) instead of the full-resolution photo. Without this a
+    // 4k photo costs ~30MB of texture memory for a 64dp chip and looks
+    // washed-out on hi-dpi screens.
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final cacheSize = (64 * dpr).round();
     return SizedBox(
       width: 64,
       height: 64,
@@ -870,6 +876,9 @@ class _AttachmentThumbnail extends StatelessWidget {
                       child: Image.file(
                         File(path),
                         fit: BoxFit.cover,
+                        filterQuality: FilterQuality.high,
+                        cacheWidth: cacheSize,
+                        cacheHeight: cacheSize,
                         errorBuilder: (context, error, stack) =>
                             _fileIcon(context, name),
                       ),

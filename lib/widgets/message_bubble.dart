@@ -240,18 +240,32 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   Widget _buildUserImages(BuildContext context, List<String> paths) {
     final maxWidth = MediaQuery.of(context).size.width * 0.65;
-    final thumbSize = paths.length == 1 ? 160.0 : 88.0;
-    // Match the device pixel ratio so we don't upload a 4x larger
-    // image than the thumbnail actually needs. The Image.file
-    // engine will downscale to these cache dimensions once at
-    // decode time, then keep the scaled pixels in the image
-    // cache. Without this, every chat-list rebuild re-decodes
-    // the full-resolution photo and re-uploads it to the GPU.
+    final isMulti = paths.length > 1;
+    // Larger thumbnails than the legacy 160 / 88dp default — uploaded photos
+    // are usually the user's main subject and benefit from being readable at
+    // a glance.
+    final thumbSize = isMulti ? 300.0 : 600.0;
+    final crossAxisCount = isMulti
+        ? (paths.length >= 3 ? 2 : paths.length)
+        : 1;
+    // Actual on-screen cell side after the grid's crossAxisSpacing. The
+    // Image widget's `width` / `height` is only a hint here — the grid
+    // derives the cell from `childAspectRatio: 1`, so on single-image rows
+    // the rendered thumbnail is the full bubble width, not thumbSize.
+    final cellSide =
+        (maxWidth - 4 * (crossAxisCount - 1)) / crossAxisCount;
+    // Decode the cached bitmap at the displayed cell × dpr, not thumbSize
+    // × dpr. The previous cacheSize = thumbSize * dpr was *smaller* than
+    // the actual display footprint on single-image rows
+    // (cell ~260dp > thumbSize 160dp), so Flutter had to up-sample the
+    // cache to the screen — that's the source of the visibly pixelated
+    // cover-cropped thumbnail. ResizeImage caps at the source file's
+    // native dimensions, so requesting more pixels than the file holds
+    // is a harmless no-op (no up-sampling at decode time).
     final dpr = MediaQuery.of(context).devicePixelRatio;
-    final cacheSize = (thumbSize * dpr).round();
-    final crossAxisCount = paths.length == 1
-        ? 1
-        : (paths.length >= 3 ? 2 : paths.length);
+    final cacheSize = (cellSide * dpr)
+        .clamp((thumbSize * dpr).roundToDouble(), 4096.0)
+        .round();
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth),
       child: GridView.builder(
@@ -284,6 +298,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                   width: thumbSize,
                   height: thumbSize,
                   fit: BoxFit.cover,
+                  filterQuality: FilterQuality.high,
                   errorBuilder: (context, error, stack) => Container(
                     color: context.bg,
                     alignment: Alignment.center,
