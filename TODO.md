@@ -91,5 +91,10 @@ Skill:技能列表,与现有市面上技能兼容.
   "url": "https://www.bing.com/search?q=关键词" 
 }
 ```
-内置本地模型下载过程中返回按钮没有效果，且下载完成后下载按钮还是显示，需要支持后台下载，需要支持断点续传，
-如果文件丢失需要可以重新下载。
+
+模型名称：
+Qwen3.5-0.8B-Q4_K_M
+模型下载地址：
+https://www.modelscope.cn/models/unsloth/Qwen3.5-0.8B-GGUF/resolve/master/Qwen3.5-0.8B-Q4_K_M.gguf
+多模态投影下载地址：
+https://www.modelscope.cn/models/unsloth/Qwen3.5-0.8B-GGUF/resolve/master/mmproj-BF16.gguf

@@ -89,7 +89,7 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
     _name = TextEditingController(
       text: existing?.name ?? widget.model.displayName,
     );
-    _contextSize = existing?.contextSize ?? 4096;
+    _contextSize = existing?.contextSize ?? 16384;
     _temperature = existing?.temperature ?? 0.7;
     _gpuLayers = existing?.gpuLayers ?? 0;
     _maxTokens = existing?.maxTokens ?? 1024;
