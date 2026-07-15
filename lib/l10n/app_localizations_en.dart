@@ -449,11 +449,80 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolsMasterSwitchDescription =>
-      'Master switch for all built-in tools. Turn off for a pure chat experience to save tokens — the model won\'t see or call any tool until you turn this back on. Individual tool settings below are preserved.';
+      'Master switch for all built-in tools.';
 
   @override
   String get toolsMasterOffHint =>
       'All tools are off. The model will reply in plain text only.';
+
+  @override
+  String get toolDescFetchWeb => 'Fetch and parse web pages.';
+
+  @override
+  String get toolDescCurrentTime => 'Get the current date and time.';
+
+  @override
+  String get toolDescAskUser =>
+      'Let the model ask you a question or pick from options mid-chat.';
+
+  @override
+  String get toolDescRunCommand =>
+      'Run shell commands on the computer (desktop only).';
+
+  @override
+  String get toolDescGetEnvironment =>
+      'Inspect the host OS and runtime (desktop only).';
+
+  @override
+  String get toolDescCalendar =>
+      'Manage system calendar events (mobile only, needs permission).';
+
+  @override
+  String get toolDescReminders =>
+      'Manage system reminders and to-dos (mobile only, needs permission).';
+
+  @override
+  String get toolDescNotes =>
+      'Create, search and edit notes stored on this device.';
+
+  @override
+  String get toolDescTasks =>
+      'Maintain a local to-do list and mark items done.';
+
+  @override
+  String get toolDescMemory =>
+      'Save and recall the AI\'s long-term memory across chats.';
+
+  @override
+  String get toolDescLocation =>
+      'Get a coarse current location — GPS on mobile, IP elsewhere.';
+
+  @override
+  String get toolDescDownload =>
+      'Stream a file from a URL into a local temp file.';
+
+  @override
+  String get toolDescFile =>
+      'Read, write and browse local files (desktop only).';
+
+  @override
+  String get toolDescLoadSkill =>
+      'Pull a skill\'s full instructions on demand.';
+
+  @override
+  String get toolDescNotification =>
+      'Send a local notification via the system notification center.';
+
+  @override
+  String get toolDescTimer =>
+      'Schedule a delayed callback to the model (only while the app is running).';
+
+  @override
+  String get toolDescGoogleSheet =>
+      'Read and edit your Google Sheet (desktop only).';
+
+  @override
+  String get toolDescCallMcp => 'Call tools on a configured MCP server.';
 
   @override
   String get downloadStatusPending => 'Waiting…';

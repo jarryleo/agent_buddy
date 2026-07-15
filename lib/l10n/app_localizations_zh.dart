@@ -435,10 +435,64 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get toolsMasterSwitchDescription =>
-      '所有内置工具的总开关。关闭后进入纯聊天模式,可节省 token —— 模型既看不到也无法调用任何工具,直到你重新打开总开关。下方每个工具的独立开关会保留。';
+      '所有内置工具的总开关';
 
   @override
   String get toolsMasterOffHint => '工具已全部关闭,模型只会用纯文字回复。';
+
+  @override
+  String get toolDescFetchWeb => '抓取并解析网页内容。';
+
+  @override
+  String get toolDescCurrentTime => '获取当前的日期与时间。';
+
+  @override
+  String get toolDescAskUser => '让模型在对话中向你提问或请你做选择。';
+
+  @override
+  String get toolDescRunCommand => '在电脑上执行命令行指令(仅桌面端)。';
+
+  @override
+  String get toolDescGetEnvironment => '查看电脑的操作系统与运行环境(仅桌面端)。';
+
+  @override
+  String get toolDescCalendar => '管理系统日历事件(仅手机,需要授权)。';
+
+  @override
+  String get toolDescReminders => '管理系统提醒与待办(仅手机,需要授权)。';
+
+  @override
+  String get toolDescNotes => '在本机创建、搜索与编辑笔记。';
+
+  @override
+  String get toolDescTasks => '维护本机的待办清单并标记完成。';
+
+  @override
+  String get toolDescMemory => '跨会话保存与检索 AI 的长期记忆。';
+
+  @override
+  String get toolDescLocation => '获取当前位置:手机用 GPS,其他平台用 IP。';
+
+  @override
+  String get toolDescDownload => '把网址里的文件下载到本地临时目录。';
+
+  @override
+  String get toolDescFile => '读写、删除与浏览电脑上的文件(仅桌面端)。';
+
+  @override
+  String get toolDescLoadSkill => '按需读取某个技能的完整说明。';
+
+  @override
+  String get toolDescNotification => '向系统通知中心推送一条本地消息。';
+
+  @override
+  String get toolDescTimer => '在指定时间后让模型再次回复你(仅运行时有效)。';
+
+  @override
+  String get toolDescGoogleSheet => '读写你账号下的 Google 表格(仅桌面端)。';
+
+  @override
+  String get toolDescCallMcp => '调用外部 MCP 服务器上的工具。';
 
   @override
   String get downloadStatusPending => '等待中…';

@@ -18,9 +18,23 @@ abstract class ToolBase {
   /// Human-readable name in simplified Chinese (for UI display).
   String get name;
 
-  /// Description in simplified Chinese — shown to the model as the
-  /// tool's function description, and also used in the settings UI.
+  /// Description in simplified Chinese — sent to the model as the
+  /// tool's function description. **Not** the user-facing copy in
+  /// the settings list (that's [userDescriptionKey] → l10n).
   String get description;
+
+  /// ARB key for the user-facing one-liner shown in the settings
+  /// Tools tab. The default derives `toolDesc<PascalId>` from
+  /// [id], e.g. `'memory'` → `'toolDescMemory'`,
+  /// `'fetch_web'` → `'toolDescFetchWeb'`. Subclasses override
+  /// only when they want a custom key name.
+  String get userDescriptionKey {
+    final camel = id
+        .split('_')
+        .map((p) => p.isEmpty ? p : (p[0].toUpperCase() + p.substring(1)))
+        .join();
+    return 'toolDesc$camel';
+  }
 
   /// Whether this tool can actually run on the current platform.
   bool get isSupportedOnCurrentPlatform;

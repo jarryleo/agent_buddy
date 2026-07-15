@@ -908,6 +908,114 @@ abstract class AppLocalizations {
   /// **'All tools are off. The model will reply in plain text only.'**
   String get toolsMasterOffHint;
 
+  /// No description provided for @toolDescFetchWeb.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetch and parse web pages.'**
+  String get toolDescFetchWeb;
+
+  /// No description provided for @toolDescCurrentTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Get the current date and time.'**
+  String get toolDescCurrentTime;
+
+  /// No description provided for @toolDescAskUser.
+  ///
+  /// In en, this message translates to:
+  /// **'Let the model ask you a question or pick from options mid-chat.'**
+  String get toolDescAskUser;
+
+  /// No description provided for @toolDescRunCommand.
+  ///
+  /// In en, this message translates to:
+  /// **'Run shell commands on the computer (desktop only).'**
+  String get toolDescRunCommand;
+
+  /// No description provided for @toolDescGetEnvironment.
+  ///
+  /// In en, this message translates to:
+  /// **'Inspect the host OS and runtime (desktop only).'**
+  String get toolDescGetEnvironment;
+
+  /// No description provided for @toolDescCalendar.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage system calendar events (mobile only, needs permission).'**
+  String get toolDescCalendar;
+
+  /// No description provided for @toolDescReminders.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage system reminders and to-dos (mobile only, needs permission).'**
+  String get toolDescReminders;
+
+  /// No description provided for @toolDescNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'Create, search and edit notes stored on this device.'**
+  String get toolDescNotes;
+
+  /// No description provided for @toolDescTasks.
+  ///
+  /// In en, this message translates to:
+  /// **'Maintain a local to-do list and mark items done.'**
+  String get toolDescTasks;
+
+  /// No description provided for @toolDescMemory.
+  ///
+  /// In en, this message translates to:
+  /// **'Save and recall the AI\'s long-term memory across chats.'**
+  String get toolDescMemory;
+
+  /// No description provided for @toolDescLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Get a coarse current location — GPS on mobile, IP elsewhere.'**
+  String get toolDescLocation;
+
+  /// No description provided for @toolDescDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Stream a file from a URL into a local temp file.'**
+  String get toolDescDownload;
+
+  /// No description provided for @toolDescFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Read, write and browse local files (desktop only).'**
+  String get toolDescFile;
+
+  /// No description provided for @toolDescLoadSkill.
+  ///
+  /// In en, this message translates to:
+  /// **'Pull a skill\'s full instructions on demand.'**
+  String get toolDescLoadSkill;
+
+  /// No description provided for @toolDescNotification.
+  ///
+  /// In en, this message translates to:
+  /// **'Send a local notification via the system notification center.'**
+  String get toolDescNotification;
+
+  /// No description provided for @toolDescTimer.
+  ///
+  /// In en, this message translates to:
+  /// **'Schedule a delayed callback to the model (only while the app is running).'**
+  String get toolDescTimer;
+
+  /// No description provided for @toolDescGoogleSheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Read and edit your Google Sheet (desktop only).'**
+  String get toolDescGoogleSheet;
+
+  /// No description provided for @toolDescCallMcp.
+  ///
+  /// In en, this message translates to:
+  /// **'Call tools on a configured MCP server.'**
+  String get toolDescCallMcp;
+
   /// No description provided for @downloadStatusPending.
   ///
   /// In en, this message translates to:

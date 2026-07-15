@@ -44,7 +44,10 @@ class ToolsTab extends StatelessWidget {
                 final active = settings.activeToolIds.contains(t.id);
                 final toolDef = ToolRegistry.byId(t.id);
                 final name = toolDef?.name ?? t.name;
-                final description = toolDef?.description ?? t.description;
+                final userDescription = _toolUserDescription(l10n, t.id);
+                final description = userDescription.isNotEmpty
+                    ? userDescription
+                    : (toolDef?.description ?? t.description);
                 return _ToolCard(
                   tool: t,
                   active: active,
@@ -136,6 +139,55 @@ class ToolsTab extends StatelessWidget {
   Future<bool?> _openGoogleSheetSettings(BuildContext context) async {
     final tools = context.read<ToolService>();
     return GoogleSheetSettingsSheet.show(context, tools.googleSheets);
+  }
+}
+
+/// One-liner shown under each tool name in the Settings → Tools
+/// tab. Pulled from ARB so it can be translated; the model's own
+/// description ([ToolBase.description]) stays in code on purpose
+/// because it's an authoritative API contract. Returns an empty
+/// string for unknown ids, which the caller treats as "fall back
+/// to the tool's own description".
+String _toolUserDescription(AppLocalizations l10n, String id) {
+  switch (id) {
+    case 'fetch_web':
+      return l10n.toolDescFetchWeb;
+    case 'current_time':
+      return l10n.toolDescCurrentTime;
+    case 'ask_user':
+      return l10n.toolDescAskUser;
+    case 'run_command':
+      return l10n.toolDescRunCommand;
+    case 'get_environment':
+      return l10n.toolDescGetEnvironment;
+    case 'calendar':
+      return l10n.toolDescCalendar;
+    case 'reminders':
+      return l10n.toolDescReminders;
+    case 'notes':
+      return l10n.toolDescNotes;
+    case 'tasks':
+      return l10n.toolDescTasks;
+    case 'memory':
+      return l10n.toolDescMemory;
+    case 'location':
+      return l10n.toolDescLocation;
+    case 'download':
+      return l10n.toolDescDownload;
+    case 'file':
+      return l10n.toolDescFile;
+    case 'load_skill':
+      return l10n.toolDescLoadSkill;
+    case 'notification':
+      return l10n.toolDescNotification;
+    case 'timer':
+      return l10n.toolDescTimer;
+    case 'google_sheet':
+      return l10n.toolDescGoogleSheet;
+    case 'call_mcp':
+      return l10n.toolDescCallMcp;
+    default:
+      return '';
   }
 }
 
