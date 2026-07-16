@@ -574,6 +574,14 @@ class _BuiltinModelCard extends StatelessWidget {
                           'kv ${provider!.cacheTypeK}/${provider!.cacheTypeV}',
                     ),
                     _ParamChip(label: 'batch ${provider!.batchSize}'),
+                    _ParamChip(
+                      label:
+                          provider!.thinkingBudgetTokens == null ||
+                              provider!.thinkingBudgetTokens! <= 0
+                          ? l10n.localProviderChipThinkNoCap
+                          : '${l10n.localProviderChipThink} '
+                                '${provider!.thinkingBudgetChipLabel}',
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -986,6 +994,14 @@ class _LocalProviderCard extends StatelessWidget {
                     label: 'kv ${provider.cacheTypeK}/${provider.cacheTypeV}',
                   ),
                   _ParamChip(label: 'batch ${provider.batchSize}'),
+                  _ParamChip(
+                    label:
+                        provider.thinkingBudgetTokens == null ||
+                            provider.thinkingBudgetTokens! <= 0
+                        ? l10n.localProviderChipThinkNoCap
+                        : '${l10n.localProviderChipThink} '
+                              '${provider.thinkingBudgetChipLabel}',
+                  ),
                 ],
               ),
               const SizedBox(height: 8),

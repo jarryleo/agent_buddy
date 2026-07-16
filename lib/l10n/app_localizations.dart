@@ -734,6 +734,18 @@ abstract class AppLocalizations {
   /// **'No cap'**
   String get localProviderThinkingBudgetNoLimit;
 
+  /// No description provided for @localProviderChipThink.
+  ///
+  /// In en, this message translates to:
+  /// **'think'**
+  String get localProviderChipThink;
+
+  /// No description provided for @localProviderChipThinkNoCap.
+  ///
+  /// In en, this message translates to:
+  /// **'think ∞'**
+  String get localProviderChipThinkNoCap;
+
   /// No description provided for @localProviderMemTitle.
   ///
   /// In en, this message translates to:

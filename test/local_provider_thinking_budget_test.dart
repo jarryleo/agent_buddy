@@ -114,4 +114,47 @@ void main() {
       expect(p2.thinkingBudgetTokens, 4096);
     });
   });
+
+  group('LocalProvider.thinkingBudgetChipLabel', () {
+    LocalProvider withBudget(int? tokens) => LocalProvider(
+      id: 'p1',
+      name: 'test',
+      modelPath: '/tmp/model.gguf',
+      thinkingBudgetTokens: tokens,
+    );
+
+    test('null budget renders as the no-cap sentinel', () {
+      // The chip on the providers tab uses this to decide between
+      // "思考 ∞" (no cap) and "思考 2K" (capped). The sentinel must
+      // not accidentally render as "思考 0" or "思考 null" — those
+      // would look like a real (zero / broken) budget.
+      expect(withBudget(null).thinkingBudgetChipLabel, '∞');
+    });
+
+    test('zero budget also renders as the no-cap sentinel', () {
+      // The 0 sentinel pre-dates this field (it was the wire-format
+      // for "no cap" before the user could explicitly clear it).
+      expect(withBudget(0).thinkingBudgetChipLabel, '∞');
+    });
+
+    test('power-of-two presets are abbreviated to K-suffix form', () {
+      // Matches the visual style of the other _ParamChip rows
+      // (e.g. `ctx 8192` is fine but `think 8K` is more scannable
+      // in a 6-chip wrap).
+      expect(withBudget(1024).thinkingBudgetChipLabel, '1K');
+      expect(withBudget(2048).thinkingBudgetChipLabel, '2K');
+      expect(withBudget(4096).thinkingBudgetChipLabel, '4K');
+      expect(withBudget(8192).thinkingBudgetChipLabel, '8K');
+      expect(withBudget(16384).thinkingBudgetChipLabel, '16K');
+      expect(withBudget(32768).thinkingBudgetChipLabel, '32K');
+    });
+
+    test('non-power-of-two budgets are shown verbatim', () {
+      // A user might type a custom value (e.g. 1500) — show it
+      // exactly so they can see what they entered, instead of
+      // silently rounding to a preset.
+      expect(withBudget(1500).thinkingBudgetChipLabel, '1500');
+      expect(withBudget(3000).thinkingBudgetChipLabel, '3000');
+    });
+  });
 }

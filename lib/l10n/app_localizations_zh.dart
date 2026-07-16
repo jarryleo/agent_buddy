@@ -346,6 +346,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get localProviderThinkingBudgetNoLimit => '不限';
 
   @override
+  String get localProviderChipThink => '思考';
+
+  @override
+  String get localProviderChipThinkNoCap => '思考 ∞';
+
+  @override
   String get localProviderMemTitle => '内存预估';
 
   @override

@@ -116,6 +116,8 @@
   "localProviderThinkingBudget": "思考块 token 上限",
   "localProviderThinkingBudgetHint": "对 Qwen3 / DeepSeek-R1 / GLM-4.5 等思考模型,限制 <think>...</think> 块最多消耗的 token。设 0 = 不限(思考模型可能把整个上下文都填进思考块,出不来最终回答)。建议 2048(4K-8K 上下文)或 4096(16K+ 上下文)。需在聊天设置里同时打开「思考模式」才会生效。",
   "localProviderThinkingBudgetNoLimit": "不限",
+  "localProviderChipThink": "思考",
+  "localProviderChipThinkNoCap": "思考 ∞",
   "localProviderMemTitle": "内存预估",
   "localProviderMemModel": "模型权重",
   "localProviderMemKv": "KV 缓存",

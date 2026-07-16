@@ -140,6 +140,36 @@ class LocalProvider {
     return name.isEmpty ? modelPath : name;
   }
 
+  /// Short label for the [thinkingBudgetTokens] field, suitable
+  /// for a UI chip in a parameter list. Renders power-of-two
+  /// presets as `2K` / `4K` (matches the visual style of the
+  /// other `_ParamChip` rows on the providers tab); non-standard
+  /// values are shown verbatim so the user can still see the
+  /// exact number they typed. `null` / `0` maps to "no cap"
+  /// (the user explicitly chose to disable the reasoning-budget
+  /// sampler, which is the legacy behavior on rows that predate
+  /// this field).
+  String get thinkingBudgetChipLabel {
+    final t = thinkingBudgetTokens;
+    if (t == null || t <= 0) return '∞';
+    switch (t) {
+      case 1024:
+        return '1K';
+      case 2048:
+        return '2K';
+      case 4096:
+        return '4K';
+      case 8192:
+        return '8K';
+      case 16384:
+        return '16K';
+      case 32768:
+        return '32K';
+      default:
+        return '$t';
+    }
+  }
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,

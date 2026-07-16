@@ -356,6 +356,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get localProviderThinkingBudgetNoLimit => 'No cap';
 
   @override
+  String get localProviderChipThink => 'think';
+
+  @override
+  String get localProviderChipThinkNoCap => 'think ∞';
+
+  @override
   String get localProviderMemTitle => 'Memory estimate';
 
   @override

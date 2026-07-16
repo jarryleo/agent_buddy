@@ -24,6 +24,50 @@ import '../services/tool_service.dart';
 import '../services/tools/tool_registry.dart';
 import 'settings_provider.dart';
 
+/// Builds the always-on base system prompt for a chat turn.
+///
+/// Kept as a top-level pure function (instead of a method on
+/// [ChatProvider]) so the prompt contents are directly unit-testable
+/// without spinning up the provider and its 8+ collaborators. The
+/// per-tool reminders used to live inline in this string; on a
+/// 4K-context local GGUF that ate ~1.5K tokens of every
+/// conversation before the model saw a single user word — a major
+/// source of the "降智" symptom on small contexts. The full content
+/// now lives behind the builtin `tool_usage` skill (see
+/// [BuiltinSkills.all]), which the model loads on demand via
+/// `load_skill`. This prompt only carries the short summary and a
+/// pointer to the skill, plus the two environment hints that
+/// genuinely need to be in every turn: the active working directory
+/// and the count of MCP servers the model can call.
+@visibleForTesting
+String buildBaseSystemPrompt({
+  String? workingDirectory,
+  int enabledMcpServerCount = 0,
+}) {
+  final workingDirectoryHint = workingDirectory == null
+      ? ''
+      : '\n- 默认工作目录: $workingDirectory。file / run_command 的相对路径都基于此目录。';
+  final mcpHint = enabledMcpServerCount > 0
+      ? '\n'
+            '- MCP 工具(名称以 mcp__ 开头):已启用 $enabledMcpServerCount 个 MCP 服务器,'
+            '工具的 schema 就是参数说明,按需调用即可。'
+      : '';
+  return '你是一个有用、诚实的助手。\n'
+      '\n'
+      '## 核心规则\n'
+      '1. 不知道就必须用工具查,禁止瞎编。必须真的发出 function_call,别装样子。\n'
+      '2. 同一轮可以连续调多个工具,等全部结果回来再统一回复。\n'
+      '3. 工具报错了就跟用户说明原因,给个替代方案,别直接完事。\n'
+      '4. 回复简洁,别啰嗦。\n'
+      '\n'
+      '## 工具使用\n'
+      '- 每个工具的最终参数以 function schema 为准(列表里的 "parameters")。\n'
+      '- 最佳实践、推荐用法、坑点都在技能"工具使用提示"里。'
+      '第一次涉及某个工具、或结果不像预期时,先 load_skill(skill_name: "工具使用提示") 看一眼。\n'
+      '- 工具调用失败返回的是软错误时(比如 cancelled / not_found / permission_denied),'
+      '根据 message 给用户讲清楚,然后给个替代方案,不要直接放弃。$workingDirectoryHint$mcpHint';
+}
+
 class ChatProvider extends ChangeNotifier {
   ChatProvider(
     this._storage,
@@ -352,54 +396,10 @@ class ChatProvider extends ChangeNotifier {
       final mcpServers = _settings.mcpProviders
           .where((m) => m.enabled)
           .toList();
-      final mcpHint = mcpServers.isNotEmpty
-          ? '\n'
-                '- MCP 工具(名称以 mcp__ 开头):这些是由外部 MCP 服务器动态提供的工具。'
-                '每个工具的参数 schema 已经准确列出,按参数说明使用即可。'
-                '当前已启用 ${mcpServers.length} 个 MCP 服务器。'
-          : '';
-      final workingDirectory = _settings.modelWorkingDirectory;
-      final workingDirectoryHint = workingDirectory == null
-          ? ''
-          : '\n- 模型默认工作目录: $workingDirectory。file 和 run_command 的相对路径都基于此目录。';
-      baseSystem =
-          '你是一个有用、诚实的助手。\n'
-          '\n'
-          '## 核心规则\n'
-          '1. 不知道就必须用工具查,禁止瞎编。必须真的发出 function_call,别装样子。\n'
-          '2. 同一轮可以连续调多个工具,等全部结果回来再统一回复。\n'
-          '3. 工具报错了就跟用户说明原因,给个替代方案,别直接完事。\n'
-          '4. 回复简洁,别啰嗦。\n'
-          '\n'
-          '## 工具使用提醒(具体参数看 function schema)\n'
-          '- fetch_web(抓网页):填 link_text 只返回链接 URL(不返回页面内容),'
-          '必须再调一次 fetch_web 抓那个页面。一直深入直到找到答案。别只看首页。\n'
-          '- memory(记忆):写入时带 tags;查询用 keywords[] 给多个相关词。'
-          '没头绪就先 list。\n'
-          '- location(位置):获取当前位置,别主动问用户。\n'
-          '- ask_user(问用户):需要用户选择或确认时用。\n'
-          '- file(文件):'
-          '**改代码必须用 action=edit(精确文本替换,默认 old_text 唯一),不要 read+write 整文件**。'
-          'edit 一次可传多个 edits 原子应用,old_text 不存在/不唯一时会返回诊断(error_code + near_matches/candidates + 候选行号),照着改;空 new_text = 删除;global_replace=true 改全部匹配(改名/批量替换用)。'
-          'action=read 默认只读 500 行 + 行号前缀(类似 IDE),可用 offset_lines / max_lines 分页,或用 pattern="xxx" 当 grep(只返回含字符串的行 + 前后 2 行上下文),省得把大文件读全。'
-          '其余操作:写/追加/删/改名/列目录/查属性,相对路径基于工作目录;'
-          '手机端 — 默认操作工作目录(相对路径或 working://),或用 action=pick 打开系统选择器;'
-          '或 action=pick 打开系统文件选择器,选完返回 picker://<id> 可继续 read/write/edit/read_attr/release。'
-          '**手机不需要任何 Android 权限** — SAF 由系统替用户授权。'
-          '如果用户通过工具栏选了工作目录,手机端也可以用相对路径(如 "foo/bar.txt")或 working://<相对路径> 操作工作目录,和桌面端等价。'
-          '用户取消选择器不算错误,会返回 {ok:false,cancelled:true},改用工作目录即可。'
-          '**Android 工作目录权限自动续期**:写入工作目录如果失败(例如用户在系统设置里清掉了应用的存储),系统会自动弹出 SAF 重新授权对话框,用户授权后写入会自动重试;如果用户取消授权,会返回 {ok:false,cancelled:true} 软失败,这时建议让用户通过聊天工具栏重新选一次工作目录,不要让用户自己去系统设置找授权入口。\n'
-          '- timer(计时):用户说"X 分钟后提醒我 Y"就用这个。'
-          'create 时给 delay_seconds(或 fire_at_iso)、label 必填,'
-          'prompt 写提醒正文,action_hint 写"调用 notification 通知用户…"这种建议。'
-          '**只在程序运行时有效,App 被杀就不响了**,长时段务必先告知用户。\n'
-          '- notification(通知):给用户推一条本地通知(手机系统通知 / 电脑右下角弹窗)。'
-          '计时器到点时,如果用户正看着聊天,就由你来调它把提醒正式发出去。\n'
-          '- google_sheet(谷歌表格):操作用户在设置里配置的 Google Sheet。'
-          'action=list_tabs 先拿表名,read/update/append/clear 用 A1 表示法(range),'
-          'create_tab/delete_tab 增删整张表,format 改文字/格子属性。'
-          '插入数据给二维数组 values,字符串以 `=` 开头会被当公式。\n'
-          '- 其他工具按参数说明用就行。$workingDirectoryHint$mcpHint';
+      baseSystem = buildBaseSystemPrompt(
+        workingDirectory: _settings.modelWorkingDirectory,
+        enabledMcpServerCount: mcpServers.length,
+      );
     }
 
     return [

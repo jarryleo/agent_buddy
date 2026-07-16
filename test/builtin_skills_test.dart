@@ -150,5 +150,83 @@ void main() {
       // Still reported as built-in (id is preserved).
       expect(reloaded.isBuiltin, isTrue);
     });
+
+    test('tool_usage skill is registered, auto-activated, and bundles the '
+        'per-tool docs (replaces the inline system-prompt block)', () async {
+      final settings = SettingsProvider(storage);
+      await settings.load();
+
+      // The new skill must exist in the registry.
+      final toolUsage = BuiltinSkills.byId(
+        '${Skill.builtinIdPrefix}tool_usage',
+      );
+      expect(
+        toolUsage,
+        isNotNull,
+        reason: 'builtin:tool_usage must be in BuiltinSkills.all',
+      );
+      expect(toolUsage!.name, '工具使用提示');
+
+      // And it must be auto-activated so the model sees it in the
+      // system prompt's `available skills` block on first launch.
+      expect(
+        settings.activeSkillIds,
+        contains('${Skill.builtinIdPrefix}tool_usage'),
+      );
+
+      // The content must actually carry the per-tool docs that used
+      // to live inline in the chat provider's system prompt. This
+      // is the regression guard for the "压缩 system prompt" refactor:
+      // if a future edit accidentally drops one of these from the
+      // skill, the model's tool-use quality on small-context local
+      // models will silently degrade.
+      final stored = settings.skills.firstWhere(
+        (s) => s.id == '${Skill.builtinIdPrefix}tool_usage',
+      );
+      expect(
+        stored.content,
+        contains('fetch_web'),
+        reason: 'tool_usage must document fetch_web',
+      );
+      expect(
+        stored.content,
+        contains('file'),
+        reason: 'tool_usage must document file',
+      );
+      expect(
+        stored.content,
+        contains('action=edit'),
+        reason: 'tool_usage must call out the file edit action',
+      );
+      expect(
+        stored.content,
+        contains('timer'),
+        reason: 'tool_usage must document timer',
+      );
+      expect(
+        stored.content,
+        contains('notification'),
+        reason: 'tool_usage must document notification',
+      );
+      expect(
+        stored.content,
+        contains('google_sheet'),
+        reason: 'tool_usage must document google_sheet',
+      );
+      expect(
+        stored.content,
+        contains('memory'),
+        reason: 'tool_usage must document memory',
+      );
+
+      // The skill name is what the model passes to
+      // `load_skill(skill_name: "...")`. It must round-trip
+      // exactly so a strict tool call can find the row.
+      final loaded = settings.skills.firstWhere(
+        (s) => s.id == '${Skill.builtinIdPrefix}tool_usage',
+      );
+      expect(loaded.name, '工具使用提示');
+      expect(loaded.isBuiltin, isTrue);
+    });
   });
 }
