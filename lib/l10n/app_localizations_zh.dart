@@ -580,7 +580,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolDescDownload => '把网址里的文件下载到本地临时目录。';
 
   @override
-  String get toolDescFile => '读写、删除与浏览电脑上的文件(仅桌面端)。';
+  String get toolDescFile => '管理设备上的文件:电脑任意路径,手机走沙盒或系统文件选择器(无需 Android 权限)。';
 
   @override
   String get toolDescLoadSkill => '按需读取某个技能的完整说明。';
@@ -868,6 +868,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get toolCallRetryFailed => '重新执行该工具调用';
+
+  @override
+  String get toolCallAwaitingUser => '等待用户在系统选择器中操作…';
 
   @override
   String toolGroupSummary(int count) {

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kIsWeb, protected;
+import 'package:flutter/foundation.dart' show kIsWeb, protected, visibleForTesting;
 import 'package:flutter/services.dart'
     show MissingPluginException, PlatformException;
 
@@ -111,3 +111,35 @@ bool isDesktop() =>
 bool isMobile() => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
 bool notWeb() => !kIsWeb;
+
+// -- Test overrides ------------------------------------------------------
+//
+// Tests that need to exercise the mobile branch of a tool (e.g.
+// the `file` tool's pick / release / app:// path handling) can
+// call [overridePlatform] in `setUp` to force a specific
+// platform, and the override in `tearDown` (typically
+// [resetPlatformOverrides]).
+bool? _forcedIsDesktop;
+bool? _forcedIsMobile;
+
+@visibleForTesting
+void overridePlatform({bool? isDesktopValue, bool? isMobileValue}) {
+  _forcedIsDesktop = isDesktopValue;
+  _forcedIsMobile = isMobileValue;
+}
+
+@visibleForTesting
+void resetPlatformOverrides() {
+  _forcedIsDesktop = null;
+  _forcedIsMobile = null;
+}
+
+bool isDesktopForRuntime() {
+  if (_forcedIsDesktop != null) return _forcedIsDesktop!;
+  return isDesktop();
+}
+
+bool isMobileForRuntime() {
+  if (_forcedIsMobile != null) return _forcedIsMobile!;
+  return isMobile();
+}

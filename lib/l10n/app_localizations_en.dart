@@ -609,7 +609,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolDescFile =>
-      'Read, write and browse local files (desktop only).';
+      'Manage device files — any path on desktop, sandbox + system file picker on mobile (no Android runtime permission needed).';
 
   @override
   String get toolDescLoadSkill =>
@@ -904,6 +904,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolCallRetryFailed => 'Retry this tool call';
+
+  @override
+  String get toolCallAwaitingUser =>
+      'Waiting for the user in the system picker…';
 
   @override
   String toolGroupSummary(int count) {

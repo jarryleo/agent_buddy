@@ -12,6 +12,8 @@ import 'memory_repository.dart';
 import 'notification_service.dart';
 import 'platform/calendar_service.dart';
 import 'platform/calendar_service_factory.dart';
+import 'platform/file_service.dart';
+import 'platform/file_service_factory.dart' as file_factory;
 import 'platform/location_service.dart';
 import 'platform/location_service_factory.dart' as location_factory;
 import 'platform/notes_service.dart';
@@ -45,6 +47,7 @@ class ToolService {
     Box<Task>? tasksBox,
     Box<Memory>? memoriesBox,
     LocationServiceBuilder? locationBuilder,
+    FileServiceBuilder? fileBuilder,
     http.Client? httpClient,
     TimerService? timerService,
     NotificationService? notificationService,
@@ -62,6 +65,7 @@ class ToolService {
       _memories = MemoryRepository()..open(preopened: memoriesBox);
     }
     _locationBuilder = locationBuilder;
+    _fileBuilder = fileBuilder;
     if (httpClient != null) {
       _client = httpClient;
       _ownsClient = false;
@@ -95,6 +99,8 @@ class ToolService {
   MemoryRepository? _memories;
   LocationServiceBuilder? _locationBuilder;
   LocationService? _location;
+  FileServiceBuilder? _fileBuilder;
+  FileService? _file;
   TimerService? _timers;
   NotificationService? _notifications;
   McpService? _mcp;
@@ -134,6 +140,15 @@ class ToolService {
     _location ??=
         (_locationBuilder ?? location_factory.createLocationService)();
     return _location!;
+  }
+
+  /// Cross-platform file service used by the `file` tool's
+  /// mobile branch. Falls back to a stub on non-supported
+  /// platforms (web); tests can inject a fake via the
+  /// [fileBuilder] constructor param.
+  FileService get file {
+    _file ??= (_fileBuilder ?? file_factory.createFileService)();
+    return _file!;
   }
 
   /// The shared in-memory timer queue used by the `timer` tool
@@ -268,6 +283,11 @@ class ToolService {
 
   Future<String> runGoogleSheet(Map<String, dynamic> args) async {
     final tool = ToolRegistry.byId('google_sheet')!;
+    return tool.execute(args, this);
+  }
+
+  Future<String> runFile(Map<String, dynamic> args) async {
+    final tool = ToolRegistry.byId('file')!;
     return tool.execute(args, this);
   }
 }

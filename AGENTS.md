@@ -130,6 +130,36 @@ Coarse "where am I" lookup so the AI can answer weather / timezone / "near me" q
 - **Permissions** — Android adds `ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION` to `AndroidManifest.xml`; iOS adds `NSLocationWhenInUseUsageDescription` to `Info.plist`. The Android build also pulls `com.google.android.gms:play-services-location:21.3.0` into `android/app/build.gradle.kts` (first Gradle build after this commit is the usual >5min cold start).
 - **Testability** — `ToolService` constructor takes an optional `locationBuilder: LocationServiceBuilder` so tests can inject a `LocationServiceIp` with a stubbed `http.Client` and assert the IP path's JSON envelope, error translation, and action validation without hitting the network.
 
+### Mobile file tool (SAF + sandbox)
+
+The `file` tool now works on Android / iOS in addition to desktop. Desktop behavior is **unchanged** — the same `dart:io` code path runs against the user's working directory or any absolute path.
+
+On mobile the model is gated to two opaque path schemes so it can never reach the raw filesystem:
+
+- `app://documents/...` / `app://temp/...` / `app://support/...` — the app's own sandbox (`getApplicationDocumentsDirectory` / `getTemporaryDirectory` / `getApplicationSupportDirectory`). Resolved in Dart via `path_provider`; `..` segments are rejected by `p.normalize` + a `startsWith` check so a model can't escape the sandbox.
+- `picker://<id>` — a file the user picked via the system picker. The id is minted by the native bridge (`f-<seq>`); the underlying `content://` (Android) or security-scoped `file://` (iOS) URI never leaves the bridge.
+
+**Mobile-only actions** (in `lib/services/tools/file_tool.dart` → `_mobileSchema`):
+
+- `pick({mime_type?, read_only?})` — opens the system file picker. **Blocks the Dart-side Future until the user picks or cancels.** Mirrors the `LocationBridge` / `CalendarBridge` permission-park pattern: the call is parked in the native bridge, the OS handles the UI, the result comes back on the same channel. The model never sees a transient "no permission" error before the user has had a chance to answer.
+- `release(id)` — drops the in-memory `id → URI` mapping. On Android the bridge also calls `releasePersistableUriPermission`; on iOS it calls `stopAccessingSecurityScopedResource`. Idempotent.
+- `read_attr` / `read` / `write` / `append` work against both schemes.
+- `delete` / `rename` / `list_dir` work **only against `app://`**. Picker paths are rejected with a friendly `release` hint because the OS picker grants per-URI access for read/write, not arbitrary delete on the user's filesystem.
+
+**Android permission semantics** — for scope (a) **no Android runtime permission is required**. `Intent.ACTION_OPEN_DOCUMENT` (`SAF` picker) grants per-URI access via `Intent.FLAG_GRANT_READ_URI_PERMISSION` (and `_WRITE_` when not read-only) the moment the user picks a file. This works the same on API 19+; we never need `READ_EXTERNAL_STORAGE`, `READ_MEDIA_*` (API 33+), or `MANAGE_EXTERNAL_STORAGE` (API 30+) for the picker. Persistable URI permission is **not** taken automatically — the model is expected to `release` the id when done, and the OS grant expires on its own schedule. The bridge implements `ensurePermission` as a deliberate `NOT_SUPPORTED` error so any probe gets a clear answer (there is nothing to check outside of `pick`).
+
+**iOS permission semantics** — same story: `UIDocumentPickerViewController` handles its own authorization. No Info.plist usage description is required; the system copies the picked file into the app's inbox-style temp dir and the bridge holds the URL with `startAccessingSecurityScopedResource()` until `release`.
+
+**"Wait for user action" UX** — `ToolCall.awaitingUserAction` (defaults to `false`, persisted to JSON) is set to `true` by `ChatProvider._isAwaitingUserAction` when the tool is `file` and the action is `pick`. The message bubble renders a "等待用户在系统选择器中操作…" hint under the running card (see `MessageBubble._ToolCallCard`). The flag is cleared on the `toolDone` event in both success and failure paths. A user cancel is **not** a failure: the tool returns `{ok:false, cancelled:true}` so the model can pivot (e.g. write to the sandbox) without the chat provider seeing an exception.
+
+**Concurrency** — at most one picker visible at a time. Multiple `pick` calls while a picker is up are queued in the native bridge and resumed in order, mirroring `LocationBridge` / `CalendarBridge`.
+
+**Files added / changed** for this feature:
+- Dart: `lib/services/platform/file_service.dart` (abstract + path helpers), `file_service_impl.dart` (production: `path_provider` + MethodChannel picker backend), `file_service_stub.dart` (web fallback), `file_service_factory.dart`; `lib/models/picked_file.dart`; `lib/services/tools/file_tool.dart` (split into `_executeMobile` / `_executeDesktop`); `lib/services/tool_service.dart` (`fileBuilder` constructor param + `runFile` delegate); `lib/services/tools/tool_base.dart` (`overridePlatform` / `resetPlatformOverrides` for the test host); `lib/models/message.dart` (`ToolCall.awaitingUserAction`); `lib/widgets/message_bubble.dart` (awaiting hint); `lib/l10n/app_*.arb` (new `toolCallAwaitingUser` key, updated `toolDescFile`).
+- Android: `android/app/src/main/kotlin/cn/leo/agent_buddy/FileBridge.kt` (SAF picker, `pendingPicks` FIFO, per-URI read/write with cap, `releasePersistableUriPermission` on release); `MainActivity.kt` (registers the bridge, forwards `onActivityResult` to it).
+- iOS: `ios/Runner/FileBridge.swift` (`UIDocumentPickerViewController` with security-scoped URL lifecycle, FIFO queue); `AppDelegate.swift` (registers the bridge).
+- Tests: `test/file_service_test.dart`, extended `test/file_tool_working_dir_test.dart`.
+
 ### Memory system (`memory` tool + Memory tab)
 Cross-session long-term memory for the AI. Backed by a `hive_ce` box (`memories`), persisted via `MemoryRepository` (`lib/services/memory_repository.dart`) and surfaced to the user in Settings → Memory.
 

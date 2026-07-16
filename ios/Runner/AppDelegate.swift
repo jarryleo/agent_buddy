@@ -21,5 +21,8 @@ import UIKit
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "LocationBridge") {
       LocationBridge.register(with: registrar)
     }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "FileBridge") {
+      FileBridge.register(with: registrar)
+    }
   }
 }

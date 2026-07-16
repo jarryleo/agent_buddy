@@ -1167,7 +1167,7 @@ abstract class AppLocalizations {
   /// No description provided for @toolDescFile.
   ///
   /// In en, this message translates to:
-  /// **'Read, write and browse local files (desktop only).'**
+  /// **'Manage device files — any path on desktop, sandbox + system file picker on mobile (no Android runtime permission needed).'**
   String get toolDescFile;
 
   /// No description provided for @toolDescLoadSkill.
@@ -1703,6 +1703,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Retry this tool call'**
   String get toolCallRetryFailed;
+
+  /// No description provided for @toolCallAwaitingUser.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for the user in the system picker…'**
+  String get toolCallAwaitingUser;
 
   /// No description provided for @toolGroupSummary.
   ///

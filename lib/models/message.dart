@@ -48,6 +48,18 @@ class ToolCall {
   // back to a finished download later.
   final List<DownloadItem> downloads;
 
+  /// True when the tool call is parked waiting on a native UI
+  /// flow (system file picker, permission dialog, etc.) — the
+  /// Dart-side Future is still in flight, but the result won't
+  /// arrive until the user interacts with the OS. The chat
+  /// bubble uses this to render a "等待用户在系统选择器中操作…"
+  /// hint instead of a generic "running…" spinner.
+  ///
+  /// Not all tools use this; only ones that block on a native
+  /// picker / permission prompt do. Persisted so the hint
+  /// survives an app restart.
+  final bool awaitingUserAction;
+
   ToolCall({
     required this.id,
     required this.name,
@@ -59,6 +71,7 @@ class ToolCall {
     this.options,
     this.multiSelect,
     this.downloads = const [],
+    this.awaitingUserAction = false,
     DateTime? startedAt,
     this.finishedAt,
   }) : startedAt = startedAt ?? DateTime.now();
@@ -80,6 +93,7 @@ class ToolCall {
     List<String>? options,
     bool? multiSelect,
     List<DownloadItem>? downloads,
+    bool? awaitingUserAction,
   }) {
     return ToolCall(
       id: id,
@@ -92,6 +106,7 @@ class ToolCall {
       options: options ?? this.options,
       multiSelect: multiSelect ?? this.multiSelect,
       downloads: downloads ?? this.downloads,
+      awaitingUserAction: awaitingUserAction ?? this.awaitingUserAction,
       startedAt: startedAt,
       finishedAt: finishedAt ?? this.finishedAt,
     );
@@ -110,6 +125,9 @@ class ToolCall {
     if (options != null) 'options': options,
     if (multiSelect != null) 'multiSelect': multiSelect,
     'downloads': downloads.map((d) => d.toJson()).toList(),
+    // Only serialize when true so v1 records (no `awaitingUserAction`
+    // key) round-trip identically.
+    if (awaitingUserAction) 'awaitingUserAction': true,
   };
 
   factory ToolCall.fromJson(Map<String, dynamic> json) {
@@ -132,6 +150,7 @@ class ToolCall {
           : rawDownloads
                 .map((e) => DownloadItem.fromJson(e as Map<String, dynamic>))
                 .toList(),
+      awaitingUserAction: json['awaitingUserAction'] as bool? ?? false,
       startedAt:
           DateTime.tryParse(json['startedAt'] as String? ?? '') ??
           DateTime.now(),

@@ -958,6 +958,30 @@ class _ToolCallCardState extends State<_ToolCallCard> {
               ),
             ),
           ),
+          if (tc.awaitingUserAction && tc.isRunning)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.touch_app_outlined,
+                    size: 13,
+                    color: context.textSecondary,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      l10n.toolCallAwaitingUser,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: context.textSecondary,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (_expanded || tc.downloads.isNotEmpty)
             _buildDetails(context, tc, l10n),
         ],

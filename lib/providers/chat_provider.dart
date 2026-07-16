@@ -108,6 +108,24 @@ class ChatProvider extends ChangeNotifier {
   /// `toolDone` arrives, so the map stays small.
   final Map<String, Map<String, String>> _transportToUiToolCallId = {};
 
+  /// Returns `true` when a tool call is parked waiting on a
+  /// native UI flow (system file picker, OS permission dialog,
+  /// etc.) — i.e. the Dart-side Future won't resolve until the
+  /// user interacts with the OS. Today only the `file` tool's
+  /// `pick` action qualifies (the bridge parks the call until
+  /// the user picks or cancels). Kept as a single switch so
+  /// adding new "wait for user" tools is a one-line change.
+  bool _isAwaitingUserAction(String toolName, String argumentsJson) {
+    if (toolName != 'file') return false;
+    try {
+      final args = jsonDecode(argumentsJson);
+      if (args is! Map) return false;
+      return args['action'] == 'pick';
+    } on FormatException {
+      return false;
+    }
+  }
+
   /// Pure helper that decides what id to use for a new
   /// `ToolCall` bubble in [MessageBubble]. Three failure modes
   /// to defend against (see the `toolStart` branch of
@@ -360,7 +378,12 @@ class ChatProvider extends ChangeNotifier {
           '没头绪就先 list。\n'
           '- location(位置):获取当前位置,别主动问用户。\n'
           '- ask_user(问用户):需要用户选择或确认时用。\n'
-          '- file(文件):读/写/删/改名/列目录/查属性。优先使用相对路径。\n'
+          '- file(文件):'
+          '桌面端 — 读/写/删/改名/列目录/查属性,相对路径基于工作目录;'
+          '手机端 — 读/写沙盒(app://documents/...、app://temp/...、app://support/...);'
+          '或 action=pick 打开系统文件选择器,选完返回 picker://<id> 可继续 read/write/read_attr/release。'
+          '**手机不需要任何 Android 权限** — SAF 由系统替用户授权,沙盒是 app 自己的目录。'
+          '用户取消选择器不算错误,会返回 {ok:false,cancelled:true},改用沙盒即可。\n'
           '- timer(计时):用户说"X 分钟后提醒我 Y"就用这个。'
           'create 时给 delay_seconds(或 fire_at_iso)、label 必填,'
           'prompt 写提醒正文,action_hint 写"调用 notification 通知用户…"这种建议。'
@@ -1256,6 +1279,16 @@ class ChatProvider extends ChangeNotifier {
                         name: event.toolName ?? '',
                         arguments: event.toolArguments ?? '',
                         status: ToolCallStatus.running,
+                        // The file picker's `pick` action is the
+                        // canonical example: the Dart-side Future
+                        // won't resolve until the user answers the
+                        // system picker. Mark it so the bubble can
+                        // show a "等待用户操作…" hint instead of a
+                        // generic spinner.
+                        awaitingUserAction: _isAwaitingUserAction(
+                          event.toolName ?? '',
+                          event.toolArguments ?? '',
+                        ),
                       ),
                     ],
                   )
@@ -1330,6 +1363,11 @@ class ChatProvider extends ChangeNotifier {
                                 : ToolCallStatus.failed,
                             result: event.toolResult,
                             error: event.toolError,
+                            // The tool is done — drop the
+                            // "waiting for user" hint either way
+                            // (success or failure both terminate
+                            // the wait).
+                            awaitingUserAction: false,
                             finishedAt: now,
                           )
                         else
