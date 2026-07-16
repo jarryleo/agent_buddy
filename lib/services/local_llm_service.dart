@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:llamadart/llamadart.dart';
@@ -8,6 +9,166 @@ import '../models/local_provider.dart';
 import '../models/message.dart';
 import 'api_service.dart';
 import 'tool_orchestrator.dart';
+import 'tool_service.dart';
+
+class GemmaFallbackToolCall {
+  const GemmaFallbackToolCall({
+    required this.name,
+    required this.argumentsRaw,
+    required this.arguments,
+  });
+
+  final String name;
+  final String argumentsRaw;
+  final Map<String, dynamic> arguments;
+}
+
+class GemmaToolCallFallbackParser {
+  static const startToken = '<|tool_call>';
+  static const endToken = '<tool_call|>';
+  static const invalidToolName = '__invalid_tool_call__';
+
+  final List<GemmaFallbackToolCall> _calls = [];
+  String _pending = '';
+  bool _closed = false;
+
+  List<GemmaFallbackToolCall> get calls => List.unmodifiable(_calls);
+
+  String feed(String delta) {
+    if (_closed) throw StateError('Gemma fallback parser is closed');
+    if (delta.isEmpty) return '';
+    _pending = '$_pending$delta';
+    return _drain(finalChunk: false);
+  }
+
+  String close() {
+    if (_closed) return '';
+    _closed = true;
+    return _drain(finalChunk: true);
+  }
+
+  String _drain({required bool finalChunk}) {
+    final visible = StringBuffer();
+    while (_pending.isNotEmpty) {
+      final start = _pending.indexOf(startToken);
+      if (start == -1) {
+        if (finalChunk) {
+          visible.write(_pending);
+          _pending = '';
+          break;
+        }
+        final heldLength = _partialStartTokenLength(_pending);
+        final visibleLength = _pending.length - heldLength;
+        if (visibleLength > 0) {
+          visible.write(_pending.substring(0, visibleLength));
+          _pending = _pending.substring(visibleLength);
+        }
+        break;
+      }
+
+      if (start > 0) {
+        visible.write(_pending.substring(0, start));
+        _pending = _pending.substring(start);
+      }
+
+      final end = _pending.indexOf(endToken, startToken.length);
+      if (end == -1) {
+        if (finalChunk) {
+          final parsed = _parseBlock('$_pending$endToken');
+          if (parsed == null) {
+            visible.write(_pending);
+          } else {
+            _calls.add(parsed);
+          }
+          _pending = '';
+        }
+        break;
+      }
+
+      final blockEnd = end + endToken.length;
+      final block = _pending.substring(0, blockEnd);
+      final parsed = _parseBlock(block);
+      if (parsed == null) {
+        visible.write(block);
+      } else {
+        _calls.add(parsed);
+      }
+      _pending = _pending.substring(blockEnd);
+    }
+    return visible.toString();
+  }
+
+  static int _partialStartTokenLength(String text) {
+    final maxLength = text.length < startToken.length - 1
+        ? text.length
+        : startToken.length - 1;
+    for (var length = maxLength; length > 0; length--) {
+      if (text.endsWith(startToken.substring(0, length))) return length;
+    }
+    return 0;
+  }
+
+  static GemmaFallbackToolCall? _parseBlock(String block) {
+    if (!block.startsWith(startToken) || !block.endsWith(endToken)) {
+      return null;
+    }
+    final body = block
+        .substring(startToken.length, block.length - endToken.length)
+        .trim();
+    var cursor = 0;
+    if (!body.startsWith('call', cursor)) return null;
+    cursor += 4;
+    while (cursor < body.length && _isWhitespace(body.codeUnitAt(cursor))) {
+      cursor++;
+    }
+    if (cursor >= body.length || body.codeUnitAt(cursor) != 0x3A) return null;
+    cursor++;
+    while (cursor < body.length && _isWhitespace(body.codeUnitAt(cursor))) {
+      cursor++;
+    }
+    final braceStart = body.indexOf('{', cursor);
+    if (braceStart == -1) return null;
+    final name = body.substring(cursor, braceStart).trim();
+    if (name.isEmpty) return null;
+    final argumentsRaw = body.substring(braceStart).trim();
+    final normalized = argumentsRaw
+        .replaceAll(r'<|\"|>', '"')
+        .replaceAll('<|"|>', '"')
+        .replaceAll('<escape>', '"')
+        .replaceAllMapped(
+          RegExp(r'(^|[{,])\s*([a-zA-Z_][\w\.-]*)\s*:'),
+          (match) => '${match.group(1)}"${match.group(2)}":',
+        );
+    try {
+      final decoded = jsonDecode(normalized);
+      if (decoded is! Map) throw const FormatException('expected JSON object');
+      final arguments = Map<String, dynamic>.from(decoded);
+      return GemmaFallbackToolCall(
+        name: name,
+        argumentsRaw: jsonEncode(arguments),
+        arguments: arguments,
+      );
+    } catch (e) {
+      final arguments = <String, dynamic>{
+        'attempted_name': name,
+        'raw_arguments': argumentsRaw,
+        'parse_error': '$e',
+      };
+      return GemmaFallbackToolCall(
+        name: invalidToolName,
+        argumentsRaw: jsonEncode(arguments),
+        arguments: arguments,
+      );
+    }
+  }
+
+  static bool _isWhitespace(int codeUnit) {
+    return codeUnit == 0x20 ||
+        codeUnit == 0x0A ||
+        codeUnit == 0x0D ||
+        codeUnit == 0x09;
+  }
+}
 
 class LocalLlmService extends ChangeNotifier {
   LlamaEngine? _engine;
@@ -171,6 +332,8 @@ class LocalLlmService extends ChangeNotifier {
     }
 
     final llamaTools = _buildTools(tools);
+    final availableToolNames = {for (final tool in llamaTools) tool.name};
+    final fallbackEnabled = onToolCall != null && llamaTools.isNotEmpty;
 
     final parts = _buildUserParts(messages);
     if (parts.isEmpty) {
@@ -202,6 +365,7 @@ class LocalLlmService extends ChangeNotifier {
         List<ChatRequestMessage> history,
       ) async* {
         final historyBefore = session.history.length;
+        final fallbackParser = GemmaToolCallFallbackParser();
         // Empty parts array is the engine's way of saying "continue
         // the conversation". We use it on follow-up rounds after the
         // initial user turn has been added.
@@ -245,7 +409,12 @@ class LocalLlmService extends ChangeNotifier {
               yield OrchestratorEvent.reasoning(delta.thinking!);
             }
             if (delta.content != null && delta.content!.isNotEmpty) {
-              yield OrchestratorEvent.content(delta.content!);
+              final visible = fallbackEnabled
+                  ? fallbackParser.feed(delta.content!)
+                  : delta.content!;
+              if (visible.isNotEmpty) {
+                yield OrchestratorEvent.content(visible);
+              }
             }
           }
         } catch (e) {
@@ -253,8 +422,13 @@ class LocalLlmService extends ChangeNotifier {
           return;
         }
 
+        final trailing = fallbackParser.close();
+        if (trailing.isNotEmpty) {
+          yield OrchestratorEvent.content(trailing);
+        }
         final calls = _lastToolCalls(session, historyBefore);
         final parsedCalls = <ParsedToolCall>[];
+        final seenCalls = <String>{};
         for (final call in calls) {
           final id = call['id'] as String? ?? '';
           final name = call['name'] as String? ?? '';
@@ -262,12 +436,25 @@ class LocalLlmService extends ChangeNotifier {
           final argsMap =
               (call['argsMap'] as Map?)?.cast<String, dynamic>() ??
               const <String, dynamic>{};
+          seenCalls.add('$name\u0000${jsonEncode(argsMap)}');
           parsedCalls.add(
             ParsedToolCall(
               id: id,
               name: name,
               argumentsRaw: argsRaw,
               arguments: argsMap,
+            ),
+          );
+        }
+        for (final call in fallbackParser.calls) {
+          final signature = '${call.name}\u0000${jsonEncode(call.arguments)}';
+          if (!seenCalls.add(signature)) continue;
+          parsedCalls.add(
+            ParsedToolCall(
+              id: resolveToolCallId(null),
+              name: call.name,
+              argumentsRaw: call.argumentsRaw,
+              arguments: call.arguments,
             ),
           );
         }
@@ -282,26 +469,29 @@ class LocalLlmService extends ChangeNotifier {
           await for (final ev in orch.run(
             runOneTurn: runOneTurn,
             initialHistory: const <ChatRequestMessage>[],
-            executor: (call) async {
-              final result = await onToolCall({
+            executor: (call) => executeLocalToolCall(
+              call: call,
+              availableToolNames: availableToolNames,
+              execute: () => onToolCall({
                 'id': call.id,
                 'name': call.name,
                 'arguments': call.arguments,
-              });
-              session.addMessage(
-                LlamaChatMessage.withContent(
-                  role: LlamaChatRole.tool,
-                  content: [
-                    LlamaToolResultContent(
-                      id: call.id,
-                      name: call.name,
-                      result: result,
-                    ),
-                  ],
-                ),
-              );
-              return result;
-            },
+              }),
+              onResult: (result) {
+                session.addMessage(
+                  LlamaChatMessage.withContent(
+                    role: LlamaChatRole.tool,
+                    content: [
+                      LlamaToolResultContent(
+                        id: call.id,
+                        name: call.name,
+                        result: result,
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
             onTurnCommitted: (_) {},
           )) {
             switch (ev.kind) {
@@ -546,6 +736,30 @@ class LocalLlmService extends ChangeNotifier {
       }
     }
     return out;
+  }
+
+  @visibleForTesting
+  static Future<String> executeLocalToolCall({
+    required ParsedToolCall call,
+    required Set<String> availableToolNames,
+    required Future<String> Function() execute,
+    required void Function(String result) onResult,
+  }) async {
+    if (!availableToolNames.contains(call.name)) {
+      final error = call.name == GemmaToolCallFallbackParser.invalidToolName
+          ? 'invalid Gemma tool call arguments for "${call.arguments['attempted_name'] ?? ''}"; retry with a valid JSON object'
+          : 'unknown or unavailable tool: ${call.name}; use an exact available function name: ${(availableToolNames.toList()..sort()).join(', ')}';
+      onResult('Error: $error');
+      throw ToolException(error);
+    }
+    try {
+      final result = await execute();
+      onResult(result);
+      return result;
+    } catch (e) {
+      onResult('Error: $e');
+      rethrow;
+    }
   }
 
   /// Returns a non-empty, unique id for a tool call produced by

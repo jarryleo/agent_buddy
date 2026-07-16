@@ -1,5 +1,7 @@
 import 'package:agent_buddy/models/local_provider.dart';
 import 'package:agent_buddy/services/local_llm_service.dart';
+import 'package:agent_buddy/services/tool_orchestrator.dart';
+import 'package:agent_buddy/services/tool_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -95,6 +97,187 @@ void main() {
         );
         expect(id, startsWith('local-'));
       }
+    });
+  });
+
+  group('GemmaToolCallFallbackParser', () {
+    test('hides a complete Chinese tool call and parses empty arguments', () {
+      final parser = GemmaToolCallFallbackParser();
+
+      final visible = parser.feed('<|tool_call>call:查询天气{}<tool_call|>');
+
+      expect(visible, isEmpty);
+      expect(parser.close(), isEmpty);
+      expect(parser.calls, hasLength(1));
+      expect(parser.calls.single.name, '查询天气');
+      expect(parser.calls.single.arguments, isEmpty);
+      expect(parser.calls.single.argumentsRaw, '{}');
+    });
+
+    test('handles markers and arguments split across stream chunks', () {
+      final parser = GemmaToolCallFallbackParser();
+      final visible = StringBuffer();
+
+      visible.write(parser.feed('before <|tool_'));
+      visible.write(parser.feed('call>call:location{"action":'));
+      visible.write(parser.feed('"get"}<tool_'));
+      visible.write(parser.feed('call|> after'));
+      visible.write(parser.close());
+
+      expect(visible.toString(), 'before  after');
+      expect(parser.calls, hasLength(1));
+      expect(parser.calls.single.name, 'location');
+      expect(parser.calls.single.arguments, {'action': 'get'});
+    });
+
+    test('parses multiple calls and nested JSON in order', () {
+      final parser = GemmaToolCallFallbackParser();
+
+      final visible = parser.feed(
+        '<|tool_call>call:location{}<tool_call|>'
+        '<|tool_call>call:fetch_web{"meta":{"city":"北京"}}<tool_call|>',
+      );
+
+      expect(visible, isEmpty);
+      expect(parser.close(), isEmpty);
+      expect(parser.calls.map((call) => call.name), ['location', 'fetch_web']);
+      expect(parser.calls.last.arguments, {
+        'meta': {'city': '北京'},
+      });
+    });
+
+    test('accepts Gemma pseudo quotes and unquoted argument keys', () {
+      final parser = GemmaToolCallFallbackParser();
+
+      parser.feed(
+        '<|tool_call>call:fetch_web{url:<|"|>https://example.com<|"|>}<tool_call|>',
+      );
+      parser.close();
+
+      expect(parser.calls.single.arguments, {'url': 'https://example.com'});
+    });
+
+    test('accepts a balanced call when the stop token removes the closer', () {
+      final parser = GemmaToolCallFallbackParser();
+
+      expect(parser.feed('<|tool_call>call:location{}'), isEmpty);
+      expect(parser.close(), isEmpty);
+
+      expect(parser.calls.single.name, 'location');
+      expect(parser.calls.single.arguments, isEmpty);
+    });
+
+    test(
+      'turns malformed arguments into a non-executable parse error call',
+      () {
+        final parser = GemmaToolCallFallbackParser();
+
+        final visible = parser.feed(
+          '<|tool_call>call:location{"action":}<tool_call|>',
+        );
+
+        expect(visible, isEmpty);
+        expect(parser.close(), isEmpty);
+        expect(
+          parser.calls.single.name,
+          GemmaToolCallFallbackParser.invalidToolName,
+        );
+        expect(parser.calls.single.arguments['attempted_name'], 'location');
+      },
+    );
+
+    test('leaves non-call protocol-like text visible', () {
+      final parser = GemmaToolCallFallbackParser();
+      const text = '<|tool_call>not a call<tool_call|>';
+
+      final visible = '${parser.feed(text)}${parser.close()}';
+
+      expect(visible, text);
+      expect(parser.calls, isEmpty);
+    });
+  });
+
+  group('LocalLlmService.executeLocalToolCall', () {
+    test(
+      'does not execute unknown names and records corrective feedback',
+      () async {
+        var executed = false;
+        final results = <String>[];
+        const call = ParsedToolCall(
+          id: 'call-1',
+          name: '查询天气',
+          argumentsRaw: '{}',
+          arguments: {},
+        );
+
+        await expectLater(
+          LocalLlmService.executeLocalToolCall(
+            call: call,
+            availableToolNames: {'location', 'fetch_web'},
+            execute: () async {
+              executed = true;
+              return 'unexpected';
+            },
+            onResult: results.add,
+          ),
+          throwsA(
+            isA<ToolException>().having(
+              (error) => error.toString(),
+              'message',
+              allOf(
+                contains('unknown or unavailable tool: 查询天气'),
+                contains('fetch_web, location'),
+              ),
+            ),
+          ),
+        );
+
+        expect(executed, isFalse);
+        expect(results, hasLength(1));
+        expect(results.single, contains('Error: unknown or unavailable tool'));
+      },
+    );
+
+    test('executes known names and records their result', () async {
+      final results = <String>[];
+      const call = ParsedToolCall(
+        id: 'call-2',
+        name: 'location',
+        argumentsRaw: '{}',
+        arguments: {},
+      );
+
+      final result = await LocalLlmService.executeLocalToolCall(
+        call: call,
+        availableToolNames: {'location'},
+        execute: () async => '{"action":"get"}',
+        onResult: results.add,
+      );
+
+      expect(result, '{"action":"get"}');
+      expect(results, ['{"action":"get"}']);
+    });
+
+    test('records known tool failures before rethrowing', () async {
+      final results = <String>[];
+      const call = ParsedToolCall(
+        id: 'call-3',
+        name: 'location',
+        argumentsRaw: '{}',
+        arguments: {},
+      );
+
+      await expectLater(
+        LocalLlmService.executeLocalToolCall(
+          call: call,
+          availableToolNames: {'location'},
+          execute: () async => throw ToolException('permission denied'),
+          onResult: results.add,
+        ),
+        throwsA(isA<ToolException>()),
+      );
+
+      expect(results, ['Error: permission denied']);
     });
   });
 
