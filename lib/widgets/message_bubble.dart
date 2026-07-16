@@ -400,52 +400,97 @@ class _MessageBubbleState extends State<MessageBubble> {
         children: [
           if (hasThinking) _buildThinking(context, m),
           if (hasTools) _buildToolCallsSection(context, m),
-          if (m.content.isNotEmpty || m.streaming)
-            Container(
-              margin: EdgeInsets.only(top: (hasThinking || hasTools) ? 6 : 0),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: context.bubbleAssistant,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(4),
-                  topRight: Radius.circular(16),
-                  bottomLeft: Radius.circular(16),
-                  bottomRight: Radius.circular(16),
-                ),
-                border: Border.all(color: context.appBorder),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _StreamingMarkdown(data: m.content, streaming: m.streaming),
-                  if (m.streaming) const _TypingIndicator(),
-                ],
-              ),
-            ),
-          Padding(
-            padding: const EdgeInsets.only(top: 4, left: 4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+          // Bubble + footer are sized together so the footer
+          // [Spacer] can push chips flush against the bubble's
+          // right edge. The [IntrinsicWidth] is scoped to JUST
+          // this pair (not the whole column) so the thinking
+          // and tool-call blocks above don't stretch the bubble
+          // to their width — during streaming that's the
+          // difference between a tightly-wrapped bubble and a
+          // hollow-looking one with the answer hugging the
+          // left edge.
+          //
+          // [IntrinsicWidth] costs an extra layout pass per
+          // message; the chat list is paginated enough that
+          // the hit isn't visible.
+          IntrinsicWidth(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  DateFormat('HH:mm').format(m.createdAt.toLocal()),
-                  style: TextStyle(color: context.textSecondary, fontSize: 11),
-                ),
-                if (m.content.isNotEmpty) ...[
-                  SizedBox(width: 6),
-                  InkWell(
-                    onTap: () => widget.onCopy(m.content),
-                    borderRadius: BorderRadius.circular(4),
-                    child: Padding(
-                      padding: EdgeInsets.all(2),
-                      child: Icon(
-                        Icons.copy_rounded,
-                        size: 12,
-                        color: context.textSecondary,
+                if (m.content.isNotEmpty || m.streaming)
+                  Container(
+                    margin: EdgeInsets.only(
+                      top: (hasThinking || hasTools) ? 6 : 0,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: context.bubbleAssistant,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(4),
+                        topRight: Radius.circular(16),
+                        bottomLeft: Radius.circular(16),
+                        bottomRight: Radius.circular(16),
                       ),
+                      border: Border.all(color: context.appBorder),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _StreamingMarkdown(
+                          data: m.content,
+                          streaming: m.streaming,
+                        ),
+                        if (m.streaming) const _TypingIndicator(),
+                      ],
                     ),
                   ),
-                ],
+                // Footer: rendered BELOW the bubble, on the page
+                // background (not inside the bubble's background).
+                // Stretched to bubble width by the surrounding
+                // Column's [crossAxisAlignment.stretch], so the
+                // [Spacer] pushes the metric chips flush to the
+                // bubble's right edge.
+                //
+                // Always rendered (even when content is empty)
+                // so a turn that produced only reasoning tokens
+                // still surfaces its timestamp + chips to the
+                // user.
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, left: 4),
+                  child: Row(
+                    children: [
+                      Text(
+                        DateFormat('HH:mm').format(m.createdAt.toLocal()),
+                        style: TextStyle(
+                          color: context.textSecondary,
+                          fontSize: 11,
+                        ),
+                      ),
+                      if (m.content.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        InkWell(
+                          onTap: () => widget.onCopy(m.content),
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: Icon(
+                              Icons.copy_rounded,
+                              size: 12,
+                              color: context.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (m.metrics != null) ...[
+                        const Spacer(),
+                        ..._buildMetricChips(context, m.metrics!),
+                      ],
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -619,6 +664,86 @@ class _MessageBubbleState extends State<MessageBubble> {
         ],
       ),
     );
+  }
+
+  /// Renders the three "performance" chips that sit at the
+  /// right edge of the assistant-bubble footer (after the
+  /// [Spacer]):
+  ///   * time-to-first-token (clock icon + "0.50s"),
+  ///   * decode speed ("50t/s"),
+  ///   * total token count for this turn (Σ icon + "1312token",
+  ///     where 1312 = input + output).
+  ///
+  /// Each chip is silently omitted when the underlying metric
+  /// isn't available (still streaming, no tokens yet, etc.) so
+  /// the footer never shows empty placeholders.
+  List<Widget> _buildMetricChips(BuildContext context, MessageMetrics metrics) {
+    final l10n = AppLocalizations.of(context);
+    final secondary = context.textSecondary;
+    final chipTextStyle = TextStyle(color: secondary, fontSize: 11);
+
+    final chips = <Widget>[];
+
+    final ttft = metrics.ttft;
+    if (ttft != null) {
+      chips.addAll([
+        const SizedBox(width: 8),
+        Icon(Icons.schedule_outlined, size: 12, color: secondary),
+        const SizedBox(width: 2),
+        Text(
+          l10n.messageMetricTtft(_formatSeconds(ttft)),
+          style: chipTextStyle,
+        ),
+      ]);
+    }
+
+    final tps = metrics.tokensPerSecond;
+    if (tps != null && tps > 0) {
+      chips.addAll([
+        const SizedBox(width: 8),
+        Text(
+          l10n.messageMetricSpeed(tps.toStringAsFixed(tps >= 100 ? 0 : 1)),
+          style: chipTextStyle,
+        ),
+      ]);
+    }
+
+    // Total token count for this turn (input + output). Sits
+    // at the far right of the footer, prefixed with a Σ glyph
+    // to distinguish it from the per-second throughput
+    // immediately to its left. When the model emitted zero
+    // tokens (errors before first chunk, pure-tool-call turn
+    // with no text, …) we skip the chip entirely.
+    final total = metrics.inputTokens + metrics.outputTokens;
+    if (total > 0) {
+      chips.addAll([
+        const SizedBox(width: 8),
+        Text('Σ', style: chipTextStyle),
+        const SizedBox(width: 2),
+        Text(
+          l10n.messageMetricTokensTotal(total.toString()),
+          style: chipTextStyle,
+        ),
+      ]);
+    }
+
+    return chips;
+  }
+
+  /// Formats a [Duration] as a localized short string: "0.50s",
+  /// "12.3s", "1m05s". Mirrors the convention requested in the
+  /// task ("0.50s") but rounds up to seconds once the value
+  /// passes 60s so the footer doesn't grow unbounded.
+  static String _formatSeconds(Duration d) {
+    if (d.inSeconds < 60) {
+      // Always show two decimals so the user can read "0.50s"
+      // vs "0.05s" at a glance — the small TTFT case is the
+      // most informative one for cache-hit comparisons.
+      return '${(d.inMicroseconds / 1000000).toStringAsFixed(2)}s';
+    }
+    final mins = d.inMinutes;
+    final secs = d.inSeconds - mins * 60;
+    return '${mins}m${secs.toString().padLeft(2, '0')}s';
   }
 
   Widget _buildToolCalls(BuildContext context, List<ToolCall> calls) {

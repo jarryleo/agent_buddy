@@ -1210,6 +1210,46 @@ class ChatProvider extends ChangeNotifier {
     final controller = StreamController<void>();
     final completer = Completer<void>();
 
+    // Per-turn metrics (TTFT, tokens/sec, token counts). The
+    // turnStartedAt timestamp anchors time-to-first-token;
+    // firstTokenAt / lastTokenAt are stamped as content (or
+    // reasoning) deltas flow through. inputTokens is computed
+    // up front from the request payload; outputTokens is
+    // incremented token-by-token via the [estimateTokens]
+    // heuristic so we don't have to depend on per-protocol
+    // usage callbacks (OpenAI/Anthropic SSE doesn't include
+    // them by default). The final [MessageMetrics] is written
+    // back to the in-place assistant message in the
+    // post-stream cleanup block below.
+    final turnStartedAt = DateTime.now();
+    var inputTokens = 0;
+    for (final p in systemPrompts) {
+      inputTokens += estimateTokens(p);
+    }
+    for (final m in requestMessages) {
+      inputTokens += estimateTokens(m.content);
+      if (m.thinking.isNotEmpty) inputTokens += estimateTokens(m.thinking);
+      for (final _ in m.imageDataUrls) {
+        // Roughly 85 tokens per low-res image after OpenAI
+        // detail=auto downscaling. Round up — image tokens
+        // are notoriously hard to estimate exactly, and the
+        // footer doesn't claim precise accounting.
+        inputTokens += 85;
+      }
+      for (final f in m.fileAttachments) {
+        if (f.textContent != null) {
+          inputTokens += estimateTokens(f.textContent!);
+        } else {
+          // Binary attachments are sent as base64 blobs;
+          // cost ~1 token per 4 bytes of original data.
+          inputTokens += (f.size + 3) ~/ 4;
+        }
+      }
+    }
+    var firstTokenAt = null as DateTime?;
+    var lastTokenAt = null as DateTime?;
+    var outputTokens = 0;
+
     final stream = useLocal
         ? _localLlm.streamChat(
             provider: localProvider!,
@@ -1401,6 +1441,16 @@ class ChatProvider extends ChangeNotifier {
             if (!updated) {
               updated = true;
             }
+            // Reasoning tokens also count toward TTFT — the
+            // user sees the model "thinking", which is the
+            // first user-visible signal that the request has
+            // landed. Reasoning deltas also contribute to the
+            // output-token count so the footer reflects the
+            // full work the model did.
+            final now = DateTime.now();
+            firstTokenAt ??= now;
+            lastTokenAt = now;
+            outputTokens += estimateTokens(event.thinkingDelta!);
             controller.add(null);
           }
         } else if (event.type == 'content' && event.contentDelta != null) {
@@ -1416,6 +1466,14 @@ class ChatProvider extends ChangeNotifier {
             if (!updated) {
               updated = true;
             }
+            // Content delta is the canonical TTFT trigger.
+            // lastTokenAt is stamped on every chunk so the
+            // tokens/sec denominator is always the latest
+            // possible interval.
+            final now = DateTime.now();
+            firstTokenAt ??= now;
+            lastTokenAt = now;
+            outputTokens += estimateTokens(event.contentDelta!);
             controller.add(null);
           }
         } else if (event.type == 'error') {
@@ -1489,9 +1547,31 @@ class ChatProvider extends ChangeNotifier {
     persistTimer?.cancel();
     final s = _activeSession;
     if (s != null) {
+      // Stamp the final [MessageMetrics] onto the assistant
+      // message before flipping `streaming: false`. The bubble
+      // footer reads from [ChatMessage.metrics] — if it's null
+      // (e.g. the stream errored before the first chunk), the
+      // footer simply renders the timestamp + copy icon with
+      // no metric chips, which is the right "nothing to show"
+      // state.
+      //
+      // We snapshot the metrics in a local final so the
+      // `for ... if ... else` rebuild is side-effect free —
+      // matches the pattern used everywhere else in this
+      // method.
+      final finalMetrics = MessageMetrics(
+        turnStartedAt: turnStartedAt,
+        firstTokenAt: firstTokenAt,
+        lastTokenAt: lastTokenAt,
+        outputTokens: outputTokens,
+        inputTokens: inputTokens,
+      );
       _replaceMessages([
         for (final m in s.messages)
-          if (m.id == assistantId) m.copyWith(streaming: false) else m,
+          if (m.id == assistantId)
+            m.copyWith(streaming: false, metrics: finalMetrics)
+          else
+            m,
       ]);
     }
     _sending = false;
@@ -1532,6 +1612,13 @@ class ChatProvider extends ChangeNotifier {
         final truncated = last.content.isEmpty
             ? ''
             : '${last.content}\n\n*(stopped)*';
+        // If the streamed turn never got to write its final
+        // metrics (stopGeneration races the post-stream cleanup
+        // block), fall back to whatever the in-place
+        // [ChatMessage.metrics] already carries. The bubble
+        // footer tolerates a null [firstTokenAt] (renders only
+        // the chips it can derive), so the worst-case UX is
+        // "no metrics for a stopped turn" — that's fine.
         _replaceMessages([
           for (var i = 0; i < s.messages.length; i++)
             if (i == s.messages.length - 1)

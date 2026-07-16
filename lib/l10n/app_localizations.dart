@@ -1638,6 +1638,24 @@ abstract class AppLocalizations {
   /// **'Error: {error}'**
   String messageErrorPrefix(String error);
 
+  /// Time-to-first-token suffix; rendered right of a clock icon. Pass a pre-formatted string like "0.50s" or "1m05s".
+  ///
+  /// In en, this message translates to:
+  /// **'{seconds}'**
+  String messageMetricTtft(String seconds);
+
+  /// Decode-phase token throughput (tokens per second).
+  ///
+  /// In en, this message translates to:
+  /// **'{speed}t/s'**
+  String messageMetricSpeed(String speed);
+
+  /// Total token count for the assistant turn (input + output), prefixed in the UI with a Σ glyph. Sits at the far right of the bubble footer.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}token'**
+  String messageMetricTokensTotal(String count);
+
   /// No description provided for @codeCopy.
   ///
   /// In en, this message translates to:

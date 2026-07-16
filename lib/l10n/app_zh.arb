@@ -284,6 +284,9 @@
 
   "messageThinking": "思考过程",
   "messageErrorPrefix": "出错了: {error}",
+  "messageMetricTtft": "{seconds}",
+  "messageMetricSpeed": "{speed}t/s",
+  "messageMetricTokensTotal": "{count}token",
 
   "codeCopy": "复制",
   "codeCopied": "已复制",

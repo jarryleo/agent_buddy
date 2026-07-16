@@ -388,6 +388,28 @@
     }
   },
 
+  "messageMetricTtft": "{seconds}",
+  "@messageMetricTtft": {
+    "description": "Time-to-first-token suffix; rendered right of a clock icon. Pass a pre-formatted string like \"0.50s\" or \"1m05s\".",
+    "placeholders": {
+      "seconds": { "type": "String" }
+    }
+  },
+  "messageMetricSpeed": "{speed}t/s",
+  "@messageMetricSpeed": {
+    "description": "Decode-phase token throughput (tokens per second).",
+    "placeholders": {
+      "speed": { "type": "String" }
+    }
+  },
+  "messageMetricTokensTotal": "{count}token",
+  "@messageMetricTokensTotal": {
+    "description": "Total token count for the assistant turn (input + output), prefixed in the UI with a Σ glyph. Sits at the far right of the bubble footer.",
+    "placeholders": {
+      "count": { "type": "String" }
+    }
+  },
+
   "codeCopy": "Copy",
   "codeCopied": "Copied",
   "imageLoadFailed": "Failed to load image",

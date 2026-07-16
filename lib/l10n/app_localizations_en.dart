@@ -871,6 +871,21 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String messageMetricTtft(String seconds) {
+    return '$seconds';
+  }
+
+  @override
+  String messageMetricSpeed(String speed) {
+    return '${speed}t/s';
+  }
+
+  @override
+  String messageMetricTokensTotal(String count) {
+    return '${count}token';
+  }
+
+  @override
   String get codeCopy => 'Copy';
 
   @override
