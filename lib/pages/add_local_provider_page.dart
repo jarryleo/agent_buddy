@@ -55,7 +55,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
     _mmprojPath = TextEditingController(text: p?.mmprojPath ?? '');
     _contextSize = p?.contextSize ?? 4096;
     _temperature = p?.temperature ?? 0.7;
-    _gpuLayers = p?.gpuLayers ?? 0;
+    _gpuLayers = p?.gpuLayers ?? 99;
     _maxTokens = p?.maxTokens ?? 1024;
     final defaultK = _defaultKvCacheTypeK();
     final defaultV = _defaultKvCacheTypeV();
