@@ -716,6 +716,24 @@ abstract class AppLocalizations {
   /// **'Per-step compute buffer. Default 512 (matches LM Studio / Ollama). Raising it speeds up prefill of long prompts but uses more memory.'**
   String get localProviderBatchSizeHint;
 
+  /// No description provided for @localProviderThinkingBudget.
+  ///
+  /// In en, this message translates to:
+  /// **'Reasoning budget (tokens)'**
+  String get localProviderThinkingBudget;
+
+  /// No description provided for @localProviderThinkingBudgetHint.
+  ///
+  /// In en, this message translates to:
+  /// **'For thinking models (Qwen3 / DeepSeek-R1 / GLM-4.5 / MagiStral / …), caps the <think>...</think> block at this many tokens. 0 = no cap — the model can spend the entire context on chain-of-thought and never produce a real answer. 2048 is a good default for 4K–8K context, 4096 for 16K+. Only takes effect when thinking mode is also enabled in chat settings.'**
+  String get localProviderThinkingBudgetHint;
+
+  /// No description provided for @localProviderThinkingBudgetNoLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'No cap'**
+  String get localProviderThinkingBudgetNoLimit;
+
   /// No description provided for @localProviderMemTitle.
   ///
   /// In en, this message translates to:

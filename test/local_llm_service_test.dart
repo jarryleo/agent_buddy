@@ -1,3 +1,4 @@
+import 'package:agent_buddy/models/local_provider.dart';
 import 'package:agent_buddy/services/local_llm_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -77,8 +78,8 @@ void main() {
 
     test('a sequence simulating a 3-tool-call turn produces 3 unique ids', () {
       // Mirrors the user's reported scenario: load_skill,
-      // location, fetch_web — all three arriving with the
-      // same Hermes-style `call_0` id from the model.
+      // location, fetch_web — all three arriving with the same
+      // Hermes-style `call_0` id from the model.
       final svc = LocalLlmService();
       final ids = [
         svc.resolveToolCallId('call_0'),
@@ -94,6 +95,80 @@ void main() {
         );
         expect(id, startsWith('local-'));
       }
+    });
+  });
+
+  group('LocalLlmService.resolveThinkingBudget', () {
+    LocalProvider providerWith({int? thinkingBudgetTokens}) {
+      return LocalProvider(
+        id: 'p1',
+        name: 'test',
+        modelPath: '/tmp/model.gguf',
+        thinkingBudgetTokens: thinkingBudgetTokens,
+      );
+    }
+
+    test('returns null when thinking is disabled', () {
+      // The reasoning sampler should not be active when the
+      // user toggled thinking off in chat settings — even if
+      // the provider has a budget configured.
+      final budget = LocalLlmService.resolveThinkingBudget(
+        provider: providerWith(thinkingBudgetTokens: 2048),
+        enableThinking: false,
+        supportsThinking: true,
+      );
+      expect(budget, isNull);
+    });
+
+    test('returns null when the engine cannot surface thinking', () {
+      // Defensive: an engine that does not support reasoning
+      // chunks (older backends, web) must never get a budget
+      // even if everything else is set up correctly.
+      final budget = LocalLlmService.resolveThinkingBudget(
+        provider: providerWith(thinkingBudgetTokens: 2048),
+        enableThinking: true,
+        supportsThinking: false,
+      );
+      expect(budget, isNull);
+    });
+
+    test('returns null when the provider has no budget configured', () {
+      // "No cap" is the user explicitly choosing the leftmost
+      // tick on the slider. We must not invent a default behind
+      // their back — the native backend would happily cap
+      // reasoning at 0, which is equivalent to "always answer
+      // immediately", so the default has to be the absence of
+      // a budget, not a zero-token one.
+      final budget = LocalLlmService.resolveThinkingBudget(
+        provider: providerWith(thinkingBudgetTokens: null),
+        enableThinking: true,
+        supportsThinking: true,
+      );
+      expect(budget, isNull);
+    });
+
+    test('returns null when the provider budget is 0 (legacy sentinel)', () {
+      // Older configs that survived the JSON round-trip with a
+      // raw 0 must be treated as "no cap", same as null.
+      final budget = LocalLlmService.resolveThinkingBudget(
+        provider: providerWith(thinkingBudgetTokens: 0),
+        enableThinking: true,
+        supportsThinking: true,
+      );
+      expect(budget, isNull);
+    });
+
+    test('builds a ThinkingBudget when everything is in place', () {
+      // The happy path: thinking is on, the provider has a
+      // positive cap, the backend supports reasoning. The
+      // returned budget must carry the same token count.
+      final budget = LocalLlmService.resolveThinkingBudget(
+        provider: providerWith(thinkingBudgetTokens: 2048),
+        enableThinking: true,
+        supportsThinking: true,
+      );
+      expect(budget, isNotNull);
+      expect(budget!.maxTokens, 2048);
     });
   });
 }

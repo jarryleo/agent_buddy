@@ -39,6 +39,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
   late String _cacheTypeK;
   late String _cacheTypeV;
   late int _batchSize;
+  late int? _thinkingBudgetTokens;
 
   int? _modelFileSize;
   ModelArchitecture? _modelArch;
@@ -61,6 +62,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
     _cacheTypeK = p?.cacheTypeK ?? defaultK;
     _cacheTypeV = p?.cacheTypeV ?? defaultV;
     _batchSize = p?.batchSize ?? LocalProvider.kDefaultBatchSize;
+    _thinkingBudgetTokens = p?.thinkingBudgetTokens;
     if (_modelPath.text.trim().isNotEmpty) {
       _refreshModelMetadata(_modelPath.text.trim());
     }
@@ -284,6 +286,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
         cacheTypeK: _cacheTypeK,
         cacheTypeV: _cacheTypeV,
         batchSize: _batchSize,
+        thinkingBudgetTokens: _thinkingBudgetTokens,
       );
     } else {
       await widget.settings.updateLocalProvider(
@@ -298,6 +301,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
           cacheTypeK: _cacheTypeK,
           cacheTypeV: _cacheTypeV,
           batchSize: _batchSize,
+          thinkingBudgetTokens: _thinkingBudgetTokens,
         ),
       );
     }
@@ -471,6 +475,15 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
               onChanged: (v) => setState(() => _batchSize = v),
               label: l10n.localProviderBatchSize,
               hint: l10n.localProviderBatchSizeHint,
+            ),
+            const SizedBox(height: 16),
+            ThinkingBudgetSlider(
+              value: _thinkingBudgetTokens,
+              presets: LocalProviderPresets.thinkingBudget,
+              onChanged: (v) => setState(() => _thinkingBudgetTokens = v),
+              label: l10n.localProviderThinkingBudget,
+              noLimitLabel: l10n.localProviderThinkingBudgetNoLimit,
+              hint: l10n.localProviderThinkingBudgetHint,
             ),
             const SizedBox(height: 24),
             SizedBox(

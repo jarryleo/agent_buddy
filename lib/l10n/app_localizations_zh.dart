@@ -336,6 +336,16 @@ class AppLocalizationsZh extends AppLocalizations {
       '单次前向计算缓冲区大小。默认 512(对齐 LM Studio / Ollama)。调大可加速长 prompt 的预填充,但更占内存。';
 
   @override
+  String get localProviderThinkingBudget => '思考块 token 上限';
+
+  @override
+  String get localProviderThinkingBudgetHint =>
+      '对 Qwen3 / DeepSeek-R1 / GLM-4.5 等思考模型,限制 <think>...</think> 块最多消耗的 token。设 0 = 不限(思考模型可能把整个上下文都填进思考块,出不来最终回答)。建议 2048(4K-8K 上下文)或 4096(16K+ 上下文)。需在聊天设置里同时打开「思考模式」才会生效。';
+
+  @override
+  String get localProviderThinkingBudgetNoLimit => '不限';
+
+  @override
   String get localProviderMemTitle => '内存预估';
 
   @override

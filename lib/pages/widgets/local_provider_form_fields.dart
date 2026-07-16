@@ -446,6 +446,99 @@ class BatchSizeSlider extends StatelessWidget {
   }
 }
 
+/// Reasoning-budget slider with preset tick marks. The leftmost
+/// tick is `0` ("不限" / "no cap"); the right side shows the
+/// current value with the same formatting as [MaxTokensSlider].
+///
+/// `0` is rendered as the localized "no budget" label (passed via
+/// [noLimitLabel]) so the user understands that the first tick
+/// doesn't mean "0 reasoning tokens" — it disables llama.cpp's
+/// reasoning-budget sampler entirely (legacy behavior).
+class ThinkingBudgetSlider extends StatelessWidget {
+  const ThinkingBudgetSlider({
+    super.key,
+    required this.value,
+    required this.presets,
+    required this.onChanged,
+    required this.label,
+    required this.noLimitLabel,
+    this.hint,
+  });
+
+  final int? value;
+  final List<int> presets;
+  final ValueChanged<int?> onChanged;
+  final String label;
+  final String noLimitLabel;
+  final String? hint;
+
+  @override
+  Widget build(BuildContext context) {
+    // Persisted `null` is mapped to the leftmost "no budget" tick
+    // (`0`). Persisted values that aren't in the preset list (older
+    // config or a typed-in number) snap to the closest preset so
+    // the slider's state stays consistent.
+    final clamped = (value == null || value! <= 0) ? 0 : value!;
+    final safeValue = presets.contains(clamped) ? clamped : presets.last;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: context.textSecondary,
+                ),
+              ),
+            ),
+            Text(
+              safeValue == 0 ? noLimitLabel : '$safeValue',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        Slider(
+          value: presets.indexOf(safeValue).toDouble(),
+          min: 0,
+          max: (presets.length - 1).toDouble(),
+          divisions: presets.length - 1,
+          label: safeValue == 0 ? noLimitLabel : '$safeValue',
+          onChanged: (v) {
+            final picked = presets[v.round()];
+            // `0` is the "no budget" sentinel — round-trip via
+            // `null` so the JSON we persist clearly says
+            // "no reasoning-budget" instead of the placeholder
+            // "0 tokens of reasoning".
+            onChanged(picked == 0 ? null : picked);
+          },
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: presets
+              .map(
+                (p) => Text(
+                  p == 0 ? noLimitLabel : '$p',
+                  style: TextStyle(fontSize: 10, color: context.textSecondary),
+                ),
+              )
+              .toList(),
+        ),
+        if (hint != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            hint!,
+            style: TextStyle(fontSize: 10, color: context.textSecondary),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 /// Estimate of the RAM/VRAM budget a model + KV cache + compute
 /// buffer will need, given the user's tuning. Reads the GGUF
 /// header (best effort) and falls back to a size-only heuristic
@@ -600,4 +693,20 @@ class LocalProviderPresets {
   ];
   static const List<int> maxTokens = <int>[128, 256, 512, 1024, 2048, 4096];
   static const List<int> batchSize = <int>[256, 512, 1024, 2048, 4096];
+
+  /// Reasoning-block budget presets in tokens. The leading `0`
+  /// maps to "no budget" (legacy behavior — reasoning can run
+  /// until the model decides to stop or the context runs out).
+  /// The other values are reasonable caps for thinking models on
+  /// 4K–32K context windows. llama.cpp accepts 0 through
+  /// 2,147,483,647; the largest preset here (16K) is enough for
+  /// any sensible interactive chat.
+  static const List<int> thinkingBudget = <int>[
+    0,
+    1024,
+    2048,
+    4096,
+    8192,
+    16384,
+  ];
 }

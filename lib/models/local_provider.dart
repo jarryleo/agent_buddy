@@ -45,6 +45,34 @@ class LocalProvider {
   /// `main`, Ollama, and LM Studio.
   static const int kDefaultBatchSize = 512;
 
+  /// Maximum number of tokens the model is allowed to spend inside
+  /// its reasoning block (Qwen3, DeepSeek-R1, GLM-4.5, MagiStral,
+  /// etc.) before llama.cpp's reasoning-budget sampler forces the
+  /// end tag and a final answer.
+  ///
+  /// Reasoning models otherwise happily burn the entire context on
+  /// the thinking block and never produce a real answer, which is
+  /// the "降智" symptom users see on small-context setups.
+  ///
+  /// `null` (the default for older configs) means **no budget** —
+  /// llama.cpp will not force-close the reasoning block, so a
+  /// thinking model can spend the full context on chain-of-thought.
+  /// `0` also means no budget. Positive values cap the reasoning
+  /// block at that many tokens.
+  ///
+  /// Note: only the native llama.cpp backend currently consumes
+  /// this; the chat-template's `enable_thinking` flag is what
+  /// actually opens the reasoning block in the first place. See
+  /// `LocalLlmService.streamChat`.
+  final int? thinkingBudgetTokens;
+
+  /// Safe interactive default for [thinkingBudgetTokens] when the
+  /// model is a thinking model. 2K tokens of reasoning is enough
+  /// for most chat turns on a 4K–8K context model without
+  /// starving the answer of context budget. Set [thinkingBudgetTokens]
+  /// to `null` (the default) to disable the cap (legacy behavior).
+  static const int kDefaultThinkingBudgetTokens = 2048;
+
   LocalProvider({
     required this.id,
     required this.name,
@@ -58,6 +86,7 @@ class LocalProvider {
     this.cacheTypeK = 'f16',
     this.cacheTypeV = 'f16',
     this.batchSize = kDefaultBatchSize,
+    this.thinkingBudgetTokens,
     this.builtinModelId,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
@@ -74,6 +103,7 @@ class LocalProvider {
     String? cacheTypeK,
     String? cacheTypeV,
     int? batchSize,
+    Object? thinkingBudgetTokens = _sentinel,
   }) {
     return LocalProvider(
       id: id,
@@ -88,10 +118,22 @@ class LocalProvider {
       cacheTypeK: cacheTypeK ?? this.cacheTypeK,
       cacheTypeV: cacheTypeV ?? this.cacheTypeV,
       batchSize: batchSize ?? this.batchSize,
+      thinkingBudgetTokens: identical(thinkingBudgetTokens, _sentinel)
+          ? this.thinkingBudgetTokens
+          : thinkingBudgetTokens as int?,
       builtinModelId: builtinModelId,
       createdAt: createdAt,
     );
   }
+
+  /// Sentinel used by [copyWith] to distinguish "argument omitted"
+  /// from "argument explicitly passed as null" for nullable fields.
+  /// Required because the public `LocalProvider` field is a
+  /// non-nullable `int?` (in Dart that means a nullable value) but
+  /// we want users to be able to clear the budget by passing
+  /// `thinkingBudgetTokens: null` without having to also re-supply
+  /// every other field.
+  static const Object _sentinel = Object();
 
   String get displayModelName {
     final name = modelPath.split(RegExp(r'[\\/]')).last;
@@ -111,12 +153,14 @@ class LocalProvider {
     'cacheTypeK': cacheTypeK,
     'cacheTypeV': cacheTypeV,
     'batchSize': batchSize,
+    'thinkingBudgetTokens': thinkingBudgetTokens,
     'builtinModelId': builtinModelId,
     'createdAt': createdAt.toIso8601String(),
   };
 
   factory LocalProvider.fromJson(Map<String, dynamic> json) {
     final rawBatch = (json['batchSize'] as num?)?.toInt() ?? 0;
+    final rawBudget = (json['thinkingBudgetTokens'] as num?)?.toInt();
     return LocalProvider(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -133,6 +177,14 @@ class LocalProvider {
       // an older app version used to mean "= n_ctx" in llama.cpp,
       // which is the actual bug we're fixing, so we never honour it.
       batchSize: rawBatch > 0 ? rawBatch : kDefaultBatchSize,
+      // `0` and missing both mean "no budget" — only positive values
+      // activate llama.cpp's reasoning-budget sampler. A `null` here
+      // also means "no budget" but we keep `null` distinct from `0`
+      // on the wire so older clients can round-trip a fresh provider
+      // without seeing a placeholder `0`.
+      thinkingBudgetTokens: (rawBudget == null || rawBudget <= 0)
+          ? null
+          : rawBudget,
       builtinModelId: json['builtinModelId'] as String?,
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??

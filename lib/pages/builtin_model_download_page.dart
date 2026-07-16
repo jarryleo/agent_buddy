@@ -66,6 +66,7 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
   late String _cacheTypeK;
   late String _cacheTypeV;
   late int _batchSize;
+  late int? _thinkingBudgetTokens;
 
   /// Resolved absolute paths to the files we should pass to the
   /// [LocalProvider]. In "edit" mode these start as the existing
@@ -96,6 +97,7 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
     _cacheTypeK = existing?.cacheTypeK ?? _defaultKvCacheTypeK();
     _cacheTypeV = existing?.cacheTypeV ?? _defaultKvCacheTypeV();
     _batchSize = existing?.batchSize ?? LocalProvider.kDefaultBatchSize;
+    _thinkingBudgetTokens = existing?.thinkingBudgetTokens;
 
     if (existing != null) {
       // Edit mode: file paths are already known (pinned to the
@@ -312,6 +314,7 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
         cacheTypeK: _cacheTypeK,
         cacheTypeV: _cacheTypeV,
         batchSize: _batchSize,
+        thinkingBudgetTokens: _thinkingBudgetTokens,
         builtinModelId: widget.model.id,
       );
     } else {
@@ -330,6 +333,7 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
           cacheTypeK: _cacheTypeK,
           cacheTypeV: _cacheTypeV,
           batchSize: _batchSize,
+          thinkingBudgetTokens: _thinkingBudgetTokens,
         ),
       );
     }
@@ -497,6 +501,15 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
                   onChanged: (v) => setState(() => _batchSize = v),
                   label: l10n.localProviderBatchSize,
                   hint: l10n.localProviderBatchSizeHint,
+                ),
+                const SizedBox(height: 16),
+                ThinkingBudgetSlider(
+                  value: _thinkingBudgetTokens,
+                  presets: LocalProviderPresets.thinkingBudget,
+                  onChanged: (v) => setState(() => _thinkingBudgetTokens = v),
+                  label: l10n.localProviderThinkingBudget,
+                  noLimitLabel: l10n.localProviderThinkingBudgetNoLimit,
+                  hint: l10n.localProviderThinkingBudgetHint,
                 ),
                 const SizedBox(height: 24),
                 SizedBox(

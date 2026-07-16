@@ -32,7 +32,6 @@ class LocalLlmService extends ChangeNotifier {
   /// regression test in `test/local_llm_service_test.dart`.
   int _localToolCallSeq = 0;
   static const _uuid = Uuid();
-  static const _useNativeBackend = true;
 
   bool get isReady => _engine != null && _session != null;
   bool get isLoading => _loading;
@@ -40,8 +39,15 @@ class LocalLlmService extends ChangeNotifier {
   Object? get loadError => _loadError;
   bool get supportsVision => _supportsVision;
   bool get supportsAudio => _supportsAudio;
-  bool get _supportsThinking =>
-      _engine != null && _session != null && !_useNativeBackend;
+
+  /// Whether the active local engine can surface a reasoning
+  /// chunk (Qwen3 / DeepSeek-R1 / GLM-4.5 / MagiStral / etc.).
+  /// The native llama.cpp backend has supported `delta.thinking`
+  /// since llamadart 0.8.14, so on a working engine this is just
+  /// a "is the engine ready" check; the caller still chooses
+  /// whether to actually open the thinking block via the
+  /// `enableThinking` flag on [streamChat].
+  bool get _supportsThinking => _engine != null && _session != null;
 
   /// Clear the last load error. Call after showing it to the user.
   void clearLoadError() {
@@ -200,15 +206,37 @@ class LocalLlmService extends ChangeNotifier {
         // the conversation". We use it on follow-up rounds after the
         // initial user turn has been added.
         final isFollowup = history.isNotEmpty;
+        // Build the optional reasoning-budget. The native llama.cpp
+        // backend's reasoning sampler forces the model's </think>
+        // tag once the budget is exhausted, so a thinking model
+        // doesn't spend the entire context on chain-of-thought and
+        // never produce a real answer ("降智" symptom). The chat
+        // template's `enable_thinking` flag is what actually opens
+        // the block; the budget only matters once it's open. We
+        // only attach a budget when the user is *also* asking for
+        // thinking — otherwise an enable_thinking=false template
+        // would still pay the reasoning-sampler overhead for no
+        // reason.
+        final thinkingBudget = resolveThinkingBudget(
+          provider: provider,
+          enableThinking: enableThinking,
+          supportsThinking: _supportsThinking,
+        );
         try {
           await for (final chunk in session.create(
             isFollowup ? const <LlamaContentPart>[] : parts,
             params: GenerationParams(
               maxTokens: provider.maxTokens,
               temp: provider.temperature,
+              thinkingBudget: thinkingBudget,
             ),
             tools: llamaTools.isEmpty ? null : llamaTools,
             toolChoice: llamaTools.isEmpty ? ToolChoice.none : ToolChoice.auto,
+            // Previously we AND-ed this with `!_useNativeBackend`,
+            // which silently turned off thinking for every native
+            // (llama.cpp) install. The native backend has supported
+            // reasoning chunks since llamadart 0.8.14, so we now
+            // honor the caller's flag directly.
             enableThinking: enableThinking && _supportsThinking,
           )) {
             if (chunk.choices.isEmpty) continue;
@@ -552,6 +580,39 @@ class LocalLlmService extends ChangeNotifier {
       default:
         return KvCacheType.f16;
     }
+  }
+
+  /// Resolves the [ThinkingBudget] to attach to the engine's
+  /// [GenerationParams] for a given turn. Returns `null` when the
+  /// reasoning sampler should not be active for this turn — which
+  /// covers four orthogonal cases:
+  ///
+  /// 1. `enableThinking` is `false` (user toggled thinking off in
+  ///    chat settings, or the active chat role does not request
+  ///    it). The budget would never be hit anyway because the
+  ///    chat template wouldn't open the block, but skipping it
+  ///    saves the reasoning-sampler overhead.
+  /// 2. The engine is not ready (`supportsThinking == false`).
+  ///    Defensive: would only happen if the caller asked for
+  ///    thinking before the model finished loading.
+  /// 3. The provider's budget is `null` ("no cap" — the user
+  ///    explicitly chose the leftmost tick on the slider).
+  /// 4. The provider's budget is `0` (sentinel for the same
+  ///    thing, e.g. on a row migrated from an older config).
+  ///
+  /// Exposed at top level (static) so the rules are unit-testable
+  /// without spinning up an engine.
+  @visibleForTesting
+  static ThinkingBudget? resolveThinkingBudget({
+    required LocalProvider provider,
+    required bool enableThinking,
+    required bool supportsThinking,
+  }) {
+    if (!enableThinking) return null;
+    if (!supportsThinking) return null;
+    final tokens = provider.thinkingBudgetTokens;
+    if (tokens == null || tokens <= 0) return null;
+    return ThinkingBudget(maxTokens: tokens);
   }
 
   List<ToolDefinition> _buildTools(List<Map<String, dynamic>> openAiTools) {
