@@ -73,7 +73,7 @@ void main() {
   group('mobile branch via injected FileService', () {
     setUp(() {
       // Force the file tool into the mobile branch even on the
-      // Linux test host so we can exercise pick / app:// / etc.
+      // Linux test host so we can exercise pick / working:// / etc.
       overridePlatform(isMobileValue: true, isDesktopValue: false);
     });
     tearDown(resetPlatformOverrides);
@@ -121,7 +121,7 @@ void main() {
       },
     );
 
-    test('read on app://documents goes through the FileService', () async {
+    test('read on a working:// path goes through the FileService', () async {
       final fake = _FakeFileService();
       fake.readResult = 'hello world'.codeUnits;
       final toolService = ToolService(fileBuilder: () => fake);
@@ -129,13 +129,13 @@ void main() {
       final tool = FileTool();
       final raw = await tool.execute({
         'action': 'read',
-        'path': 'app://documents/hello.txt',
+        'path': 'working://hello.txt',
       }, toolService);
       final envelope = jsonDecode(raw) as Map<String, dynamic>;
       expect(envelope['action'], 'read');
-      expect(envelope['path'], 'app://documents/hello.txt');
+      expect(envelope['path'], 'working://hello.txt');
       expect(envelope['content'], 'hello world');
-      expect(fake.lastReadPath, 'app://documents/hello.txt');
+      expect(fake.lastReadPath, 'working://hello.txt');
     });
 
     test('write on a picker://<id> delegates to the bridge', () async {
@@ -322,7 +322,7 @@ void main() {
     );
 
     test('relative path without a working dir returns a clear error', () async {
-      // No setModelWorkingDirectory — the user hasn't picked a
+      // No setModelWorkingDirectory - the user hasn't picked a
       // folder. The mobile file tool should refuse bare
       // relative paths with a helpful message.
       final toolService = buildToolService();
@@ -472,6 +472,9 @@ class _FakeFileService implements FileService {
       isLink: false,
     );
   }
+
+  @override
+  Future<({String path, String treeUri})?> pickWorkingDirectory() async => null;
 }
 
 // Suppress an unused-import lint when the analyzer walks the

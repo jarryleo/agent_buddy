@@ -16,12 +16,14 @@ import 'tool_base.dart';
 ///
 /// **Mobile (Android / iOS)** — delegates to [FileService] over
 /// a MethodChannel. The model only ever sees two path schemes:
-///   * `app://documents/...` / `app://temp/...` /
-///     `app://support/...` for the app's own sandbox
 ///   * `picker://<id>` for files the user picked via the
 ///     system file picker (no Android / iOS runtime permission
 ///     needed — SAF / `UIDocumentPickerViewController` handle
 ///     per-URI grants themselves).
+///   * `working://<rel>` (or a bare relative path) for files
+///     inside the user-selected working directory. The model
+///     defaults to operating on the working directory or on
+///     picked files - there are no other sandbox roots.
 ///
 /// **Permission flow** — the only operation that needs user
 /// action is `pick`. The bridge parks the Dart-side call until
@@ -45,7 +47,7 @@ class FileTool extends ToolBase {
   @override
   String get description {
     if (isMobileForRuntime()) {
-      return '管理设备文件。手机: 读/写/删/列沙盒目录,或打开系统文件选择器读/写手机上的任意文件(无需 Android 权限);如果设置了工作目录,相对路径会基于工作目录解析(类似桌面端)。电脑走原桌面端逻辑。';
+      return '管理设备文件。手机: 默认操作工作目录(相对路径或 working://),或用 action=pick 打开系统选择器读/写手机上的任意文件(无需 Android 权限)。电脑走原桌面端逻辑。';
     }
     return _desktopDescription;
   }
@@ -126,12 +128,12 @@ class FileTool extends ToolBase {
               'list_dir',
             ],
             'description':
-                '操作: pick(打开系统文件选择器,会弹出系统 UI)/release(释放 picker id)/read(读)/read_attr(查属性)/write(覆盖写)/append(追加)/delete(删,仅限沙盒+工作目录)/rename(改名,仅限沙盒+工作目录)/list_dir(列目录,沙盒+工作目录)',
+                '操作: pick(打开系统文件选择器,会弹出系统 UI)/release(释放 picker id)/read(读)/read_attr(查属性)/write(覆盖写)/append(追加)/delete(删,仅限工作目录)/rename(改名,仅限工作目录)/list_dir(列目录,仅限工作目录)',
           },
           'path': {
             'type': 'string',
             'description':
-                '文件路径。沙盒: app://documents/...、app://temp/...、app://support/...;选过的文件: picker://<id>;如果设置了工作目录,可以用 working://<相对路径>(如 working://foo/bar.txt)或裸相对路径(如 foo/bar.txt),都基于工作目录解析,类似桌面端的相对路径。',
+                '文件路径。选过的文件: picker://<id>;工作目录用 working://<相对路径>(如 working://foo/bar.txt)或裸相对路径(如 foo/bar.txt),都基于工作目录解析,类似桌面端的相对路径。',
           },
           'content': {
             'type': 'string',
@@ -139,8 +141,7 @@ class FileTool extends ToolBase {
           },
           'new_path': {
             'type': 'string',
-            'description':
-                'rename 时必填(目标路径,可以是 app:// 或 working:// 或同工作目录下的裸相对路径)',
+            'description': 'rename 时必填(目标路径,working:// 或同工作目录下的裸相对路径)',
           },
           'recursive': {
             'type': 'boolean',

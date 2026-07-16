@@ -79,6 +79,13 @@ flutter {
 
 dependencies {
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    // Required by the file tool's SAF working-dir bridge
+    // (`DocumentFile.fromTreeUri`, `createFile`, `findFile`,
+    // etc). Explicit because we use it directly in
+    // `FileBridge.kt` — most other plugins that need it pull
+    // it in transitively, but the file tool doesn't have a
+    // plugin wrapper.
+    implementation("androidx.documentfile:documentfile:1.0.1")
     // Required by `flutter_local_notifications` (and any plugin that
     // uses java.time.* on older API levels). See the
     // isCoreLibraryDesugaringEnabled block above.

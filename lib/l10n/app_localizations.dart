@@ -1167,7 +1167,7 @@ abstract class AppLocalizations {
   /// No description provided for @toolDescFile.
   ///
   /// In en, this message translates to:
-  /// **'Manage device files — any path on desktop; on mobile: app sandbox + system file picker + relative paths inside the user-selected working directory (no Android runtime permission needed).'**
+  /// **'Manage device files — any path on desktop; on mobile: system file picker + relative paths inside the user-selected working directory (no Android runtime permission needed).'**
   String get toolDescFile;
 
   /// No description provided for @toolDescLoadSkill.
@@ -1559,6 +1559,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Failed to choose working directory: {error}'**
   String workingDirectoryError(String error);
+
+  /// No description provided for @workingDirectoryCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Working directory selection was cancelled — file operations against the working directory will keep failing until the user picks a folder via the chat toolbar.'**
+  String get workingDirectoryCancelled;
 
   /// No description provided for @imageAttachTooltip.
   ///

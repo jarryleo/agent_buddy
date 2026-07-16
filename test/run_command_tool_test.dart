@@ -30,19 +30,20 @@ void main() {
   group('buildShellEnvironment', () {
     test('prepends /usr/sbin and /opt/homebrew/bin on macOS', () {
       if (!Platform.isMacOS) return;
-      final result = buildShellEnvironment(
-        baseEnv: {'PATH': '/usr/bin:/bin'},
-      );
+      final result = buildShellEnvironment(baseEnv: {'PATH': '/usr/bin:/bin'});
       final parts = (result['PATH'] ?? '').split(':');
       expect(parts.first, '/opt/homebrew/bin');
-      expect(parts, containsAll(<String>[
-        '/opt/homebrew/bin',
-        '/usr/local/bin',
-        '/usr/bin',
-        '/bin',
-        '/usr/sbin',
-        '/sbin',
-      ]));
+      expect(
+        parts,
+        containsAll(<String>[
+          '/opt/homebrew/bin',
+          '/usr/local/bin',
+          '/usr/bin',
+          '/bin',
+          '/usr/sbin',
+          '/sbin',
+        ]),
+      );
       // Original entries are preserved.
       expect(parts, contains('/usr/bin'));
       expect(parts, contains('/bin'));
@@ -50,9 +51,7 @@ void main() {
 
     test('prepends /usr/sbin on Linux', () {
       if (!Platform.isLinux) return;
-      final result = buildShellEnvironment(
-        baseEnv: {'PATH': '/usr/bin:/bin'},
-      );
+      final result = buildShellEnvironment(baseEnv: {'PATH': '/usr/bin:/bin'});
       final parts = (result['PATH'] ?? '').split(':');
       expect(parts, contains('/usr/sbin'));
       expect(parts, contains('/usr/bin'));
@@ -60,9 +59,7 @@ void main() {
 
     test('prepends System32 on Windows', () {
       if (!Platform.isWindows) return;
-      final result = buildShellEnvironment(
-        baseEnv: {'Path': r'C:\Windows'},
-      );
+      final result = buildShellEnvironment(baseEnv: {'Path': r'C:\Windows'});
       final parts = (result['Path'] ?? '').split(';');
       expect(parts, contains(r'C:\Windows\System32'));
       expect(parts, contains(r'C:\Windows'));
@@ -78,8 +75,11 @@ void main() {
       final pathKey = Platform.isWindows ? 'Path' : 'PATH';
       final separator = Platform.isWindows ? ';' : ':';
       final parts = (result[pathKey] ?? '').split(separator);
-      expect(parts.toSet().length, parts.length,
-          reason: 'PATH must not contain duplicates');
+      expect(
+        parts.toSet().length,
+        parts.length,
+        reason: 'PATH must not contain duplicates',
+      );
     });
 
     test('handles an empty / missing PATH without crashing', () {
@@ -116,8 +116,10 @@ void main() {
     test('returns a JSON envelope with non-zero exit on failure', () async {
       final tool = RunCommandTool();
       try {
-        await tool.execute({'command': 'false', 'timeout_seconds': 5},
-            toolService);
+        await tool.execute({
+          'command': 'false',
+          'timeout_seconds': 5,
+        }, toolService);
         fail('expected ToolException');
       } on ToolException catch (e) {
         final payload = jsonDecode(e.message) as Map<String, dynamic>;

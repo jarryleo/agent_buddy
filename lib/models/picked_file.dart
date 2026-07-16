@@ -70,7 +70,7 @@ class FileEntry {
 
   final String name;
 
-  /// `app://...` form (the model never sees the underlying
+  /// `working://...` form (the model never sees the underlying
   /// absolute path).
   final String path;
   final bool isDirectory;

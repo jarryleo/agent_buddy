@@ -581,7 +581,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get toolDescFile =>
-      '管理设备上的文件:电脑任意路径,手机走沙盒/系统文件选择器,或在用户选定的工作目录下使用相对路径(无需 Android 权限)。';
+      '管理设备上的文件:电脑任意路径,手机走系统文件选择器,或在用户选定的工作目录下使用相对路径(无需 Android 权限)。';
 
   @override
   String get toolDescLoadSkill => '按需读取某个技能的完整说明。';
@@ -789,6 +789,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String workingDirectoryError(String error) {
     return '选择工作目录失败: $error';
   }
+
+  @override
+  String get workingDirectoryCancelled =>
+      '用户取消了工作目录选择 — 在用户通过聊天工具栏重新选一次文件夹之前,对工作目录的文件操作都会失败。';
 
   @override
   String get imageAttachTooltip => '添加图片';

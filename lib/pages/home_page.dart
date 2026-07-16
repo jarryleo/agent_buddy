@@ -441,7 +441,15 @@ class _ChatInputArea extends StatelessWidget {
       fileAttachmentService: context.read<FileAttachmentService>(),
       workingDirectory: settings.modelWorkingDirectory,
       thinkingEnabled: settings.thinkingModeEnabled,
-      onWorkingDirectoryChanged: settings.setModelWorkingDirectory,
+      onWorkingDirectoryChanged: ({
+        String? path,
+        String? treeUri,
+      }) async {
+        await settings.setModelWorkingDirectory(
+          path: path,
+          treeUri: treeUri,
+        );
+      },
       onThinkingChanged: settings.setThinkingModeEnabled,
       onStop: () => chat.stopGeneration(),
       onSend: (text, imagePaths, fileAttachments) {

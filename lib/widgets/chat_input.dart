@@ -43,7 +43,25 @@ class ChatInput extends StatefulWidget {
   final FileAttachmentService fileAttachmentService;
   final String? workingDirectory;
   final bool thinkingEnabled;
-  final Future<void> Function(String? path)? onWorkingDirectoryChanged;
+
+  /// Set / clear the user-selected working directory. The
+  /// `(path, treeUri)` shape is platform-conditional:
+  ///   * **Android** — `path` is the display path the
+  ///     user picked via SAF (e.g. `/storage/emulated/0/Download/test`);
+  ///     `treeUri` is the `content://` tree URI the native
+  ///     side persists to back the SAF grant. **Both are
+  ///     required** for the model to actually write into
+  ///     the folder (the native `FileBridge` is the
+  ///     authority on the tree URI and mirrors it to its own
+  ///     SharedPreferences, so the caller only needs to
+  ///     surface it to `SettingsProvider`).
+  ///   * **iOS / desktop** — only `path` is meaningful;
+  ///     `treeUri` is `null` (iOS uses the app sandbox, so
+  ///     `dart:io` is enough; desktop doesn't gate paths).
+  /// Pass `path: null` to clear the working directory
+  /// (which also drops the tree URI on Android).
+  final Future<void> Function({String? path, String? treeUri})?
+  onWorkingDirectoryChanged;
   final Future<void> Function(bool enabled)? onThinkingChanged;
 
   @override
@@ -52,6 +70,16 @@ class ChatInput extends StatefulWidget {
 
 const int _kMaxLinesCollapsed = 1;
 const int _kMaxLinesExpanded = 10;
+
+/// Thrown when the SAF `pickTree` channel is missing — i.e.
+/// the user is somehow on a build that has no Android
+/// `FileBridge` (desktop / iOS / web). Surfaced as a
+/// user-facing snackbar via the catch in [_pickWorkingDirectory].
+class _SafNotAvailable implements Exception {
+  const _SafNotAvailable();
+  @override
+  String toString() => 'SAF tree picker is not available on this platform';
+}
 
 class _ChatInputState extends State<ChatInput> {
   final TextEditingController _controller = TextEditingController();
@@ -247,22 +275,68 @@ class _ChatInputState extends State<ChatInput> {
 
   Future<void> _pickWorkingDirectory() async {
     _setToolbarOpen(false);
+    final l10n = AppLocalizations.of(context);
     try {
+      if (!kIsWeb && Platform.isAndroid) {
+        // Android: route through the native SAF tree picker so
+        // we get a `content://` tree URI grant (the only way
+        // the model can actually write into a public volume
+        // like `/storage/emulated/0/...`). The picker is
+        // parked by the native bridge; we just await the
+        // future the FileService exposes.
+        final result = await _safPickWorkingDirectory();
+        if (result == null) return; // user cancelled
+        await widget.onWorkingDirectoryChanged?.call(
+          path: result.path,
+          treeUri: result.treeUri,
+        );
+        return;
+      }
+      // iOS / desktop: a plain directory path is enough —
+      // iOS uses the app sandbox, desktop doesn't gate
+      // paths, and `dart:io` works without any SAF grant.
       final path = await FilePicker.platform.getDirectoryPath(
-        dialogTitle: AppLocalizations.of(context).chatToolWorkingDirectory,
+        dialogTitle: l10n.chatToolWorkingDirectory,
       );
       if (path == null || !mounted) return;
-      await widget.onWorkingDirectoryChanged?.call(path);
+      await widget.onWorkingDirectoryChanged?.call(path: path);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            AppLocalizations.of(context).workingDirectoryError(e.toString()),
-          ),
+          content: Text(l10n.workingDirectoryError(e.toString())),
           behavior: SnackBarBehavior.floating,
         ),
       );
+    }
+  }
+
+  /// Wraps the native `pickTree` MethodChannel call. Kept
+  /// separate from `_pickWorkingDirectory` so we don't drag
+  /// `MethodChannel` + `dart:io` into the rest of the widget.
+  /// On non-Android platforms the call falls through to the
+  /// `FilePicker` path above.
+  Future<({String path, String treeUri})?> _safPickWorkingDirectory() async {
+    const channel = MethodChannel('agent_buddy/file');
+    try {
+      final raw = await channel.invokeMapMethod<String, dynamic>(
+        'pickTree',
+        const <String, dynamic>{},
+      );
+      if (raw == null) return null;
+      if (raw['cancelled'] == true) return null;
+      final path = raw['path'] as String?;
+      final treeUri = raw['tree_uri'] as String?;
+      if (path == null || path.isEmpty || treeUri == null || treeUri.isEmpty) {
+        throw StateError(
+          'pickTree returned a payload without path / tree_uri: $raw',
+        );
+      }
+      return (path: path, treeUri: treeUri);
+    } on PlatformException catch (e) {
+      throw Exception('pickTree failed: ${e.code}: ${e.message}');
+    } on MissingPluginException {
+      throw const _SafNotAvailable();
     }
   }
 
@@ -514,19 +588,13 @@ class _ChatInputState extends State<ChatInput> {
                         : null,
                     icon: TweenAnimationBuilder<double>(
                       duration: const Duration(milliseconds: 500),
-                      tween: Tween(
-                        begin: 0.0,
-                        end: _toolbarOpen ? 0.125 : 0.0,
-                      ),
+                      tween: Tween(begin: 0.0, end: _toolbarOpen ? 0.125 : 0.0),
                       curve: Curves.easeInOutCubic,
                       builder: (context, value, child) => Transform.rotate(
                         angle: value * 2 * math.pi,
                         child: child,
                       ),
-                      child: Icon(
-                        Icons.add,
-                        color: context.textSecondary,
-                      ),
+                      child: Icon(Icons.add, color: context.textSecondary),
                     ),
                     color: context.textSecondary,
                     tooltip: l10n.chatToolsTooltip,
@@ -561,9 +629,7 @@ class _ChatInputState extends State<ChatInput> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                             ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
                             elevation: 0,
                           ),
                           child: const Icon(Icons.stop_rounded, size: 18),
@@ -578,9 +644,7 @@ class _ChatInputState extends State<ChatInput> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                             ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
                             elevation: 0,
                           ),
                           child: const Icon(Icons.send_rounded, size: 18),
@@ -593,7 +657,9 @@ class _ChatInputState extends State<ChatInput> {
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOutCubic,
                 alignment: Alignment.topCenter,
-                child: _toolbarOpen ? _buildToolbar(context) : const SizedBox.shrink(),
+                child: _toolbarOpen
+                    ? _buildToolbar(context)
+                    : const SizedBox.shrink(),
               ),
             ),
           ],

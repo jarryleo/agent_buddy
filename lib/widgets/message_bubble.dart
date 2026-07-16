@@ -245,15 +245,12 @@ class _MessageBubbleState extends State<MessageBubble> {
     // are usually the user's main subject and benefit from being readable at
     // a glance.
     final thumbSize = isMulti ? 300.0 : 600.0;
-    final crossAxisCount = isMulti
-        ? (paths.length >= 3 ? 2 : paths.length)
-        : 1;
+    final crossAxisCount = isMulti ? (paths.length >= 3 ? 2 : paths.length) : 1;
     // Actual on-screen cell side after the grid's crossAxisSpacing. The
     // Image widget's `width` / `height` is only a hint here — the grid
     // derives the cell from `childAspectRatio: 1`, so on single-image rows
     // the rendered thumbnail is the full bubble width, not thumbSize.
-    final cellSide =
-        (maxWidth - 4 * (crossAxisCount - 1)) / crossAxisCount;
+    final cellSide = (maxWidth - 4 * (crossAxisCount - 1)) / crossAxisCount;
     // Decode the cached bitmap at the displayed cell × dpr, not thumbSize
     // × dpr. The previous cacheSize = thumbSize * dpr was *smaller* than
     // the actual display footprint on single-image rows

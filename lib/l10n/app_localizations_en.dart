@@ -609,7 +609,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolDescFile =>
-      'Manage device files — any path on desktop; on mobile: app sandbox + system file picker + relative paths inside the user-selected working directory (no Android runtime permission needed).';
+      'Manage device files — any path on desktop; on mobile: system file picker + relative paths inside the user-selected working directory (no Android runtime permission needed).';
 
   @override
   String get toolDescLoadSkill =>
@@ -824,6 +824,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String workingDirectoryError(String error) {
     return 'Failed to choose working directory: $error';
   }
+
+  @override
+  String get workingDirectoryCancelled =>
+      'Working directory selection was cancelled — file operations against the working directory will keep failing until the user picks a folder via the chat toolbar.';
 
   @override
   String get imageAttachTooltip => 'Attach image';

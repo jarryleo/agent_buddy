@@ -3,10 +3,10 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../../models/picked_file.dart';
 import 'file_service.dart';
+import 'working_dir_backend.dart';
 
 /// Backend that talks to the native bridge for picker-backed ops
 /// (`pick` / `release` / read-write on `picker://<id>` paths).
@@ -134,26 +134,28 @@ class MethodChannelPickerBackend implements PickerFileBackend {
   }
 }
 
-/// Production [FileService]: sandbox paths via `path_provider`
-/// + `dart:io`; picker paths via [PickerFileBackend]; working
-/// directory paths via the lazy [workingDirectoryLookup].
+/// Production [FileService]: picker paths via [PickerFileBackend];
+/// working-directory paths (bare relative / `working://`) via
+/// `dart:io` against the lazy [workingDirectoryLookup], or via
+/// the SAF-backed [WorkingDirBackend] on Android (which is the
+/// only platform where the model can realistically try to
+/// write into a public volume like `/storage/emulated/0/...`).
+///
+/// The model defaults to the user-selected working directory or
+/// to files the user explicitly picked - there are no other
+/// sandbox roots.
 class FileServiceImpl implements FileService {
   FileServiceImpl({
     PickerFileBackend? backend,
-    Future<Directory>? overrideDocs,
-    Future<Directory>? overrideTemp,
-    Future<Directory>? overrideSupport,
     String? Function()? workingDirectoryLookup,
+    WorkingDirBackend? workingDirBackend,
+    bool isAndroid = false,
   }) : _backend = backend ?? MethodChannelPickerBackend(),
-       _overrideDocs = overrideDocs,
-       _overrideTemp = overrideTemp,
-       _overrideSupport = overrideSupport,
-       _workingDirectoryLookup = workingDirectoryLookup;
+       _workingDirectoryLookup = workingDirectoryLookup,
+       _workingDirBackend = workingDirBackend,
+       _isAndroid = isAndroid;
 
   final PickerFileBackend _backend;
-  final Future<Directory>? _overrideDocs;
-  final Future<Directory>? _overrideTemp;
-  final Future<Directory>? _overrideSupport;
 
   /// Lazy lookup for the current user-selected working directory.
   /// Returns the latest value from `StorageService` so the
@@ -162,6 +164,19 @@ class FileServiceImpl implements FileService {
   /// storage isn't injected, e.g. unit tests that don't go
   /// through `ToolService`).
   final String? Function()? _workingDirectoryLookup;
+
+  /// SAF-backed working-directory backend (Android only). When
+  /// set + [_isAndroid] is true, every working-dir op goes
+  /// through this backend instead of `dart:io`. The native
+  /// side handles the tree-URI grant + re-authorization flow
+  /// internally; this class just translates the result.
+  final WorkingDirBackend? _workingDirBackend;
+
+  /// True when the host platform is Android. Used to gate
+  /// the SAF-backend path. iOS keeps `dart:io` against the
+  /// app sandbox; desktop keeps `dart:io` against the working
+  /// directory path.
+  final bool _isAndroid;
 
   @override
   String? get workingDirectory {
@@ -172,14 +187,82 @@ class FileServiceImpl implements FileService {
     return trimmed;
   }
 
-  Future<Directory> _resolveRoot(AppSandbox root) async {
-    switch (root) {
-      case AppSandbox.documents:
-        return _overrideDocs ?? getApplicationDocumentsDirectory();
-      case AppSandbox.temp:
-        return _overrideTemp ?? getTemporaryDirectory();
-      case AppSandbox.support:
-        return _overrideSupport ?? getApplicationSupportDirectory();
+  /// True when the SAF-backed backend should handle working-dir
+  /// ops. Requires both platform + injected backend - tests
+  /// that pass `isAndroid: true` without a backend fall
+  /// through to `dart:io` (which fails on Android in
+  /// production but exercises the desktop code path in CI).
+  bool get _useSaf => _isAndroid && _workingDirBackend != null;
+
+  /// Convert a `working://<rel>` or bare-relative path into a
+  /// `relPath` suitable for the native side. Throws
+  /// [FileServiceError] for picker:// inputs and for
+  /// bare-relative inputs when no working directory is
+  /// configured.
+  String _toRelPath(String input) {
+    if (isPickerPath(input)) {
+      throw FileServiceError(
+        'internal: _toRelPath should not see picker:// paths',
+      );
+    }
+    final working = _resolveWorkingPath(input);
+    if (working == null) {
+      throw FileServiceError(
+        'invalid path: $input '
+        '(expected picker://<id> or a relative path inside the '
+        'configured working directory)',
+      );
+    }
+    // Build the model-friendly `relPath` so the native side
+    // can echo it back in listDir / readAttr responses.
+    if (isWorkingPath(input)) {
+      // Strip the `working://` prefix.
+      final body = input.substring('working://'.length);
+      if (body.isEmpty) return '';
+      if (body.startsWith('/')) {
+        // `working:///abs/path` — turn the abs path back into
+        // a path that's relative to the working dir. Falls
+        // through to bare-relative (relPath is empty) when the
+        // abs path equals the working dir root.
+        return _absToRel(body);
+      }
+      return body;
+    }
+    // Bare relative path: same as input, no prefix.
+    return input;
+  }
+
+  String _absToRel(String abs) {
+    final base = p.normalize(workingDirectory ?? '');
+    if (base.isEmpty) return abs;
+    final sep = Platform.pathSeparator;
+    final normAbs = p.normalize(abs);
+    if (normAbs == base) return '';
+    final prefix = '$base$sep';
+    if (!normAbs.startsWith(prefix)) return abs;
+    return normAbs.substring(prefix.length);
+  }
+
+  /// Surface a `WorkingDirCancelledException` as a friendly
+  /// [FileServiceError] so the model gets a clear hint.
+  Never _translateCancel() {
+    throw FileServiceError(
+      'working directory access was denied by the user; '
+      'ask the user to re-pick a folder via the chat toolbar',
+    );
+  }
+
+  @override
+  Future<({String path, String treeUri})?> pickWorkingDirectory() async {
+    if (_workingDirBackend == null) {
+      throw const FileServiceNotSupportedError();
+    }
+    try {
+      return await _workingDirBackend.pickWorkingDirectory();
+    } on WorkingDirCancelledException {
+      return null;
+    } on NotImplementedWorkingDirOp {
+      throw const FileServiceNotSupportedError();
     }
   }
 
@@ -210,29 +293,11 @@ class FileServiceImpl implements FileService {
   /// synchronous variant (`listSync`) to avoid a Windows-
   /// specific race where `Directory.list()` can briefly report
   /// `PathNotFoundException` for a directory that was created
-  /// moments earlier in the same event-loop turn — even though
+  /// moments earlier in the same event-loop turn - even though
   /// `existsSync` reports `true` for the same path. The sync
   /// call is atomic at the OS level.
   Future<List<FileSystemEntity>> _listResolvedDir(String resolved) async {
     return Directory(resolved).listSync(followLinks: false);
-  }
-
-  /// Resolves a `app://<root>/...` URI to a real absolute path,
-  /// rejecting any `..` segment that would escape the sandbox.
-  Future<String?> _resolveAppPath(String input) async {
-    final parsed = parseAppPath(input);
-    if (parsed == null) return null;
-    final base = (await _resolveRoot(parsed.root)).path;
-    final baseNorm = p.normalize(base);
-    if (parsed.segments.isEmpty) return baseNorm;
-    final joined = p.normalize(p.join(baseNorm, p.joinAll(parsed.segments)));
-    // Reject sandbox escape: the resolved path must still be
-    // inside the requested root.
-    final sep = Platform.pathSeparator;
-    if (joined != baseNorm && !joined.startsWith('$baseNorm$sep')) {
-      throw FileServiceError('path escapes the sandbox: $input');
-    }
-    return joined;
   }
 
   /// Resolves a `working://<rel>` URI or a bare relative path
@@ -246,13 +311,12 @@ class FileServiceImpl implements FileService {
   ///     (sandbox-escape protection via `..` rejection)
   ///
   /// Returns `null` when [input] doesn't look like a working
-  /// directory path (no `working://` prefix and not a relative
-  /// path) — callers use this signal to dispatch to the
-  /// sandbox / picker branches instead.
+  /// directory path (has an unknown scheme, is absolute, etc.)
+  /// - callers use this signal to decide whether to surface an
+  /// "invalid path" error.
   String? _resolveWorkingPath(String input) {
-    // Anything with an `app://` / `picker://` / absolute scheme
-    // belongs to another branch — not us.
-    if (parseAppPath(input) != null) return null;
+    // Anything with a `picker://` / well-known absolute scheme
+    // belongs to another branch - not us.
     if (isPickerPath(input)) return null;
     if (input.startsWith('http://') ||
         input.startsWith('https://') ||
@@ -271,8 +335,8 @@ class FileServiceImpl implements FileService {
     if (workingDir == null) {
       throw const FileServiceError(
         'no working directory configured on mobile; '
-        'use app://documents/... / app://temp/... / app://support/... '
-        'or pick a folder via the chat toolbar first',
+        'use action=pick to open the system file picker, or pick a '
+        'folder via the chat toolbar first',
       );
     }
     final baseNorm = p.normalize(workingDir);
@@ -315,22 +379,20 @@ class FileServiceImpl implements FileService {
   }
 
   /// Resolves a path that should hit the local filesystem (i.e.
-  /// not a `picker://<id>`) to an absolute on-disk path. Tries
-  /// the app-sandbox `app://` scheme first, then the
-  /// user-selected working directory.
+  /// not a `picker://<id>`) to an absolute on-disk path. The only
+  /// supported form is a relative path / `working://` URI inside
+  /// the configured working directory.
   ///
-  /// Throws [FileServiceError] for inputs that don't match any
-  /// known scheme, or when the working-directory branch is hit
-  /// without a working directory configured.
+  /// Throws [FileServiceError] for inputs that don't match the
+  /// working-directory scheme, or when no working directory is
+  /// configured.
   Future<String> _resolveToDiskPath(String input) async {
-    final appResolved = await _resolveAppPath(input);
-    if (appResolved != null) return appResolved;
     final workingResolved = _resolveWorkingPath(input);
     if (workingResolved != null) return workingResolved;
     throw FileServiceError(
       'invalid path: $input '
-      '(expected app://<root>/... or picker://<id> '
-      'or a relative path inside the configured working directory)',
+      '(expected picker://<id> or a relative path inside the '
+      'configured working directory)',
     );
   }
 
@@ -350,6 +412,23 @@ class FileServiceImpl implements FileService {
     if (isPickerPath(path)) {
       final id = pickerIdOf(path)!;
       return _backend.read(id, maxBytes: maxBytes);
+    }
+    if (_useSaf) {
+      try {
+        final bytes = await _workingDirBackend!.readRel(
+          _toRelPath(path),
+          maxBytes: maxBytes,
+        );
+        if (bytes.length > maxBytes) {
+          throw FileServiceError(
+            'file too large: ${bytes.length} bytes (limit: $maxBytes); '
+            'raise max_bytes if you really need it',
+          );
+        }
+        return bytes;
+      } on WorkingDirCancelledException {
+        _translateCancel();
+      }
     }
     final resolved = await _resolveToDiskPath(path);
     final file = File(resolved);
@@ -382,6 +461,17 @@ class FileServiceImpl implements FileService {
       final id = pickerIdOf(path)!;
       return _backend.write(id, bytes);
     }
+    if (_useSaf) {
+      try {
+        return await _workingDirBackend!.writeRel(
+          _toRelPath(path),
+          Uint8List.fromList(bytes),
+          append: append,
+        );
+      } on WorkingDirCancelledException {
+        _translateCancel();
+      }
+    }
     final resolved = await _resolveToDiskPath(path);
     final file = File(resolved);
     if (append && !await file.exists()) {
@@ -406,6 +496,16 @@ class FileServiceImpl implements FileService {
         'delete is not allowed on picker://<id> paths; '
         'use release(id) to drop the local handle instead',
       );
+    }
+    if (_useSaf) {
+      try {
+        return await _workingDirBackend!.deleteRel(
+          _toRelPath(path),
+          recursive: recursive,
+        );
+      } on WorkingDirCancelledException {
+        _translateCancel();
+      }
     }
     final resolved = await _resolveToDiskPath(path);
     final resolvedType = await _statType(resolved);
@@ -432,6 +532,16 @@ class FileServiceImpl implements FileService {
     if (isPickerPath(from) || isPickerPath(to)) {
       throw FileServiceError('rename is not allowed on picker://<id> paths');
     }
+    if (_useSaf) {
+      try {
+        return await _workingDirBackend!.renameRel(
+          _toRelPath(from),
+          _toRelPath(to),
+        );
+      } on WorkingDirCancelledException {
+        _translateCancel();
+      }
+    }
     final fromResolved = await _resolveToDiskPath(from);
     final toResolved = await _resolveToDiskPath(to);
     final srcType = FileSystemEntity.typeSync(fromResolved);
@@ -457,23 +567,35 @@ class FileServiceImpl implements FileService {
         'picked files have no parent directory you can browse',
       );
     }
+    if (_useSaf) {
+      try {
+        final entries = await _workingDirBackend!.listRel(
+          _toRelPath(path),
+          recursive: recursive,
+        );
+        // The backend may return an unmodifiable list
+        // (e.g. when it hits a `const []` short-circuit in
+        // tests), so build a mutable copy before sorting.
+        final sorted = [...entries];
+        sorted.sort((a, b) {
+          final aDir = a.isDirectory ? 0 : 1;
+          final bDir = b.isDirectory ? 0 : 1;
+          if (aDir != bDir) return aDir.compareTo(bDir);
+          return a.name.compareTo(b.name);
+        });
+        return sorted;
+      } on WorkingDirCancelledException {
+        _translateCancel();
+      }
+    }
     final resolved = await _resolveToDiskPath(path);
     final dir = Directory(resolved);
     if (!await dir.exists()) {
       throw FileServiceError('directory not found: $path');
     }
-    // For relative / `working://` paths we surface back the
-    // model-friendly scheme; for `app://` we mirror the existing
-    // reconstruction logic so `listDir` results stay stable
-    // across versions.
-    final appParsed = parseAppPath(path);
-    String? appBaseNorm;
-    if (appParsed != null) {
-      appBaseNorm = p.normalize((await _resolveRoot(appParsed.root)).path);
-    }
-    final workingBaseNorm = appParsed == null
-        ? p.normalize(workingDirectory ?? '')
-        : null;
+    // Surface back the model-friendly `working://` scheme so the
+    // model can immediately re-use the path on follow-up turns.
+    final workingBaseNorm = p.normalize(workingDirectory ?? '');
     const maxEntries = 200;
     final out = <FileEntry>[];
     await for (final entity in dir.list(
@@ -490,10 +612,8 @@ class FileServiceImpl implements FileService {
       out.add(
         FileEntry(
           name: name,
-          path: _absoluteToScheme(
+          path: _absoluteToWorkingScheme(
             absolute: entity.path,
-            appParsed: appParsed,
-            appBaseNorm: appBaseNorm,
             workingBaseNorm: workingBaseNorm,
           ),
           isDirectory: entity is Directory,
@@ -534,6 +654,13 @@ class FileServiceImpl implements FileService {
         isLink: raw['is_link'] as bool? ?? false,
       );
     }
+    if (_useSaf) {
+      try {
+        return await _workingDirBackend!.readAttrRel(_toRelPath(path));
+      } on WorkingDirCancelledException {
+        _translateCancel();
+      }
+    }
     final resolved = await _resolveToDiskPath(path);
     final type = FileSystemEntity.typeSync(resolved);
     if (type == FileSystemEntityType.notFound) {
@@ -560,60 +687,21 @@ class FileServiceImpl implements FileService {
     return 'other';
   }
 
-  /// Reconstructs a model-friendly path from an absolute
-  /// on-disk path produced by [listDir]. Two cases:
-  ///   * `app://...` input → round-trip back through the
-  ///     original root + relative path so the model's view
-  ///     stays stable.
-  ///   * `working://...` or bare-relative input → return the
-  ///     `working://<rel>` form so the model can immediately
-  ///     re-use the path. Bare relatives resolve to whatever
-  ///     relative segment lives under the working directory.
-  static String _absoluteToScheme({
+  /// Reconstructs a model-friendly `working://` path from an
+  /// absolute on-disk path produced by [listDir]. The model can
+  /// immediately re-use the returned path on follow-up turns.
+  static String _absoluteToWorkingScheme({
     required String absolute,
-    required ({AppSandbox root, List<String> segments})? appParsed,
-    required String? appBaseNorm,
-    required String? workingBaseNorm,
+    required String workingBaseNorm,
   }) {
     final norm = p.normalize(absolute);
-    if (appParsed != null) {
-      return _reconstructAppPath(norm, appParsed.root, appBaseNorm ?? '');
-    }
-    final baseNorm = workingBaseNorm;
-    if (baseNorm == null) return norm;
+    if (workingBaseNorm.isEmpty) return norm;
     final sep = Platform.pathSeparator;
-    if (norm == baseNorm) return 'working://';
-    final prefix = '$baseNorm$sep';
+    if (norm == workingBaseNorm) return 'working://';
+    final prefix = '$workingBaseNorm$sep';
     if (!norm.startsWith(prefix)) return norm;
     final rel = norm.substring(prefix.length);
     return 'working://${p.posix.joinAll(p.split(rel))}';
-  }
-
-  /// Reconstructs an `app://<root>/...` path from an absolute
-  /// on-disk path that lives under [baseNorm] (the resolved
-  /// root for [root]).
-  static String _reconstructAppPath(
-    String norm,
-    AppSandbox root,
-    String baseNorm,
-  ) {
-    final scheme = 'app://${_schemeHostFor(root)}';
-    if (norm == baseNorm) return '$scheme/';
-    final prefix = '$baseNorm${Platform.pathSeparator}';
-    if (!norm.startsWith(prefix)) return norm; // shouldn't happen
-    final rel = norm.substring(prefix.length);
-    return '$scheme/${p.posix.joinAll(p.split(rel))}';
-  }
-
-  static String _schemeHostFor(AppSandbox root) {
-    switch (root) {
-      case AppSandbox.documents:
-        return 'documents';
-      case AppSandbox.temp:
-        return 'temp';
-      case AppSandbox.support:
-        return 'support';
-    }
   }
 }
 

@@ -31,7 +31,7 @@ void main() {
   test('working directory and thinking mode persist', () async {
     final settings = SettingsProvider(storage);
     await settings.load();
-    await settings.setModelWorkingDirectory('C:/workspace/project');
+    await settings.setModelWorkingDirectory(path: 'C:/workspace/project');
     await settings.setThinkingModeEnabled(true);
 
     final restored = SettingsProvider(storage);

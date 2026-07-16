@@ -20,6 +20,7 @@ import 'platform/notes_service.dart';
 import 'platform/reminders_service.dart';
 import 'platform/reminders_service_factory.dart';
 import 'platform/tasks_service.dart';
+import 'platform/working_dir_backend.dart';
 import 'storage_service.dart';
 import 'timer_service.dart';
 import 'tools/tool_registry.dart';
@@ -48,6 +49,7 @@ class ToolService {
     Box<Memory>? memoriesBox,
     LocationServiceBuilder? locationBuilder,
     FileServiceBuilder? fileBuilder,
+    WorkingDirBackend? workingDirBackend,
     http.Client? httpClient,
     TimerService? timerService,
     NotificationService? notificationService,
@@ -66,6 +68,7 @@ class ToolService {
     }
     _locationBuilder = locationBuilder;
     _fileBuilder = fileBuilder;
+    _workingDirBackend = workingDirBackend;
     if (httpClient != null) {
       _client = httpClient;
       _ownsClient = false;
@@ -100,6 +103,7 @@ class ToolService {
   LocationServiceBuilder? _locationBuilder;
   LocationService? _location;
   FileServiceBuilder? _fileBuilder;
+  WorkingDirBackend? _workingDirBackend;
   FileService? _file;
   TimerService? _timers;
   NotificationService? _notifications;
@@ -168,6 +172,7 @@ class ToolService {
     // `ToolService` without a `StorageService`).
     return file_factory.createFileService(
       workingDirectoryLookup: () => _storage?.modelWorkingDirectory,
+      workingDirBackend: _workingDirBackend,
     );
   }
 

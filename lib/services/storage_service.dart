@@ -37,6 +37,13 @@ class StorageService {
   static const _kLocaleCode = 'locale_code';
   static const _kGoogleSheetConfig = 'google_sheet_config';
   static const _kModelWorkingDirectory = 'model_working_directory';
+  // Android-only: the SAF tree URI backing the user-selected
+  // working directory. iOS / desktop don't need it (iOS uses
+  // the app sandbox via `dart:io`; desktop uses the working
+  // directory path directly). Persisted by the native side too
+  // (FileBridge writes to `agent_buddy_prefs` on every
+  // re-authorization), so this key mirrors that value.
+  static const _kModelWorkingTreeUri = 'model_working_tree_uri';
   static const _kThinkingModeEnabled = 'thinking_mode_enabled';
 
   late final SharedPreferences _prefs;
@@ -277,6 +284,26 @@ class StorageService {
       await _prefs.remove(_kModelWorkingDirectory);
     } else {
       await _prefs.setString(_kModelWorkingDirectory, path.trim());
+    }
+  }
+
+  /// Android-only: the SAF `content://` tree URI backing the
+  /// user-selected working directory. `null` when no working
+  /// directory is selected or on non-Android platforms.
+  ///
+  /// The native bridge also writes this key (see
+  /// `FileBridge.saveWorkingDirectory` in
+  /// `android/app/.../FileBridge.kt`) every time the user
+  /// re-authorizes the working directory, so the two layers
+  /// stay in sync.
+  String? get modelWorkingTreeUri =>
+      _prefs.getString(_kModelWorkingTreeUri);
+
+  Future<void> setModelWorkingTreeUri(String? uri) async {
+    if (uri == null || uri.isEmpty) {
+      await _prefs.remove(_kModelWorkingTreeUri);
+    } else {
+      await _prefs.setString(_kModelWorkingTreeUri, uri);
     }
   }
 

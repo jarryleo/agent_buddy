@@ -1,6 +1,7 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kIsWeb, protected, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, protected, visibleForTesting;
 import 'package:flutter/services.dart'
     show MissingPluginException, PlatformException;
 
@@ -115,7 +116,7 @@ bool notWeb() => !kIsWeb;
 // -- Test overrides ------------------------------------------------------
 //
 // Tests that need to exercise the mobile branch of a tool (e.g.
-// the `file` tool's pick / release / app:// path handling) can
+// the `file` tool's pick / release / working:// path handling) can
 // call [overridePlatform] in `setUp` to force a specific
 // platform, and the override in `tearDown` (typically
 // [resetPlatformOverrides]).

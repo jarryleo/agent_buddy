@@ -42,4 +42,8 @@ class FileServiceStub implements FileService {
 
   @override
   Future<FileAttrs> readAttr(String path) => _unsupported();
+
+  @override
+  Future<({String path, String treeUri})?> pickWorkingDirectory() =>
+      _unsupported();
 }

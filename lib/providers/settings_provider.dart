@@ -44,6 +44,7 @@ class SettingsProvider extends ChangeNotifier {
   String _themeMode = 'system';
   String _localeCode = 'system';
   String? _modelWorkingDirectory;
+  String? _modelWorkingTreeUri;
   bool _thinkingModeEnabled = false;
   GoogleSheetConfig _googleSheetConfig = GoogleSheetConfig.empty;
 
@@ -64,6 +65,14 @@ class SettingsProvider extends ChangeNotifier {
   String get themeMode => _themeMode;
   String get localeCode => _localeCode;
   String? get modelWorkingDirectory => _modelWorkingDirectory;
+
+  /// Android-only: the SAF `content://` tree URI backing the
+  /// working directory. The model never sees this value; the
+  /// `FileService` plumbs it to the native side so that
+  /// `DocumentFile` can write into the user's tree without
+  /// requiring any `MANAGE_EXTERNAL_STORAGE` privilege.
+  String? get modelWorkingTreeUri => _modelWorkingTreeUri;
+
   bool get thinkingModeEnabled => _thinkingModeEnabled;
   GoogleSheetConfig get googleSheetConfig => _googleSheetConfig;
 
@@ -147,6 +156,7 @@ class SettingsProvider extends ChangeNotifier {
     _themeMode = _storage.themeMode;
     _localeCode = _storage.localeCode;
     _modelWorkingDirectory = _storage.modelWorkingDirectory;
+    _modelWorkingTreeUri = _storage.modelWorkingTreeUri;
     _thinkingModeEnabled = _storage.thinkingModeEnabled;
     _googleSheetConfig = _storage.loadGoogleSheetConfig();
 
@@ -664,12 +674,56 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setModelWorkingDirectory(String? path) async {
-    final normalized = path?.trim();
-    _modelWorkingDirectory = normalized == null || normalized.isEmpty
+  /// Persist the user-selected working directory. Called by
+  /// the chat toolbar's "pick folder" flow:
+  ///   * **Android** — both `path` and `treeUri` are
+  ///     populated by `FileService.pickWorkingDirectory()`
+  ///     (which goes through the native `FileBridge` SAF
+  ///     tree picker). `path` is the display path the user
+  ///     sees in the toolbar tooltip; `treeUri` is the
+  ///     `content://` URI the native side needs to write
+  ///     into the folder. The native bridge also writes the
+  ///     `treeUri` to its own SharedPreferences mirror, so
+  ///     this just records it for the Dart-side `StorageService`
+  ///     lookup.
+  ///   * **iOS / desktop** — only `path` is set; `treeUri` is
+  ///     `null` (iOS uses the app sandbox, so `dart:io` is
+  ///     enough; desktop doesn't gate paths).
+  /// Pass `path: null` to clear the working directory (which
+  /// also drops any stale tree URI on Android).
+  Future<void> setModelWorkingDirectory({String? path, String? treeUri}) async {
+    final normalizedPath = path?.trim();
+    _modelWorkingDirectory = normalizedPath == null || normalizedPath.isEmpty
         ? null
-        : normalized;
+        : normalizedPath;
     await _storage.setModelWorkingDirectory(_modelWorkingDirectory);
+    if (_modelWorkingDirectory == null) {
+      // Clearing the path also drops any stale tree URI so
+      // the next `pickWorkingDirectory` starts from a clean
+      // slate.
+      _modelWorkingTreeUri = null;
+      await _storage.setModelWorkingTreeUri(null);
+    } else if (treeUri != null && treeUri.isNotEmpty) {
+      // Android re-pick: surface the freshly-granted tree
+      // URI to the Dart-side storage so the next
+      // `FileService` op can pick it up.
+      _modelWorkingTreeUri = treeUri;
+      await _storage.setModelWorkingTreeUri(treeUri);
+    }
+    notifyListeners();
+  }
+
+  /// Android-only: persist the SAF `content://` tree URI
+  /// that backs the user-selected working directory. Called
+  /// directly by the native bridge via the SettingsProvider
+  /// when it refreshes the tree grant. Most callers should
+  /// use [setModelWorkingDirectory] instead — this is here
+  /// for completeness and for tests that want to inject a
+  /// tree URI without going through the picker.
+  Future<void> setModelWorkingTreeUri(String? uri) async {
+    final normalized = uri == null || uri.isEmpty ? null : uri;
+    _modelWorkingTreeUri = normalized;
+    await _storage.setModelWorkingTreeUri(_modelWorkingTreeUri);
     notifyListeners();
   }
 
