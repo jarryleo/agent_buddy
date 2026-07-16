@@ -146,9 +146,29 @@ class ToolService {
   /// mobile branch. Falls back to a stub on non-supported
   /// platforms (web); tests can inject a fake via the
   /// [fileBuilder] constructor param.
+  ///
+  /// The production implementation gets a lazy lookup for the
+  /// user-selected working directory so it always sees the
+  /// latest value from `StorageService.modelWorkingDirectory`
+  /// without manual sync. Tests that inject a fake via
+  /// [fileBuilder] are responsible for their own working-dir
+  /// surface.
   FileService get file {
-    _file ??= (_fileBuilder ?? file_factory.createFileService)();
+    _file ??= (_fileBuilder ?? _createDefaultFileService)();
     return _file!;
+  }
+
+  FileService _createDefaultFileService() {
+    // Wire the lazy working-directory lookup so the service
+    // never holds a stale snapshot when the user picks a new
+    // folder via the chat toolbar. The lookup only fires on
+    // disk-backed ops (read / write / delete / rename /
+    // list_dir / read_attr) and short-circuits to `null` when
+    // storage isn't injected (e.g. unit tests that build a
+    // `ToolService` without a `StorageService`).
+    return file_factory.createFileService(
+      workingDirectoryLookup: () => _storage?.modelWorkingDirectory,
+    );
   }
 
   /// The shared in-memory timer queue used by the `timer` tool

@@ -5,7 +5,7 @@ import 'package:agent_buddy/models/picked_file.dart';
 import 'package:agent_buddy/services/chat_session_repository.dart';
 import 'package:agent_buddy/services/platform/file_service.dart';
 import 'package:agent_buddy/services/platform/file_service_impl.dart'
-    show FileServiceError;
+    show FileServiceError, FileServiceImpl;
 import 'package:agent_buddy/services/storage_service.dart';
 import 'package:agent_buddy/services/tool_service.dart';
 import 'package:agent_buddy/services/tools/file_tool.dart';
@@ -94,30 +94,32 @@ void main() {
       },
     );
 
-    test('pick success returns the picked file with a picker:// path',
-        () async {
-      final fake = _FakeFileService();
-      fake.pickResult = PickedFile(
-        id: 'f-1',
-        name: 'note.txt',
-        size: 5,
-        mimeType: 'text/plain',
-        path: 'picker://f-1',
-      );
-      final toolService = ToolService(fileBuilder: () => fake);
-      addTearDown(toolService.dispose);
+    test(
+      'pick success returns the picked file with a picker:// path',
+      () async {
+        final fake = _FakeFileService();
+        fake.pickResult = PickedFile(
+          id: 'f-1',
+          name: 'note.txt',
+          size: 5,
+          mimeType: 'text/plain',
+          path: 'picker://f-1',
+        );
+        final toolService = ToolService(fileBuilder: () => fake);
+        addTearDown(toolService.dispose);
 
-      final tool = FileTool();
-      final raw = await tool.execute({'action': 'pick'}, toolService);
-      final envelope = jsonDecode(raw) as Map<String, dynamic>;
-      expect(envelope['ok'], true);
-      expect(envelope['cancelled'], false);
-      final items = envelope['items'] as List;
-      expect(items, hasLength(1));
-      final first = (items.first as Map).cast<String, dynamic>();
-      expect(first['id'], 'f-1');
-      expect(first['path'], 'picker://f-1');
-    });
+        final tool = FileTool();
+        final raw = await tool.execute({'action': 'pick'}, toolService);
+        final envelope = jsonDecode(raw) as Map<String, dynamic>;
+        expect(envelope['ok'], true);
+        expect(envelope['cancelled'], false);
+        final items = envelope['items'] as List;
+        expect(items, hasLength(1));
+        final first = (items.first as Map).cast<String, dynamic>();
+        expect(first['id'], 'f-1');
+        expect(first['path'], 'picker://f-1');
+      },
+    );
 
     test('read on app://documents goes through the FileService', () async {
       final fake = _FakeFileService();
@@ -125,10 +127,10 @@ void main() {
       final toolService = ToolService(fileBuilder: () => fake);
 
       final tool = FileTool();
-      final raw = await tool.execute(
-        {'action': 'read', 'path': 'app://documents/hello.txt'},
-        toolService,
-      );
+      final raw = await tool.execute({
+        'action': 'read',
+        'path': 'app://documents/hello.txt',
+      }, toolService);
       final envelope = jsonDecode(raw) as Map<String, dynamic>;
       expect(envelope['action'], 'read');
       expect(envelope['path'], 'app://documents/hello.txt');
@@ -140,14 +142,11 @@ void main() {
       final fake = _FakeFileService();
       final toolService = ToolService(fileBuilder: () => fake);
       final tool = FileTool();
-      final raw = await tool.execute(
-        {
-          'action': 'write',
-          'path': 'picker://f-1',
-          'content': 'payload',
-        },
-        toolService,
-      );
+      final raw = await tool.execute({
+        'action': 'write',
+        'path': 'picker://f-1',
+        'content': 'payload',
+      }, toolService);
       final envelope = jsonDecode(raw) as Map<String, dynamic>;
       expect(envelope['ok'], true);
       expect(fake.lastWriteId, 'f-1');
@@ -159,10 +158,10 @@ void main() {
       final toolService = ToolService(fileBuilder: () => fake);
       final tool = FileTool();
       try {
-        await tool.execute(
-          {'action': 'delete', 'path': 'picker://f-1'},
-          toolService,
-        );
+        await tool.execute({
+          'action': 'delete',
+          'path': 'picker://f-1',
+        }, toolService);
         fail('expected ToolException');
       } on Object catch (e) {
         expect(e.toString(), contains('release'));
@@ -175,10 +174,10 @@ void main() {
       final toolService = ToolService(fileBuilder: () => fake);
       final tool = FileTool();
       try {
-        await tool.execute(
-          {'action': 'list_dir', 'path': 'picker://f-1'},
-          toolService,
-        );
+        await tool.execute({
+          'action': 'list_dir',
+          'path': 'picker://f-1',
+        }, toolService);
         fail('expected ToolException');
       } on Object catch (e) {
         expect(e.toString(), contains('parent directory'));
@@ -189,10 +188,10 @@ void main() {
       final fake = _FakeFileService();
       final toolService = ToolService(fileBuilder: () => fake);
       final tool = FileTool();
-      final raw = await tool.execute(
-        {'action': 'release', 'id': 'f-1'},
-        toolService,
-      );
+      final raw = await tool.execute({
+        'action': 'release',
+        'id': 'f-1',
+      }, toolService);
       final envelope = jsonDecode(raw) as Map<String, dynamic>;
       expect(envelope['ok'], true);
       expect(fake.lastReleasedId, 'f-1');
@@ -201,12 +200,186 @@ void main() {
     test('schema includes mobile-only actions (pick / release)', () {
       final tool = FileTool();
       final schema = tool.buildSchema();
-      final actions = ((schema['function']!['parameters']!['properties']
-                  as Map)['action']!['enum']
-              as List)
-          .cast<String>();
+      final actions =
+          ((schema['function']!['parameters']!['properties']
+                      as Map)['action']!['enum']
+                  as List)
+              .cast<String>();
       expect(actions, contains('pick'));
       expect(actions, contains('release'));
+    });
+  });
+
+  group('mobile branch with a configured working directory', () {
+    setUp(() {
+      overridePlatform(isMobileValue: true, isDesktopValue: false);
+    });
+    tearDown(resetPlatformOverrides);
+
+    /// Builds a [ToolService] whose `FileService` is a real
+    /// `FileServiceImpl` (not the platform-default stub the
+    /// factory returns on Linux) and whose `workingDirectory`
+    /// lookup reads the latest value from [storage].
+    ToolService buildToolService() {
+      return ToolService(
+        storage: storage,
+        fileBuilder: () => FileServiceImpl(
+          workingDirectoryLookup: () => storage.modelWorkingDirectory,
+        ),
+      );
+    }
+
+    test('relative paths read against the working directory', () async {
+      // Seed a file inside the working dir that the model can
+      // pick up with a bare relative path.
+      final seed = File(p.join(workingDir.path, 'seed.txt'));
+      seed.writeAsStringSync('hello world');
+
+      await storage.setModelWorkingDirectory(workingDir.path);
+      final toolService = buildToolService();
+      addTearDown(toolService.dispose);
+
+      final tool = FileTool();
+      final raw = await tool.execute({
+        'action': 'read',
+        'path': 'seed.txt',
+      }, toolService);
+      final envelope = jsonDecode(raw) as Map<String, dynamic>;
+      expect(envelope['encoding'], 'utf-8');
+      expect(envelope['content'], 'hello world');
+    });
+
+    test('write a relative path lands inside the working directory', () async {
+      await storage.setModelWorkingDirectory(workingDir.path);
+      final toolService = buildToolService();
+      addTearDown(toolService.dispose);
+
+      final tool = FileTool();
+      final raw = await tool.execute({
+        'action': 'write',
+        'path': 'working://sub/dir/created.txt',
+        'content': 'created',
+      }, toolService);
+      expect(raw, contains('"ok":true'));
+      final written = File(p.join(workingDir.path, 'sub/dir/created.txt'));
+      expect(written.existsSync(), isTrue);
+      expect(written.readAsStringSync(), 'created');
+    });
+
+    test('list_dir on the working dir root lists the children', () async {
+      File(p.join(workingDir.path, 'a.txt')).writeAsStringSync('a');
+      Directory(p.join(workingDir.path, 'nested')).createSync();
+      File(p.join(workingDir.path, 'nested/b.txt')).writeAsStringSync('b');
+
+      await storage.setModelWorkingDirectory(workingDir.path);
+      final toolService = buildToolService();
+      addTearDown(toolService.dispose);
+
+      final tool = FileTool();
+      final raw = await tool.execute({
+        'action': 'list_dir',
+        'path': 'working://',
+      }, toolService);
+      final envelope = jsonDecode(raw) as Map<String, dynamic>;
+      final names = (envelope['entries'] as List)
+          .map((e) => (e as Map)['name'])
+          .toSet();
+      expect(names, containsAll(['a.txt', 'nested']));
+      // Paths are surfaced as `working://...` so the model can
+      // re-use them on follow-up turns.
+      final a =
+          (envelope['entries'] as List).firstWhere(
+                (e) => (e as Map)['name'] == 'a.txt',
+              )
+              as Map;
+      expect(a['path'], 'working://a.txt');
+    });
+
+    test(
+      'list_dir on a working://sub/ returns working://sub/<name> children',
+      () async {
+        Directory(p.join(workingDir.path, 'sub')).createSync();
+        File(
+          p.join(workingDir.path, 'sub/inner.txt'),
+        ).writeAsStringSync('inner');
+
+        await storage.setModelWorkingDirectory(workingDir.path);
+        final toolService = buildToolService();
+        addTearDown(toolService.dispose);
+
+        final tool = FileTool();
+        final raw = await tool.execute({
+          'action': 'list_dir',
+          'path': 'working://sub',
+        }, toolService);
+        final envelope = jsonDecode(raw) as Map<String, dynamic>;
+        final entries = envelope['entries'] as List;
+        expect(entries, hasLength(1));
+        final first = entries.first as Map;
+        expect(first['name'], 'inner.txt');
+        expect(first['path'], 'working://sub/inner.txt');
+      },
+    );
+
+    test('relative path without a working dir returns a clear error', () async {
+      // No setModelWorkingDirectory — the user hasn't picked a
+      // folder. The mobile file tool should refuse bare
+      // relative paths with a helpful message.
+      final toolService = buildToolService();
+      addTearDown(toolService.dispose);
+
+      final tool = FileTool();
+      try {
+        await tool.execute({'action': 'read', 'path': 'seed.txt'}, toolService);
+        fail('expected ToolException');
+      } on Object catch (e) {
+        expect(e.toString(), contains('no working directory'));
+      }
+    });
+
+    test('..-escape on the working dir is rejected', () async {
+      await storage.setModelWorkingDirectory(workingDir.path);
+      final toolService = buildToolService();
+      addTearDown(toolService.dispose);
+
+      final tool = FileTool();
+      try {
+        await tool.execute({
+          'action': 'read',
+          'path': '../outside.txt',
+        }, toolService);
+        fail('expected ToolException');
+      } on Object catch (e) {
+        expect(e.toString(), contains('escapes'));
+      }
+    });
+
+    test('absolute path on mobile is rejected (no raw OS paths)', () async {
+      await storage.setModelWorkingDirectory(workingDir.path);
+      final toolService = buildToolService();
+      addTearDown(toolService.dispose);
+
+      final tool = FileTool();
+      try {
+        await tool.execute({
+          'action': 'read',
+          'path': p.join(outsideDir.path, 'abs.txt'),
+        }, toolService);
+        fail('expected ToolException');
+      } on Object catch (e) {
+        expect(e.toString(), contains('invalid path'));
+      }
+    });
+
+    test('schema description mentions the working directory on mobile', () {
+      final tool = FileTool();
+      final schema = tool.buildSchema();
+      final pathDesc =
+          ((schema['function']!['parameters']!['properties']
+                  as Map)['path']!['description']
+              as String);
+      expect(pathDesc, contains('working://'));
+      expect(pathDesc, contains('相对路径'));
     });
   });
 }
@@ -227,6 +400,10 @@ class _FakeFileService implements FileService {
   String? lastWriteId;
   List<int>? lastWriteBytes;
   String? lastReleasedId;
+  String? workingDir;
+
+  @override
+  String? get workingDirectory => workingDir;
 
   @override
   Future<PickedFile?> pick({String? mimeType, bool readOnly = false}) async {
@@ -247,7 +424,11 @@ class _FakeFileService implements FileService {
   }
 
   @override
-  Future<void> write(String path, List<int> bytes, {bool append = false}) async {
+  Future<void> write(
+    String path,
+    List<int> bytes, {
+    bool append = false,
+  }) async {
     if (isPickerPath(path)) {
       lastWriteId = pickerIdOf(path);
       lastWriteBytes = bytes;
@@ -300,4 +481,3 @@ class _FakeFileService implements FileService {
 void _keepImports() {
   jsonDecode;
 }
-

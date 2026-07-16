@@ -580,7 +580,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolDescDownload => '把网址里的文件下载到本地临时目录。';
 
   @override
-  String get toolDescFile => '管理设备上的文件:电脑任意路径,手机走沙盒或系统文件选择器(无需 Android 权限)。';
+  String get toolDescFile =>
+      '管理设备上的文件:电脑任意路径,手机走沙盒/系统文件选择器,或在用户选定的工作目录下使用相对路径(无需 Android 权限)。';
 
   @override
   String get toolDescLoadSkill => '按需读取某个技能的完整说明。';

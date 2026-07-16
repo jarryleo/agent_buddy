@@ -13,6 +13,9 @@ class FileServiceStub implements FileService {
   Never _unsupported() => throw const FileServiceNotSupportedError();
 
   @override
+  String? get workingDirectory => null;
+
+  @override
   Future<PickedFile?> pick({String? mimeType, bool readOnly = false}) =>
       _unsupported();
 
@@ -24,11 +27,8 @@ class FileServiceStub implements FileService {
       _unsupported();
 
   @override
-  Future<void> write(
-    String path,
-    List<int> bytes, {
-    bool append = false,
-  }) => _unsupported();
+  Future<void> write(String path, List<int> bytes, {bool append = false}) =>
+      _unsupported();
 
   @override
   Future<void> delete(String path, {bool recursive = false}) => _unsupported();

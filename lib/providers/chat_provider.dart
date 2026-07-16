@@ -383,6 +383,7 @@ class ChatProvider extends ChangeNotifier {
           '手机端 — 读/写沙盒(app://documents/...、app://temp/...、app://support/...);'
           '或 action=pick 打开系统文件选择器,选完返回 picker://<id> 可继续 read/write/read_attr/release。'
           '**手机不需要任何 Android 权限** — SAF 由系统替用户授权,沙盒是 app 自己的目录。'
+          '如果用户通过工具栏选了工作目录,手机端也可以用相对路径(如 "foo/bar.txt")或 working://<相对路径> 操作工作目录,和桌面端等价。'
           '用户取消选择器不算错误,会返回 {ok:false,cancelled:true},改用沙盒即可。\n'
           '- timer(计时):用户说"X 分钟后提醒我 Y"就用这个。'
           'create 时给 delay_seconds(或 fire_at_iso)、label 必填,'

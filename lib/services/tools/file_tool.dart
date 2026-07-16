@@ -45,7 +45,7 @@ class FileTool extends ToolBase {
   @override
   String get description {
     if (isMobileForRuntime()) {
-      return '管理设备文件。手机: 读/写/删/列沙盒目录,或者打开系统文件选择器读/写手机上的任意文件(无需 Android 权限)。电脑走原桌面端逻辑。';
+      return '管理设备文件。手机: 读/写/删/列沙盒目录,或打开系统文件选择器读/写手机上的任意文件(无需 Android 权限);如果设置了工作目录,相对路径会基于工作目录解析(类似桌面端)。电脑走原桌面端逻辑。';
     }
     return _desktopDescription;
   }
@@ -126,12 +126,12 @@ class FileTool extends ToolBase {
               'list_dir',
             ],
             'description':
-                '操作: pick(打开系统文件选择器,会弹出系统 UI)/release(释放 picker id)/read(读)/read_attr(查属性)/write(覆盖写)/append(追加)/delete(删,仅限沙盒)/rename(改名,仅限沙盒)/list_dir(列目录,仅限沙盒)',
+                '操作: pick(打开系统文件选择器,会弹出系统 UI)/release(释放 picker id)/read(读)/read_attr(查属性)/write(覆盖写)/append(追加)/delete(删,仅限沙盒+工作目录)/rename(改名,仅限沙盒+工作目录)/list_dir(列目录,沙盒+工作目录)',
           },
           'path': {
             'type': 'string',
             'description':
-                '文件路径。沙盒: app://documents/...、app://temp/...、app://support/...;选过的文件: picker://<id>。不要传裸路径。',
+                '文件路径。沙盒: app://documents/...、app://temp/...、app://support/...;选过的文件: picker://<id>;如果设置了工作目录,可以用 working://<相对路径>(如 working://foo/bar.txt)或裸相对路径(如 foo/bar.txt),都基于工作目录解析,类似桌面端的相对路径。',
           },
           'content': {
             'type': 'string',
@@ -139,12 +139,12 @@ class FileTool extends ToolBase {
           },
           'new_path': {
             'type': 'string',
-            'description': 'rename 时必填(目标路径,必须是 app://)',
+            'description':
+                'rename 时必填(目标路径,可以是 app:// 或 working:// 或同工作目录下的裸相对路径)',
           },
           'recursive': {
             'type': 'boolean',
-            'description':
-                'delete 是否递归(默认 false);list_dir 是否递归(默认 false)',
+            'description': 'delete 是否递归(默认 false);list_dir 是否递归(默认 false)',
             'default': false,
           },
           'mime_type': {
@@ -210,7 +210,8 @@ class FileTool extends ToolBase {
         if (path.isEmpty) {
           throw ToolException('"path" is required for read');
         }
-        final maxBytes = (args['max_bytes'] as num?)?.toInt() ?? 2 * 1024 * 1024;
+        final maxBytes =
+            (args['max_bytes'] as num?)?.toInt() ?? 2 * 1024 * 1024;
         final bytes = await file.read(path, maxBytes: maxBytes);
         final envelope = _buildReadEnvelope(
           path: path,
@@ -283,14 +284,10 @@ class FileTool extends ToolBase {
         final from = (args['path'] as String? ?? '').trim();
         final to = (args['new_path'] as String? ?? '').trim();
         if (from.isEmpty || to.isEmpty) {
-          throw ToolException(
-            '"path" and "new_path" are required for rename',
-          );
+          throw ToolException('"path" and "new_path" are required for rename');
         }
         if (isPickerPath(from) || isPickerPath(to)) {
-          throw ToolException(
-            'rename is not allowed on picker://<id> paths',
-          );
+          throw ToolException('rename is not allowed on picker://<id> paths');
         }
         await file.rename(from, to);
         return jsonEncode({
@@ -335,11 +332,7 @@ class FileTool extends ToolBase {
     final picked = await file.pick(mimeType: mimeType);
     if (picked == null) {
       // User cancelled — soft signal, not a failure.
-      return jsonEncode({
-        'action': 'pick',
-        'ok': false,
-        'cancelled': true,
-      });
+      return jsonEncode({'action': 'pick', 'ok': false, 'cancelled': true});
     }
     return jsonEncode({
       'action': 'pick',
@@ -585,8 +578,8 @@ class FileTool extends ToolBase {
           'type': entity is File
               ? 'file'
               : entity is Directory
-                  ? 'dir'
-                  : 'link',
+              ? 'dir'
+              : 'link',
           'size': stat.size,
           'modified_ms': stat.modified.millisecondsSinceEpoch,
         });

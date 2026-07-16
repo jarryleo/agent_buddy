@@ -270,7 +270,7 @@
   "toolDescMemory": "Save and recall the AI's long-term memory across chats.",
   "toolDescLocation": "Get a coarse current location — GPS on mobile, IP elsewhere.",
   "toolDescDownload": "Stream a file from a URL into a local temp file.",
-  "toolDescFile": "Manage device files — any path on desktop, sandbox + system file picker on mobile (no Android runtime permission needed).",
+  "toolDescFile": "Manage device files — any path on desktop; on mobile: app sandbox + system file picker + relative paths inside the user-selected working directory (no Android runtime permission needed).",
   "toolDescLoadSkill": "Pull a skill's full instructions on demand.",
   "toolDescNotification": "Send a local notification via the system notification center.",
   "toolDescTimer": "Schedule a delayed callback to the model (only while the app is running).",

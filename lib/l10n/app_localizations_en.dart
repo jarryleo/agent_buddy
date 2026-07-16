@@ -609,7 +609,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolDescFile =>
-      'Manage device files — any path on desktop, sandbox + system file picker on mobile (no Android runtime permission needed).';
+      'Manage device files — any path on desktop; on mobile: app sandbox + system file picker + relative paths inside the user-selected working directory (no Android runtime permission needed).';
 
   @override
   String get toolDescLoadSkill =>

@@ -9,12 +9,18 @@ import 'file_service_stub.dart';
 /// + `dart:io` for sandbox ops) and a [FileServiceStub] on
 /// desktop / web (where the bridge isn't registered).
 ///
+/// [workingDirectoryLookup] is plumbed into [FileServiceImpl] so
+/// the service can resolve `working://<rel>` and bare-relative
+/// paths against the user-selected folder without a manual sync.
+/// `ToolService` passes a closure that reads
+/// `StorageService.modelWorkingDirectory` on every call.
+///
 /// Tests can pass their own builder to [ToolService] to inject an
 /// in-memory fake; this factory is only consulted when no
 /// override is supplied.
-FileService createFileService() {
+FileService createFileService({String? Function()? workingDirectoryLookup}) {
   if (Platform.isAndroid || Platform.isIOS) {
-    return FileServiceImpl();
+    return FileServiceImpl(workingDirectoryLookup: workingDirectoryLookup);
   }
   return const FileServiceStub();
 }

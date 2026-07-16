@@ -26,9 +26,7 @@ void main() {
       await expectNotSupported(() => svc.pick());
       await expectNotSupported(() => svc.release('x'));
       await expectNotSupported(() => svc.read('app://documents/x'));
-      await expectNotSupported(
-        () => svc.write('app://documents/x', [1, 2, 3]),
-      );
+      await expectNotSupported(() => svc.write('app://documents/x', [1, 2, 3]));
       await expectNotSupported(() => svc.delete('app://documents/x'));
       await expectNotSupported(() => svc.rename('a', 'b'));
       await expectNotSupported(() => svc.listDir('app://documents'));
@@ -90,17 +88,14 @@ void main() {
       // paths can override the handler to return a fake
       // PickedFile payload or simulate cancellation.
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel('agent_buddy/file'),
-        (call) async {
-          if (call.method == 'pick') {
-            return {
-              'cancelled': true,
-            };
-          }
-          return null;
-        },
-      );
+          .setMockMethodCallHandler(const MethodChannel('agent_buddy/file'), (
+            call,
+          ) async {
+            if (call.method == 'pick') {
+              return {'cancelled': true};
+            }
+            return null;
+          });
 
       svc = FileServiceImpl(
         overrideDocs: Future.value(docs),
@@ -111,7 +106,10 @@ void main() {
 
     tearDown(() async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(const MethodChannel('agent_buddy/file'), null);
+          .setMockMethodCallHandler(
+            const MethodChannel('agent_buddy/file'),
+            null,
+          );
       if (await sandboxRoot.exists()) {
         await sandboxRoot.delete(recursive: true);
       }
@@ -125,16 +123,15 @@ void main() {
     test('pick with readOnly forwards the flag to the bridge', () async {
       Map<String, dynamic>? captured;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel('agent_buddy/file'),
-        (call) async {
-          if (call.method == 'pick') {
-            captured = (call.arguments as Map).cast<String, dynamic>();
-            return {'cancelled': true};
-          }
-          return null;
-        },
-      );
+          .setMockMethodCallHandler(const MethodChannel('agent_buddy/file'), (
+            call,
+          ) async {
+            if (call.method == 'pick') {
+              captured = (call.arguments as Map).cast<String, dynamic>();
+              return {'cancelled': true};
+            }
+            return null;
+          });
       await svc.pick(mimeType: 'text/plain', readOnly: true);
       expect(captured, isNotNull);
       expect(captured!['mime_type'], 'text/plain');
@@ -164,7 +161,8 @@ void main() {
       final got = await svc.read('app://temp/log.txt');
       expect(String.fromCharCodes(got), 'ab');
       expect(
-        () => svc.write('app://temp/missing.txt', utf8.encode('x'), append: true),
+        () =>
+            svc.write('app://temp/missing.txt', utf8.encode('x'), append: true),
         throwsA(isA<FileServiceError>()),
       );
     });
@@ -198,22 +196,32 @@ void main() {
       );
     });
 
-    test('delete refuses to recurse into a non-empty dir without recursive=true',
-        () async {
-      await svc.write('app://documents/x/y.txt', utf8.encode('y'));
-      final xDir = Directory('${sandboxRoot.path}/docs${Platform.pathSeparator}x');
-      // Sanity check that the dir actually exists on disk at this point.
-      expect(xDir.existsSync(), isTrue,
+    test(
+      'delete refuses to recurse into a non-empty dir without recursive=true',
+      () async {
+        await svc.write('app://documents/x/y.txt', utf8.encode('y'));
+        final xDir = Directory(
+          '${sandboxRoot.path}/docs${Platform.pathSeparator}x',
+        );
+        // Sanity check that the dir actually exists on disk at this point.
+        expect(
+          xDir.existsSync(),
+          isTrue,
           reason:
-              'x dir should exist after write; otherwise FileServiceImpl.write did not create it');
-      expect(xDir.listSync(), isNotEmpty,
-          reason: 'x dir should have at least y.txt');
-      expect(
-        () => svc.delete('app://documents/x'),
-        throwsA(isA<FileServiceError>()),
-      );
-      await svc.delete('app://documents/x', recursive: true);
-    });
+              'x dir should exist after write; otherwise FileServiceImpl.write did not create it',
+        );
+        expect(
+          xDir.listSync(),
+          isNotEmpty,
+          reason: 'x dir should have at least y.txt',
+        );
+        expect(
+          () => svc.delete('app://documents/x'),
+          throwsA(isA<FileServiceError>()),
+        );
+        await svc.delete('app://documents/x', recursive: true);
+      },
+    );
 
     test('rename refuses to clobber and refuses picker paths', () async {
       await svc.write('app://documents/a.txt', utf8.encode('a'));
@@ -249,18 +257,17 @@ void main() {
 
     test('read on a picker://<id> delegates to the bridge', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel('agent_buddy/file'),
-        (call) async {
-          if (call.method == 'readPicker') {
-            final args = (call.arguments as Map).cast<String, dynamic>();
-            expect(args['id'], 'f-1');
-            expect(args['max_bytes'], 4096);
-            return Uint8List.fromList([104, 105]); // "hi"
-          }
-          return null;
-        },
-      );
+          .setMockMethodCallHandler(const MethodChannel('agent_buddy/file'), (
+            call,
+          ) async {
+            if (call.method == 'readPicker') {
+              final args = (call.arguments as Map).cast<String, dynamic>();
+              expect(args['id'], 'f-1');
+              expect(args['max_bytes'], 4096);
+              return Uint8List.fromList([104, 105]); // "hi"
+            }
+            return null;
+          });
       final got = await svc.read('picker://f-1', maxBytes: 4096);
       expect(String.fromCharCodes(got), 'hi');
     });
@@ -269,15 +276,14 @@ void main() {
       'readPicker surfaces PICKER_DENIED as a friendly FileServiceError',
       () async {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(
-          const MethodChannel('agent_buddy/file'),
-          (call) async {
-            throw PlatformException(
-              code: 'PICKER_DENIED',
-              message: 'access revoked',
-            );
-          },
-        );
+            .setMockMethodCallHandler(const MethodChannel('agent_buddy/file'), (
+              call,
+            ) async {
+              throw PlatformException(
+                code: 'PICKER_DENIED',
+                message: 'access revoked',
+              );
+            });
         try {
           await svc.read('picker://f-1');
           fail('expected FileServiceError');
@@ -286,6 +292,227 @@ void main() {
         }
       },
     );
+  });
+
+  group('Working directory resolution (mobile)', () {
+    late Directory workingRoot;
+    late FileServiceImpl workingSvc;
+
+    setUp(() async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      workingRoot = await Directory.systemTemp.createTemp('file_service_wd_');
+      // Seed with a file + subdir to exercise listDir / read.
+      File('${workingRoot.path}/hello.txt').writeAsStringSync('hi');
+      Directory('${workingRoot.path}/sub').createSync();
+      File('${workingRoot.path}/sub/inner.txt').writeAsStringSync('inner');
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('agent_buddy/file'),
+            (call) async => null,
+          );
+
+      final sandbox = await Directory.systemTemp.createTemp(
+        'file_service_wd_sb_',
+      );
+      workingSvc = FileServiceImpl(
+        overrideDocs: Future.value(Directory('${sandbox.path}/docs')),
+        overrideTemp: Future.value(Directory('${sandbox.path}/temp')),
+        overrideSupport: Future.value(Directory('${sandbox.path}/support')),
+        workingDirectoryLookup: () => workingRoot.path,
+      );
+      addTearDown(() async {
+        if (await workingRoot.exists()) {
+          await workingRoot.delete(recursive: true);
+        }
+        if (await sandbox.exists()) {
+          await sandbox.delete(recursive: true);
+        }
+      });
+    });
+
+    test('workingDirectory returns the configured value', () {
+      expect(workingSvc.workingDirectory, workingRoot.path);
+    });
+
+    test(
+      'read on a bare relative path resolves into the working dir',
+      () async {
+        final got = await workingSvc.read('hello.txt');
+        expect(String.fromCharCodes(got), 'hi');
+      },
+    );
+
+    test(
+      'read on a working://<rel> path resolves into the working dir',
+      () async {
+        final got = await workingSvc.read('working://sub/inner.txt');
+        expect(String.fromCharCodes(got), 'inner');
+      },
+    );
+
+    test('write + read round-trip a bare relative path', () async {
+      await workingSvc.write('note.txt', utf8.encode('written'));
+      final got = await workingSvc.read('note.txt');
+      expect(String.fromCharCodes(got), 'written');
+    });
+
+    test('listDir on bare empty path lists the working dir', () async {
+      final entries = await workingSvc.listDir('');
+      final names = entries.map((e) => e.name).toSet();
+      expect(names, containsAll(['hello.txt', 'sub']));
+    });
+
+    test(
+      'listDir on working:// returns working:// paths for children',
+      () async {
+        final entries = await workingSvc.listDir('working://');
+        final hello = entries.firstWhere((e) => e.name == 'hello.txt');
+        expect(hello.path, 'working://hello.txt');
+        expect(hello.isDirectory, isFalse);
+      },
+    );
+
+    test(
+      'listDir on working://sub/ returns working://sub/<name> children',
+      () async {
+        final entries = await workingSvc.listDir('working://sub');
+        expect(entries, hasLength(1));
+        expect(entries.first.path, 'working://sub/inner.txt');
+      },
+    );
+
+    test(
+      'delete refuses to clobber and respects the working dir boundary',
+      () async {
+        await workingSvc.write('a.txt', utf8.encode('a'));
+        await workingSvc.write('b.txt', utf8.encode('b'));
+        expect(
+          () => workingSvc.rename('a.txt', 'b.txt'),
+          throwsA(isA<FileServiceError>()),
+        );
+        await workingSvc.rename('a.txt', 'c.txt');
+        final got = await workingSvc.read('c.txt');
+        expect(String.fromCharCodes(got), 'a');
+      },
+    );
+
+    test('sandbox-escape via .. is rejected on the working dir', () async {
+      expect(
+        () => workingSvc.read('../etc/passwd'),
+        throwsA(isA<FileServiceError>()),
+      );
+      expect(
+        () => workingSvc.read('working://../etc/passwd'),
+        throwsA(isA<FileServiceError>()),
+      );
+    });
+
+    test('absolute paths are rejected on mobile (no raw OS paths)', () async {
+      expect(
+        () => workingSvc.read('/etc/passwd'),
+        throwsA(isA<FileServiceError>()),
+      );
+      expect(
+        () => workingSvc.read('working:///etc/passwd'),
+        throwsA(isA<FileServiceError>()),
+      );
+    });
+
+    test('invalid scheme surfaces a clear FileServiceError', () async {
+      expect(
+        () => workingSvc.read('http://example.com/foo'),
+        throwsA(isA<FileServiceError>()),
+      );
+      expect(
+        () => workingSvc.read('content://com.example/123'),
+        throwsA(isA<FileServiceError>()),
+      );
+    });
+  });
+
+  group('Working directory error paths (mobile)', () {
+    test(
+      'relative path without a working directory throws a clear error',
+      () async {
+        TestWidgetsFlutterBinding.ensureInitialized();
+        final sandbox = await Directory.systemTemp.createTemp(
+          'file_service_nowd_',
+        );
+        addTearDown(() async {
+          if (await sandbox.exists()) await sandbox.delete(recursive: true);
+        });
+        final svc = FileServiceImpl(
+          overrideDocs: Future.value(Directory('${sandbox.path}/docs')),
+          overrideTemp: Future.value(Directory('${sandbox.path}/temp')),
+          overrideSupport: Future.value(Directory('${sandbox.path}/support')),
+          // No workingDirectoryLookup → no working dir.
+        );
+        expect(
+          () => svc.read('hello.txt'),
+          throwsA(
+            isA<FileServiceError>().having(
+              (e) => e.message,
+              'message',
+              contains('no working directory'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'working://<rel> without a working directory throws a clear error',
+      () async {
+        TestWidgetsFlutterBinding.ensureInitialized();
+        final sandbox = await Directory.systemTemp.createTemp(
+          'file_service_nowd2_',
+        );
+        addTearDown(() async {
+          if (await sandbox.exists()) await sandbox.delete(recursive: true);
+        });
+        final svc = FileServiceImpl(
+          overrideDocs: Future.value(Directory('${sandbox.path}/docs')),
+          overrideTemp: Future.value(Directory('${sandbox.path}/temp')),
+          overrideSupport: Future.value(Directory('${sandbox.path}/support')),
+        );
+        expect(
+          () => svc.read('working://foo/bar.txt'),
+          throwsA(isA<FileServiceError>()),
+        );
+      },
+    );
+  });
+
+  group('Path helpers — working scheme', () {
+    test('isWorkingPath recognises only the working:// scheme', () {
+      expect(isWorkingPath('working://foo'), isTrue);
+      expect(isWorkingPath('working://'), isTrue);
+      expect(isWorkingPath('app://documents/x'), isFalse);
+      expect(isWorkingPath('picker://x'), isFalse);
+      expect(isWorkingPath('foo/bar.txt'), isFalse);
+      expect(isWorkingPath(''), isFalse);
+    });
+
+    test('parseWorkingPath splits a relative working path', () {
+      final r = parseWorkingPath('working://foo/bar.txt');
+      expect(r, isNotNull);
+      expect(r!.segments, ['foo', 'bar.txt']);
+      expect(r.absoluteOverride, isNull);
+    });
+
+    test('parseWorkingPath captures an absolute override (working:///)', () {
+      final r = parseWorkingPath('working:///sdcard/Download/foo');
+      expect(r, isNotNull);
+      expect(r!.absoluteOverride, '/sdcard/Download/foo');
+      expect(r.segments, isEmpty);
+    });
+
+    test('parseWorkingPath returns null for non-working inputs', () {
+      expect(parseWorkingPath('app://documents/x'), isNull);
+      expect(parseWorkingPath('picker://x'), isNull);
+      expect(parseWorkingPath('foo/bar.txt'), isNull);
+    });
   });
 
   group('ToolService.file wiring', () {
@@ -310,6 +537,9 @@ class _InMemoryFileService implements FileService {
   final Map<String, List<int>> docs = {};
 
   @override
+  String? get workingDirectory => null;
+
+  @override
   Future<PickedFile?> pick({String? mimeType, bool readOnly = false}) async {
     return PickedFile(
       id: 'fake',
@@ -329,7 +559,11 @@ class _InMemoryFileService implements FileService {
   }
 
   @override
-  Future<void> write(String path, List<int> bytes, {bool append = false}) async {
+  Future<void> write(
+    String path,
+    List<int> bytes, {
+    bool append = false,
+  }) async {
     docs[path] = append ? [...?docs[path], ...bytes] : bytes;
   }
 

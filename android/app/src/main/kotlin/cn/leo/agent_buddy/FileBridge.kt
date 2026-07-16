@@ -304,7 +304,19 @@ class FileBridge(
         val picked = pickedById.remove(id)
         if (picked != null) {
             try {
-                context.contentResolver.releasePersistableUriPermission(picked.uri)
+                // Drop both read + write persistable grants for
+                // the URI. The single-arg overload is API 26+;
+                // pass the mode flags explicitly so the call
+                // compiles against the older two-arg form too.
+                val resolver = context.contentResolver
+                resolver.releasePersistableUriPermission(
+                    picked.uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+                resolver.releasePersistableUriPermission(
+                    picked.uri,
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
             } catch (e: SecurityException) {
                 // Best-effort; we still drop the in-memory handle.
                 Log.w(TAG, "releasePersistableUriPermission: ${e.message}")
