@@ -74,6 +74,31 @@ abstract class FileService {
   /// `working://` paths.
   Future<FileAttrs> readAttr(String path);
 
+  /// Apply a batch of exact-text edits to the file at [path].
+  /// One atomic operation: either every edit is applied and the
+  /// result is written, or nothing is written and the failure
+  /// details are returned.
+  ///
+  /// Use this instead of [read] + [write] when the model wants
+  /// to change code / text. Token cost stays proportional to
+  /// the **changed** content, not the file size.
+  ///
+  /// Each [EditOp] is matched by literal text (not regex); the
+  /// edit is a single global find / replace.
+  /// * [EditOp.oldText] must be unique in the file unless
+  ///   [EditOp.globalReplace] is `true`.
+  /// * [EditOp.newText] may be empty (= delete the matched
+  ///   block).
+  /// * All edits are validated up front; the file is only
+  ///   written if every edit would succeed. Otherwise
+  ///   [EditResult.ok] is `false` and [EditResult.failedIndex]
+  ///   points at the first bad edit.
+  /// * Edits are applied in the order the model passed them.
+  ///   When two edits touch overlapping text, the *first* edit
+  ///   runs against the original text; the *second* edit is
+  ///   re-matched against the post-first-edit text.
+  Future<EditResult> edit(String path, List<EditOp> edits);
+
   /// The user-selected working directory (an absolute path on
   /// the device filesystem). `null` when the user hasn't picked
   /// one - in which case the file tool rejects `working://`
@@ -128,6 +153,244 @@ String? pickerIdOf(String input) {
 /// flagged here - only the explicit `working://` prefix.
 bool isWorkingPath(String input) {
   return input.startsWith('working://');
+}
+
+/// A single exact-text edit, supplied to [FileService.edit].
+///
+/// Anchor matching is **literal**, not regex: [oldText] is found
+/// in the file with `String.indexOf` and replaced. There is no
+/// escaping of `$` / `\`, no `\n` interpretation, and no glob
+/// expansion. The model is expected to copy the anchor text
+/// verbatim from a prior `file read` response (which is why
+/// `file read` returns content with a 1-indexed line-number
+/// prefix and explicit `\n` separators).
+class EditOp {
+  const EditOp({
+    required this.oldText,
+    this.newText = '',
+    this.globalReplace = false,
+  });
+
+  /// The text to find. Must be unique in the file unless
+  /// [globalReplace] is `true`. An empty string is rejected
+  /// (would match every position).
+  final String oldText;
+
+  /// The replacement text. Empty string deletes the matched
+  /// block.
+  final String newText;
+
+  /// When `true`, every occurrence of [oldText] is replaced
+  /// (useful for renaming a symbol across the whole file).
+  /// Defaults to `false`, which requires the anchor to be
+  /// unique - the safe default that prevents accidental
+  /// mass-changes.
+  final bool globalReplace;
+
+  /// Decode one [EditOp] from the JSON shape the `file` tool's
+  /// `edit` action accepts. Throws [FormatException] for
+  /// malformed input so the model gets a clear error.
+  factory EditOp.fromJson(Map<String, dynamic> json) {
+    final oldText = json['old_text'];
+    if (oldText is! String) {
+      throw const FormatException(
+        'edit: old_text is required and must be a string',
+      );
+    }
+    if (oldText.isEmpty) {
+      throw const FormatException('edit: old_text must be a non-empty string');
+    }
+    final newText = json['new_text'];
+    if (newText != null && newText is! String) {
+      throw const FormatException('edit: new_text must be a string');
+    }
+    final global = json['global_replace'];
+    if (global != null && global is! bool) {
+      throw const FormatException('edit: global_replace must be a boolean');
+    }
+    return EditOp(
+      oldText: oldText,
+      newText: (newText as String?) ?? '',
+      globalReplace: (global as bool?) ?? false,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'old_text': oldText,
+    'new_text': newText,
+    'global_replace': globalReplace,
+  };
+}
+
+/// Outcome of a [FileService.edit] call. When [ok] is `false`
+/// the file is **not** modified and [failedIndex] points at the
+/// first [EditOp] that could not be applied; the rest of the
+/// envelope explains why.
+class EditResult {
+  const EditResult._({
+    required this.ok,
+    required this.applied,
+    this.failedIndex,
+    this.errorCode,
+    this.errorMessage,
+    this.sizeBefore,
+    this.sizeAfter,
+    this.diff = const [],
+    this.nearMatches = const [],
+    this.candidates = const [],
+  });
+
+  /// Build a success envelope.
+  factory EditResult.success({
+    required int applied,
+    required int sizeBefore,
+    required int sizeAfter,
+    required List<EditDiffEntry> diff,
+  }) {
+    return EditResult._(
+      ok: true,
+      applied: applied,
+      sizeBefore: sizeBefore,
+      sizeAfter: sizeAfter,
+      diff: diff,
+    );
+  }
+
+  /// `old_text` was not found anywhere in the file. The
+  /// [nearMatches] list carries a few line-anchored excerpts of
+  /// the closest matches so the model can self-correct.
+  factory EditResult.notFound({
+    required int failedIndex,
+    required int sizeBefore,
+    required List<EditNearMatch> nearMatches,
+  }) {
+    return EditResult._(
+      ok: false,
+      applied: 0,
+      failedIndex: failedIndex,
+      errorCode: 'OLD_TEXT_NOT_FOUND',
+      errorMessage:
+          'old_text was not found in the file; '
+          'see near_matches for the closest locations',
+      sizeBefore: sizeBefore,
+      sizeAfter: sizeBefore,
+      nearMatches: nearMatches,
+    );
+  }
+
+  /// `old_text` matched more than once and `global_replace`
+  /// was `false`. The [candidates] list pinpoints every match
+  /// by line number so the model can extend the anchor.
+  factory EditResult.notUnique({
+    required int failedIndex,
+    required int sizeBefore,
+    required int foundCount,
+    required List<EditCandidate> candidates,
+  }) {
+    return EditResult._(
+      ok: false,
+      applied: 0,
+      failedIndex: failedIndex,
+      errorCode: 'OLD_TEXT_NOT_UNIQUE',
+      errorMessage:
+          'old_text matched $foundCount times; '
+          'add more surrounding context to make it unique, or '
+          'set global_replace=true',
+      sizeBefore: sizeBefore,
+      sizeAfter: sizeBefore,
+      candidates: candidates,
+    );
+  }
+
+  /// Some other failure (file missing, IO error, ...).
+  factory EditResult.error({required String code, required String message}) {
+    return EditResult._(
+      ok: false,
+      applied: 0,
+      errorCode: code,
+      errorMessage: message,
+    );
+  }
+
+  /// `true` when every edit was applied and the file was
+  /// written successfully.
+  final bool ok;
+
+  /// Number of edits that were actually applied. `applied ==
+  /// edits.length` on success, `0` on failure (no partial
+  /// writes — the whole batch is atomic).
+  final int applied;
+
+  /// 0-indexed position of the first edit that could not be
+  /// applied, when [ok] is `false`. `null` when [ok] is `true`.
+  final int? failedIndex;
+
+  /// A short machine-readable code: `OLD_TEXT_NOT_FOUND`,
+  /// `OLD_TEXT_NOT_UNIQUE`, `PATH_NOT_FOUND`, `BRIDGE_ERROR`,
+  /// ...
+  final String? errorCode;
+
+  /// A human-readable explanation. Localised on the Dart side
+  /// when surfaced to the model via the `file` tool envelope.
+  final String? errorMessage;
+
+  /// File size in bytes **before** the edit, when known.
+  final int? sizeBefore;
+
+  /// File size in bytes **after** the edit, when known.
+  final int? sizeAfter;
+
+  /// Per-edit preview of the change. Empty on failure.
+  final List<EditDiffEntry> diff;
+
+  /// Up to 3 line-anchored excerpts of the closest matches
+  /// when [errorCode] is `OLD_TEXT_NOT_FOUND`. Empty
+  /// otherwise.
+  final List<EditNearMatch> nearMatches;
+
+  /// Every match location when [errorCode] is
+  /// `OLD_TEXT_NOT_UNIQUE`. Capped at 10 to keep the response
+  /// small.
+  final List<EditCandidate> candidates;
+}
+
+/// One row of [EditResult.diff] — a per-edit preview of what
+/// changed. The [oldPreview] / [newPreview] fields are
+/// truncated to a fixed length so the response stays small
+/// even when the model edits a 1000-line block.
+class EditDiffEntry {
+  const EditDiffEntry({
+    required this.editIndex,
+    required this.matchedLine,
+    required this.oldPreview,
+    required this.newPreview,
+    required this.replacements,
+  });
+
+  final int editIndex;
+  final int matchedLine;
+  final String oldPreview;
+  final String newPreview;
+
+  /// How many replacements this edit actually applied (1 for
+  /// non-`global_replace`, N for `global_replace`).
+  final int replacements;
+}
+
+/// A line-anchored excerpt shown in
+/// [EditResult.nearMatches]. The model can re-`read` the
+/// suggested line range to get the exact bytes back.
+class EditNearMatch {
+  const EditNearMatch({required this.line, required this.preview});
+  final int line;
+  final String preview;
+}
+
+/// One match location shown in [EditResult.candidates].
+class EditCandidate {
+  const EditCandidate({required this.line, required this.preview});
+  final int line;
+  final String preview;
 }
 
 /// Parses a `working://...` URI into its relative path

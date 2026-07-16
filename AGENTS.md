@@ -154,7 +154,38 @@ On mobile the model is gated to two path schemes so it can never reach the raw f
 
 **Concurrency** — at most one picker visible at a time. Multiple `pick` calls while a picker is up are queued in the native bridge and resumed in order, mirroring `LocationBridge` / `CalendarBridge`.
 
+### File tool — `edit` + enhanced `read` (precise code changes)
+
+The `file` tool ships two coding-oriented primitives that the existing `read` / `write` pair cannot provide efficiently:
+
+- **`action=edit`** — atomic, exact-text replacement. Designed so the model can change a 30-line function inside a 1000-line file by sending **only the changed block + a few lines of anchor** (≈60 lines of tool input) instead of the full file twice. The tool:
+  - accepts a `path` + `edits: [{old_text, new_text, global_replace?}]` array
+  - validates every edit against the **original** text up front (no partial writes — if any edit fails, the file is untouched)
+  - requires `old_text` to be unique by default; `global_replace=true` opts into renaming
+  - treats `new_text=""` as "delete the matched block"
+  - returns a structured envelope: `applied` + per-edit `diff` (with `matched_line`, `old_preview`, `new_preview`, `replacements`) on success
+  - returns a soft error envelope on failure: `error_code` (`OLD_TEXT_NOT_FOUND` / `OLD_TEXT_NOT_UNIQUE` / `PATH_NOT_FOUND` / `BRIDGE_ERROR`) + `near_matches` or `candidates` with 1-indexed line numbers so the model can self-correct without re-reading the file
+
+  The desktop branch is implemented in `FileTool._editDesktop` (direct `dart:io`); the mobile branch delegates to `FileService.edit` which routes through `read + write` on both the picker and the working-dir backends (no native bridge changes needed). `EditOp` + `EditResult` live next to the abstract `FileService` in `lib/services/platform/file_service.dart`; `FileServiceStub` rejects with `FileServiceNotSupportedError` (web).
+
+- **`action=read` enhancements** (no breaking changes — the existing `path` / `max_bytes` still work):
+  - **`offset_lines`** (0-indexed, default 0) + **`max_lines`** (default 500, max 2000) — paginated read. Truncation triggers a `truncation_hint` that suggests the next `offset_lines` to use or `pattern="..."` to grep.
+  - **`pattern`** — grep mode. Returns each matching line plus 2 lines of context on each side, every line prefixed with its 1-indexed number + `|`. Capped at 200 emitted lines. `matches` + `total_lines` in the envelope let the model decide whether to widen.
+  - **Default mode** still returns the whole file, but now line-numbered (`1|line one\n2|line two\n...`) so the model can copy anchors verbatim into `edit`. The desktop / mobile read paths share the same `_buildReadEnvelopeText` / `_buildPatternEnvelope` / `_buildPageEnvelope` helpers so the wire format is identical across platforms.
+  - Binary files still get the legacy `{encoding: 'binary', content: '[binary file, N bytes]'}` shape so the model doesn't get garbage.
+
+The schema carries a multi-line description in `file_tool.dart` that calls out the new affordances. The system prompt in `ChatProvider._buildSystemPrompt` (file section) tells the model to **always prefer `edit` for code changes** and to use `read` with `pattern` for grep-like discovery.
+
 **Files added / changed** for this feature:
+- `lib/services/platform/file_service.dart` — added `edit`, `EditOp`, `EditResult` + `EditDiffEntry` / `EditNearMatch` / `EditCandidate`.
+- `lib/services/platform/file_service_impl.dart` — implemented `edit` on top of `read + write` (atomic batch, validations, diff preview, near-match / candidate discovery).
+- `lib/services/platform/file_service_stub.dart` — `edit` throws `FileServiceNotSupportedError`.
+- `lib/services/tools/file_tool.dart` — schema adds `edit` action + `offset_lines` / `max_lines` / `pattern` / `edits`; `_readDesktop` / `_executeMobile.read` route through the shared `_buildReadEnvelopeText` helper; new `_editDesktop` for the desktop branch.
+- `test/file_tool_edit_test.dart` — 17 new tests covering: unique-anchor edit, batch edit, empty-`new_text` delete, `global_replace`, `OLD_TEXT_NOT_FOUND` + `near_matches`, `OLD_TEXT_NOT_UNIQUE` + `candidates`, batch rollback on the first failing edit, soft `PATH_NOT_FOUND`, `EditOp.fromJson` validation, line-numbered default read, `offset_lines` + `max_lines` page mode, `pattern` grep mode, binary file passthrough, mobile-branch routing via injected `FileService`, soft-error envelope propagation.
+- `test/file_service_test.dart` / `test/file_tool_working_dir_test.dart` — fake `FileService` implementations now provide a minimal `edit` to satisfy the abstract.
+- `lib/providers/chat_provider.dart` — system prompt (file section) rewritten to mandate `edit` for code changes and advertise the new `read` parameters.
+
+**Files added / changed** for the original feature:
 - Dart: `lib/services/platform/file_service.dart` (abstract + path helpers), `file_service_impl.dart` (production: `dart:io` against the working directory + MethodChannel picker backend), `file_service_stub.dart` (web fallback), `file_service_factory.dart`; `lib/models/picked_file.dart`; `lib/services/tools/file_tool.dart` (split into `_executeMobile` / `_executeDesktop`); `lib/services/tool_service.dart` (`fileBuilder` constructor param + `runFile` delegate); `lib/services/tools/tool_base.dart` (`overridePlatform` / `resetPlatformOverrides` for the test host); `lib/models/message.dart` (`ToolCall.awaitingUserAction`); `lib/widgets/message_bubble.dart` (awaiting hint); `lib/l10n/app_*.arb` (new `toolCallAwaitingUser` key, updated `toolDescFile`).
 - Android: `android/app/src/main/kotlin/cn/leo/agent_buddy/FileBridge.kt` (SAF picker, `pendingPicks` FIFO, per-URI read/write with cap, `releasePersistableUriPermission` on release); `MainActivity.kt` (registers the bridge, forwards `onActivityResult` to it).
 - iOS: `ios/Runner/FileBridge.swift` (`UIDocumentPickerViewController` with security-scoped URL lifecycle, FIFO queue); `AppDelegate.swift` (registers the bridge).

@@ -476,4 +476,22 @@ class _InMemoryFileService implements FileService {
 
   @override
   Future<({String path, String treeUri})?> pickWorkingDirectory() async => null;
+
+  @override
+  Future<EditResult> edit(String path, List<EditOp> edits) async {
+    final current = String.fromCharCodes(docs[path] ?? const []);
+    var updated = current;
+    for (final op in edits) {
+      updated = op.globalReplace
+          ? updated.replaceAll(op.oldText, op.newText)
+          : updated.replaceFirst(op.oldText, op.newText);
+    }
+    docs[path] = updated.codeUnits;
+    return EditResult.success(
+      applied: edits.length,
+      sizeBefore: current.length,
+      sizeAfter: updated.length,
+      diff: const [],
+    );
+  }
 }

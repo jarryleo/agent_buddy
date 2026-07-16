@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -702,6 +703,211 @@ class FileServiceImpl implements FileService {
     if (!norm.startsWith(prefix)) return norm;
     final rel = norm.substring(prefix.length);
     return 'working://${p.posix.joinAll(p.split(rel))}';
+  }
+
+  // -------- Edit (atomic exact-text replacement) --------
+
+  /// Cap for a single `edit` read. Picking operations that
+  /// need to read the full file via [read] pass this through so
+  /// a multi-megabyte code file can still be edited in one
+  /// batch. The 32 MiB ceiling matches the `read` tool's own
+  /// `max_bytes` maximum.
+  static const int _editReadMaxBytes = 32 * 1024 * 1024;
+
+  /// Cap on the length of the per-edit preview strings in
+  /// [EditDiffEntry]. The model only needs enough context to
+  /// confirm "yes, that's the change" — full content lives in
+  /// the file it just wrote.
+  static const int _editPreviewMaxChars = 120;
+
+  /// Cap on the number of `near_matches` we surface in
+  /// [EditResult.nearMatches] when `old_text` isn't found.
+  static const int _editNearMatchLimit = 3;
+
+  /// Cap on the number of `candidates` we surface when
+  /// `old_text` is not unique.
+  static const int _editCandidateLimit = 10;
+
+  @override
+  Future<EditResult> edit(String path, List<EditOp> edits) async {
+    if (edits.isEmpty) {
+      throw FileServiceError('edit: at least one edit is required');
+    }
+    // Read the whole file. `edit` cannot be applied to a
+    // truncated view, so we use the [editReadMaxBytes] cap
+    // (much higher than the `read` tool's default).
+    final bytes = await read(path, maxBytes: _editReadMaxBytes);
+    final original = utf8.decode(bytes, allowMalformed: false);
+    final sizeBefore = bytes.length;
+
+    // 1) Validate every edit up front. We do **not** apply as
+    //    we go because a later edit could see text the earlier
+    //    edit just changed; validating against the original
+    //    text keeps the model contract predictable.
+    for (var i = 0; i < edits.length; i++) {
+      final op = edits[i];
+      final occurrences = _countOccurrences(original, op.oldText);
+      if (occurrences == 0) {
+        return EditResult.notFound(
+          failedIndex: i,
+          sizeBefore: sizeBefore,
+          nearMatches: _findNearMatches(
+            source: original,
+            needle: op.oldText,
+            limit: _editNearMatchLimit,
+          ),
+        );
+      }
+      if (occurrences > 1 && !op.globalReplace) {
+        return EditResult.notUnique(
+          failedIndex: i,
+          sizeBefore: sizeBefore,
+          foundCount: occurrences,
+          candidates: _findCandidates(
+            source: original,
+            needle: op.oldText,
+            limit: _editCandidateLimit,
+          ),
+        );
+      }
+    }
+
+    // 2) All edits validated — apply them in order against the
+    //    original text. The [String.replaceAll] call handles
+    //    both single and `global_replace` cases.
+    var updated = original;
+    for (var i = 0; i < edits.length; i++) {
+      final op = edits[i];
+      if (op.globalReplace) {
+        updated = updated.replaceAll(op.oldText, op.newText);
+      } else {
+        // `oldText` is known to be unique at this point (the
+        // validation pass above would have raised otherwise).
+        final idx = updated.indexOf(op.oldText);
+        updated = updated.replaceRange(
+          idx,
+          idx + op.oldText.length,
+          op.newText,
+        );
+      }
+    }
+
+    // 3) Compute a per-edit diff preview against the **post**
+    //    text. We anchor each entry to the line where the
+    //    original `old_text` first appeared, so the model can
+    //    cross-reference with the line numbers it got from
+    //    `file read`.
+    final diff = <EditDiffEntry>[];
+    for (var i = 0; i < edits.length; i++) {
+      final op = edits[i];
+      final matchedLine = _lineNumberForOffset(original, op.oldText);
+      final replacements = op.globalReplace
+          ? _countOccurrences(original, op.oldText)
+          : 1;
+      diff.add(
+        EditDiffEntry(
+          editIndex: i,
+          matchedLine: matchedLine,
+          oldPreview: _previewText(op.oldText),
+          newPreview: _previewText(op.newText),
+          replacements: replacements,
+        ),
+      );
+    }
+
+    // 4) Write the new content back through the same channel
+    //    we used to read. Picker files get the picker write;
+    //    working-dir files get the working-dir write.
+    final updatedBytes = utf8.encode(updated);
+    await write(path, updatedBytes);
+
+    return EditResult.success(
+      applied: edits.length,
+      sizeBefore: sizeBefore,
+      sizeAfter: updatedBytes.length,
+      diff: diff,
+    );
+  }
+
+  /// Count non-overlapping occurrences of [needle] in [source].
+  /// Returns 0 for an empty needle (defensive — [EditOp] should
+  /// already have rejected empty `old_text`).
+  static int _countOccurrences(String source, String needle) {
+    if (needle.isEmpty) return 0;
+    var count = 0;
+    var idx = 0;
+    while (true) {
+      final next = source.indexOf(needle, idx);
+      if (next < 0) return count;
+      count += 1;
+      idx = next + needle.length;
+    }
+  }
+
+  /// 1-indexed line number where [needle] first appears in
+  /// [source]. Returns 1 when [needle] is at the very start
+  /// of the file or when the source is empty.
+  static int _lineNumberForOffset(String source, String needle) {
+    final idx = source.indexOf(needle);
+    if (idx <= 0) return 1;
+    var line = 1;
+    for (var i = 0; i < idx; i++) {
+      if (source.codeUnitAt(i) == 0x0A) line += 1;
+    }
+    return line;
+  }
+
+  /// Build a short, line-numbered preview of the slice
+  /// surrounding each non-overlapping occurrence of [needle] in
+  /// [source]. Used when `old_text` wasn't found and we want to
+  /// suggest the closest places the model might have meant.
+  static List<EditNearMatch> _findNearMatches({
+    required String source,
+    required String needle,
+    required int limit,
+  }) {
+    if (needle.isEmpty || source.isEmpty) return const [];
+    final out = <EditNearMatch>[];
+    final firstLine = needle.split('\n').first;
+    if (firstLine.trim().isEmpty) return const [];
+    final lines = source.split('\n');
+    for (var i = 0; i < lines.length && out.length < limit; i++) {
+      if (lines[i].contains(firstLine)) {
+        final preview = _previewText(lines[i]);
+        out.add(EditNearMatch(line: i + 1, preview: preview));
+      }
+    }
+    return out;
+  }
+
+  /// Pin every match of [needle] to its 1-indexed line number.
+  /// Capped at [limit] entries to keep the response compact
+  /// even when the same identifier appears 100 times.
+  static List<EditCandidate> _findCandidates({
+    required String source,
+    required String needle,
+    required int limit,
+  }) {
+    if (needle.isEmpty) return const [];
+    final out = <EditCandidate>[];
+    final lines = source.split('\n');
+    for (var i = 0; i < lines.length && out.length < limit; i++) {
+      if (lines[i].contains(needle)) {
+        out.add(EditCandidate(line: i + 1, preview: _previewText(lines[i])));
+      }
+    }
+    return out;
+  }
+
+  /// Truncate [text] to a single-line, length-capped preview.
+  /// Multi-line content is folded onto one line with `\n`
+  /// markers so the model can spot structure at a glance.
+  static String _previewText(String text) {
+    var flat = text.replaceAll('\r\n', '\n').replaceAll('\n', '\\n');
+    if (flat.length > _editPreviewMaxChars) {
+      flat = '${flat.substring(0, _editPreviewMaxChars)}...';
+    }
+    return flat;
   }
 }
 

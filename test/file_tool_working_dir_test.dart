@@ -134,7 +134,17 @@ void main() {
       final envelope = jsonDecode(raw) as Map<String, dynamic>;
       expect(envelope['action'], 'read');
       expect(envelope['path'], 'working://hello.txt');
-      expect(envelope['content'], 'hello world');
+      // The enhanced read envelope prefixes each line with
+      // its 1-indexed line number + `|`. Strip it for the
+      // assert so the test stays focused on the FileService
+      // round-trip, not the envelope shape.
+      expect(
+        (envelope['content'] as String)
+            .split('\n')
+            .map((l) => l.contains('|') ? l.substring(l.indexOf('|') + 1) : l)
+            .join('\n'),
+        'hello world',
+      );
       expect(fake.lastReadPath, 'working://hello.txt');
     });
 
@@ -246,7 +256,15 @@ void main() {
       }, toolService);
       final envelope = jsonDecode(raw) as Map<String, dynamic>;
       expect(envelope['encoding'], 'utf-8');
-      expect(envelope['content'], 'hello world');
+      // Enhanced envelope prefixes the single line with its
+      // 1-indexed number + `|`. Strip it for the assert.
+      expect(
+        (envelope['content'] as String)
+            .split('\n')
+            .map((l) => l.contains('|') ? l.substring(l.indexOf('|') + 1) : l)
+            .join('\n'),
+        'hello world',
+      );
     });
 
     test('write a relative path lands inside the working directory', () async {
@@ -475,6 +493,29 @@ class _FakeFileService implements FileService {
 
   @override
   Future<({String path, String treeUri})?> pickWorkingDirectory() async => null;
+
+  @override
+  Future<EditResult> edit(String path, List<EditOp> edits) async {
+    // Minimal in-memory edit: read the last write if any,
+    // apply, then surface a generic success. The dedicated
+    // edit tests live in `file_tool_edit_test.dart` and use a
+    // real on-disk file.
+    final before = lastWriteBytes ?? readResult ?? const [];
+    var text = String.fromCharCodes(before);
+    for (final op in edits) {
+      text = op.globalReplace
+          ? text.replaceAll(op.oldText, op.newText)
+          : text.replaceFirst(op.oldText, op.newText);
+    }
+    final after = text.codeUnits;
+    lastWriteBytes = after;
+    return EditResult.success(
+      applied: edits.length,
+      sizeBefore: before.length,
+      sizeAfter: after.length,
+      diff: const [],
+    );
+  }
 }
 
 // Suppress an unused-import lint when the analyzer walks the
