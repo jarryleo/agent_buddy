@@ -10,6 +10,7 @@ import '../models/builtin_model.dart';
 import '../models/local_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/builtin_model_download_service.dart';
+import '../services/chat_template_presets.dart';
 import '../services/gguf_metadata.dart';
 import '../services/memory_estimator.dart' show formatBytes;
 import '../theme/app_theme.dart';
@@ -59,6 +60,7 @@ class BuiltinModelDownloadPage extends StatefulWidget {
 class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _name;
+  late TextEditingController _chatTemplate;
   late int _contextSize;
   late double _temperature;
   late int _gpuLayers;
@@ -81,6 +83,10 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
   bool _archLoading = false;
   bool _saving = false;
 
+  /// While a chip-tap is in flight, the matching chip is rendered
+  /// in a busy state. `null` when idle.
+  String? _chatTemplateBusyKey;
+
   bool get _isEdit => widget.existing != null;
 
   @override
@@ -90,6 +96,7 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
     _name = TextEditingController(
       text: existing?.name ?? widget.model.displayName,
     );
+    _chatTemplate = TextEditingController(text: existing?.chatTemplate ?? '');
     _contextSize = existing?.contextSize ?? 16384;
     _temperature = existing?.temperature ?? 0.7;
     _gpuLayers = existing?.gpuLayers ?? 0;
@@ -108,9 +115,38 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
       _refreshModelMetadata(existing.modelPath);
     } else {
       // New mode: pre-resolve the destination paths so the
-      // download card has somewhere to point to.
+      // download card has somewhere to point to. Also kick off
+      // the chat-template auto-fill below so the user lands on
+      // the page with the right Jinja already loaded for the
+      // built-in card they tapped.
       _bootstrapPaths();
+      _scheduleChatTemplateAutoFill();
     }
+  }
+
+  /// If the user is creating a brand-new built-in-backed provider
+  /// (no existing row) and the page is opened fresh, eagerly
+  /// pre-fill the chat template with the preset that matches the
+  /// built-in's model family (qwen → qwen.jinja, gemma → gemma.jinja,
+  /// minicpm5 → minicpm5.jinja). This is the auto-fill behaviour
+  /// described in the requirements: when a user taps a built-in
+  /// card, the matching Jinja shows up in the textarea with no
+  /// extra clicks. We only fire in "new" mode — edit mode keeps
+  /// whatever the user had already chosen.
+  ///
+  /// Scheduled via `addPostFrameCallback` because
+  /// `_onChatTemplatePresetTap` calls `setState`, which isn't
+  /// legal inside `initState`.
+  void _scheduleChatTemplateAutoFill() {
+    final presetKey = ChatTemplatePresets.presetKeyForBuiltin(widget.model.id);
+    if (presetKey == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Re-check in case the page was rebuilt with an `existing`
+      // provider in the meantime.
+      if (widget.existing != null) return;
+      _onChatTemplatePresetTap(presetKey);
+    });
   }
 
   /// On mobile the RAM and VRAM budgets are usually much smaller
@@ -144,9 +180,43 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
     }
   }
 
+  /// Resolve a chat-template preset chip tap to the asset's Jinja
+  /// source and write it into the textarea. Renders the chip in a
+  /// busy state during the load and surfaces a non-blocking toast
+  /// if the asset read fails (e.g. the file was deleted from the
+  /// bundle after a future build).
+  Future<void> _onChatTemplatePresetTap(String presetKey) async {
+    if (!ChatTemplatePresets.isPresetKey(presetKey)) return;
+    setState(() => _chatTemplateBusyKey = presetKey);
+    try {
+      final content = await ChatTemplatePresets.load(presetKey);
+      if (!mounted) return;
+      if (content == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              AppLocalizations.of(context).localProviderChatTemplateLoadFailed,
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      setState(() {
+        _chatTemplate.text = content;
+        _chatTemplateBusyKey = null;
+      });
+    } finally {
+      if (mounted && _chatTemplateBusyKey == presetKey) {
+        setState(() => _chatTemplateBusyKey = null);
+      }
+    }
+  }
+
   @override
   void dispose() {
     _name.dispose();
+    _chatTemplate.dispose();
     super.dispose();
   }
 
@@ -298,6 +368,8 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
     final mmprojPath = (_mmprojPath == null || _mmprojPath!.isEmpty)
         ? null
         : _mmprojPath;
+    final chatTemplateRaw = _chatTemplate.text.trim();
+    final chatTemplate = chatTemplateRaw.isEmpty ? null : chatTemplateRaw;
     final existing = widget.existing;
     if (existing == null) {
       // New mode: create the row with builtinModelId so the
@@ -315,6 +387,7 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
         cacheTypeV: _cacheTypeV,
         batchSize: _batchSize,
         thinkingBudgetTokens: _thinkingBudgetTokens,
+        chatTemplate: chatTemplate,
         builtinModelId: widget.model.id,
       );
     } else {
@@ -334,6 +407,7 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
           cacheTypeV: _cacheTypeV,
           batchSize: _batchSize,
           thinkingBudgetTokens: _thinkingBudgetTokens,
+          chatTemplate: chatTemplate,
         ),
       );
     }
@@ -510,6 +584,22 @@ class _BuiltinModelDownloadPageState extends State<BuiltinModelDownloadPage> {
                   label: l10n.localProviderThinkingBudget,
                   noLimitLabel: l10n.localProviderThinkingBudgetNoLimit,
                   hint: l10n.localProviderThinkingBudgetHint,
+                ),
+                const SizedBox(height: 24),
+                ChatTemplateField(
+                  controller: _chatTemplate,
+                  title: l10n.localProviderChatTemplate,
+                  hint: l10n.localProviderChatTemplateHint,
+                  presetKeys: ChatTemplatePresets.keys,
+                  presetLabels: {
+                    for (final k in ChatTemplatePresets.keys)
+                      k: ChatTemplatePresets.labelOf(k),
+                  },
+                  busyPresetKey: _chatTemplateBusyKey,
+                  presetChipLoadingLabel: '...',
+                  presetChipInactiveLabel: l10n.localProviderChatTemplateClear,
+                  onPresetTap: _onChatTemplatePresetTap,
+                  onClear: () => setState(() => _chatTemplate.clear()),
                 ),
                 const SizedBox(height: 24),
                 SizedBox(

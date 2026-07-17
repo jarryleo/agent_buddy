@@ -400,6 +400,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get localProviderClearMmproj => '清除';
 
   @override
+  String get localProviderChatTemplate => '模板(jinja)';
+
+  @override
+  String get localProviderChatTemplateHint =>
+      '提示词模板，影响模型智商，请找到对应模型jinja文件：chat_template.jinja';
+
+  @override
+  String get localProviderChatTemplateClear => '清除';
+
+  @override
+  String get localProviderChatTemplateLoadFailed => '模板加载失败,请检查资源包。';
+
+  @override
   String get builtinModelSectionTitle => '内置模型';
 
   @override

@@ -183,6 +183,10 @@
     }
   },
   "localProviderClearMmproj": "Clear",
+  "localProviderChatTemplate": "Template (jinja)",
+  "localProviderChatTemplateHint": "Prompt template — directly affects model quality. Find the matching chat_template.jinja for your model and paste it here. Leave empty to use the template embedded in the GGUF.",
+  "localProviderChatTemplateClear": "Clear",
+  "localProviderChatTemplateLoadFailed": "Failed to load template. Check the asset bundle.",
 
   "builtinModelSectionTitle": "Built-in Models",
   "builtinModelDownload": "Download",

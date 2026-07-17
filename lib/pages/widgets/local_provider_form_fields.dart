@@ -710,3 +710,217 @@ class LocalProviderPresets {
     16384,
   ];
 }
+
+/// Chat-template editor: section title + row of preset chips +
+/// multi-line textarea + hint. Shared between the add-local-
+/// provider form and the built-in model download form.
+///
+/// Stateless on purpose — the parent owns the controller and the
+/// current value. The widget's only job is to render the chips
+/// and call [onPresetTap] / [onClear] when the user interacts.
+class ChatTemplateField extends StatelessWidget {
+  const ChatTemplateField({
+    super.key,
+    required this.controller,
+    required this.title,
+    required this.hint,
+    required this.presetKeys,
+    required this.presetLabels,
+    required this.onPresetTap,
+    required this.onClear,
+    required this.presetChipInactiveLabel,
+    required this.presetChipLoadingLabel,
+    this.busyPresetKey,
+  });
+
+  /// Multi-line text controller that backs the textarea. The
+  /// parent is responsible for disposing it.
+  final TextEditingController controller;
+
+  /// Section title rendered above the chip row (e.g. "模板(jinja)").
+  final String title;
+
+  /// Hint rendered below the textarea (e.g. "提示词模板,影响
+  /// 模型智商…").
+  final String hint;
+
+  /// Ordered preset keys (e.g. `['qwen', 'gemma', 'minicpm5']`).
+  /// Drives the chip row's order.
+  final List<String> presetKeys;
+
+  /// Display label per preset key, parallel to [presetKeys]. The
+  /// labels are pass-through model-family names.
+  final Map<String, String> presetLabels;
+
+  /// Fired when the user taps a chip. The parent is responsible
+  /// for the async asset load and for calling `controller.text =`
+  /// with the result.
+  final void Function(String presetKey) onPresetTap;
+
+  /// Fired when the user taps the "clear" affordance. The parent
+  /// typically calls `controller.clear()` in response.
+  final VoidCallback onClear;
+
+  /// Label shown on a chip while the asset is being loaded (e.g.
+  /// a tiny spinner prefix; kept short to fit the chip width).
+  final String presetChipLoadingLabel;
+
+  /// Optional label rendered to the right of the chip row when
+  /// none of the chips is active — typically a "(none)" hint.
+  final String presetChipInactiveLabel;
+
+  /// When non-null, the chip for this key shows a busy state and
+  /// the user can't tap it again until the parent sets it back
+  /// to `null`.
+  final String? busyPresetKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        LocalProviderFormLabel(text: title),
+        const SizedBox(height: 6),
+        _PresetChipRow(
+          presetKeys: presetKeys,
+          presetLabels: presetLabels,
+          onPresetTap: onPresetTap,
+          busyPresetKey: busyPresetKey,
+          loadingLabel: presetChipLoadingLabel,
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          maxLines: 5,
+          minLines: 5,
+          textInputAction: TextInputAction.newline,
+          keyboardType: TextInputType.multiline,
+          style: const TextStyle(
+            fontFamily: 'monospace',
+            fontSize: 11,
+            height: 1.4,
+          ),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: TextStyle(
+              fontSize: 11,
+              color: context.textSecondary,
+              fontFamily: 'monospace',
+              height: 1.4,
+            ),
+            alignLabelWithHint: true,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 10,
+            ),
+          ),
+        ),
+        if (controller.text.trim().isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: onClear,
+              icon: const Icon(Icons.clear, size: 14),
+              label: Text(presetChipInactiveLabel),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _PresetChipRow extends StatelessWidget {
+  const _PresetChipRow({
+    required this.presetKeys,
+    required this.presetLabels,
+    required this.onPresetTap,
+    required this.busyPresetKey,
+    required this.loadingLabel,
+  });
+
+  final List<String> presetKeys;
+  final Map<String, String> presetLabels;
+  final void Function(String presetKey) onPresetTap;
+  final String? busyPresetKey;
+  final String loadingLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final key in presetKeys)
+          _PresetChip(
+            label: presetLabels[key] ?? key,
+            busy: busyPresetKey == key,
+            loadingLabel: loadingLabel,
+            onTap: busyPresetKey == null ? () => onPresetTap(key) : null,
+          ),
+      ],
+    );
+  }
+}
+
+class _PresetChip extends StatelessWidget {
+  const _PresetChip({
+    required this.label,
+    required this.busy,
+    required this.loadingLabel,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool busy;
+  final String loadingLabel;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: context.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(999),
+        side: BorderSide(color: context.appBorder),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (busy) ...[
+                const SizedBox(
+                  width: 10,
+                  height: 10,
+                  child: CircularProgressIndicator(strokeWidth: 1.4),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  loadingLabel,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: context.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ] else
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -132,6 +132,10 @@
   "localProviderFileMissing": "文件不存在: {path}",
   "localProviderMmprojDetected": "已检测到: {name}",
   "localProviderClearMmproj": "清除",
+  "localProviderChatTemplate": "模板(jinja)",
+  "localProviderChatTemplateHint": "提示词模板，影响模型智商，请找到对应模型jinja文件：chat_template.jinja",
+  "localProviderChatTemplateClear": "清除",
+  "localProviderChatTemplateLoadFailed": "模板加载失败,请检查资源包。",
 
   "builtinModelSectionTitle": "内置模型",
   "builtinModelDownload": "下载",

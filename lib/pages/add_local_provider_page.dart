@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import '../l10n/app_localizations.dart';
 import '../models/local_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/chat_template_presets.dart';
 import '../services/gguf_metadata.dart';
 import '../theme/app_theme.dart';
 import 'widgets/local_provider_form_fields.dart';
@@ -32,6 +33,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
   late TextEditingController _name;
   late TextEditingController _modelPath;
   TextEditingController? _mmprojPath;
+  late TextEditingController _chatTemplate;
   late int _contextSize;
   late double _temperature;
   late int _gpuLayers;
@@ -46,6 +48,11 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
   bool _archLoading = false;
   bool _busy = false;
 
+  /// While a chip-tap is in flight, the matching chip is rendered
+  /// in a busy state and other chips stay tappable. `null` when
+  /// idle.
+  String? _chatTemplateBusyKey;
+
   @override
   void initState() {
     super.initState();
@@ -53,6 +60,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
     _name = TextEditingController(text: p?.name ?? '');
     _modelPath = TextEditingController(text: p?.modelPath ?? '');
     _mmprojPath = TextEditingController(text: p?.mmprojPath ?? '');
+    _chatTemplate = TextEditingController(text: p?.chatTemplate ?? '');
     _contextSize = p?.contextSize ?? 4096;
     _temperature = p?.temperature ?? 0.7;
     _gpuLayers = p?.gpuLayers ?? 99;
@@ -87,6 +95,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
     _name.dispose();
     _modelPath.dispose();
     _mmprojPath?.dispose();
+    _chatTemplate.dispose();
     super.dispose();
   }
 
@@ -212,6 +221,41 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
     }
   }
 
+  /// Resolve a chat-template preset chip tap to the asset's Jinja
+  /// source and write it into the textarea. Renders the chip in a
+  /// busy state during the load and surfaces a non-blocking toast
+  /// if the asset read fails (e.g. the file was deleted from the
+  /// bundle after a future build).
+  Future<void> _onChatTemplatePresetTap(String presetKey) async {
+    if (!ChatTemplatePresets.isPresetKey(presetKey)) return;
+    setState(() => _chatTemplateBusyKey = presetKey);
+    try {
+      final content = await ChatTemplatePresets.load(presetKey);
+      if (!mounted) return;
+      if (content == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              AppLocalizations.of(context).localProviderChatTemplateLoadFailed,
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      setState(() {
+        _chatTemplate.text = content;
+        _chatTemplateBusyKey = null;
+      });
+    } finally {
+      // Always clear the busy marker, even on failure paths that
+      // don't return early above (defensive — cheap).
+      if (mounted && _chatTemplateBusyKey == presetKey) {
+        setState(() => _chatTemplateBusyKey = null);
+      }
+    }
+  }
+
   String? _autoDetectMmproj(String modelPath) {
     if (kIsWeb) return null;
     final dir = p.dirname(modelPath);
@@ -247,6 +291,8 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
     final name = _name.text.trim();
     final modelPath = _modelPath.text.trim();
     final mmproj = _mmprojPath?.text.trim();
+    final chatTemplateRaw = _chatTemplate.text.trim();
+    final chatTemplate = chatTemplateRaw.isEmpty ? null : chatTemplateRaw;
     try {
       if (!kIsWeb && !File(modelPath).existsSync()) {
         throw Exception(
@@ -287,6 +333,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
         cacheTypeV: _cacheTypeV,
         batchSize: _batchSize,
         thinkingBudgetTokens: _thinkingBudgetTokens,
+        chatTemplate: chatTemplate,
       );
     } else {
       await widget.settings.updateLocalProvider(
@@ -302,6 +349,7 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
           cacheTypeV: _cacheTypeV,
           batchSize: _batchSize,
           thinkingBudgetTokens: _thinkingBudgetTokens,
+          chatTemplate: chatTemplate,
         ),
       );
     }
@@ -484,6 +532,22 @@ class _AddLocalProviderPageState extends State<AddLocalProviderPage> {
               label: l10n.localProviderThinkingBudget,
               noLimitLabel: l10n.localProviderThinkingBudgetNoLimit,
               hint: l10n.localProviderThinkingBudgetHint,
+            ),
+            const SizedBox(height: 24),
+            ChatTemplateField(
+              controller: _chatTemplate,
+              title: l10n.localProviderChatTemplate,
+              hint: l10n.localProviderChatTemplateHint,
+              presetKeys: ChatTemplatePresets.keys,
+              presetLabels: {
+                for (final k in ChatTemplatePresets.keys)
+                  k: ChatTemplatePresets.labelOf(k),
+              },
+              busyPresetKey: _chatTemplateBusyKey,
+              presetChipLoadingLabel: '...',
+              presetChipInactiveLabel: l10n.localProviderChatTemplateClear,
+              onPresetTap: _onChatTemplatePresetTap,
+              onClear: () => setState(() => _chatTemplate.clear()),
             ),
             const SizedBox(height: 24),
             SizedBox(

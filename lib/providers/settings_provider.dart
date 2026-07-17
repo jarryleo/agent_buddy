@@ -422,6 +422,7 @@ class SettingsProvider extends ChangeNotifier {
     String cacheTypeV = 'f16',
     int batchSize = LocalProvider.kDefaultBatchSize,
     int? thinkingBudgetTokens,
+    String? chatTemplate,
     String? builtinModelId,
   }) async {
     final provider = LocalProvider(
@@ -437,6 +438,7 @@ class SettingsProvider extends ChangeNotifier {
       cacheTypeV: cacheTypeV,
       batchSize: batchSize,
       thinkingBudgetTokens: thinkingBudgetTokens,
+      chatTemplate: chatTemplate,
       builtinModelId: builtinModelId,
     );
     _localProviders = [..._localProviders, provider];

@@ -830,6 +830,30 @@ abstract class AppLocalizations {
   /// **'Clear'**
   String get localProviderClearMmproj;
 
+  /// No description provided for @localProviderChatTemplate.
+  ///
+  /// In en, this message translates to:
+  /// **'Template (jinja)'**
+  String get localProviderChatTemplate;
+
+  /// No description provided for @localProviderChatTemplateHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Prompt template — directly affects model quality. Find the matching chat_template.jinja for your model and paste it here. Leave empty to use the template embedded in the GGUF.'**
+  String get localProviderChatTemplateHint;
+
+  /// No description provided for @localProviderChatTemplateClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get localProviderChatTemplateClear;
+
+  /// No description provided for @localProviderChatTemplateLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load template. Check the asset bundle.'**
+  String get localProviderChatTemplateLoadFailed;
+
   /// No description provided for @builtinModelSectionTitle.
   ///
   /// In en, this message translates to:

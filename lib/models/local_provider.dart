@@ -66,6 +66,23 @@ class LocalProvider {
   /// `LocalLlmService.streamChat`.
   final int? thinkingBudgetTokens;
 
+  /// Optional override for the model's chat-template (a Jinja
+  /// string rendered by llama.cpp). When `null` / empty, the
+  /// template embedded inside the GGUF metadata is used. When
+  /// non-null, llamadart forwards the string to
+  /// `ModelParams.chatTemplate`, which is loaded into the engine
+  /// instead of the GGUF-bundled template — this is how users
+  /// fix the "降智" symptom on local models that ship with a
+  /// broken or stale template (e.g. some Qwen / Gemma / MiniCPM
+  /// GGUFs that were repackaged without the upstream Jinja).
+  ///
+  /// The settings UI exposes a few presets under
+  /// `assets/jinja/chat_template_<key>.jinja` that the user can
+  /// auto-fill in one tap. Any other Jinja the user pastes in is
+  /// passed through verbatim; llama.cpp will surface a clear
+  /// syntax error if it can't parse it.
+  final String? chatTemplate;
+
   /// Safe interactive default for [thinkingBudgetTokens] when the
   /// model is a thinking model. 2K tokens of reasoning is enough
   /// for most chat turns on a 4K–8K context model without
@@ -87,6 +104,7 @@ class LocalProvider {
     this.cacheTypeV = 'f16',
     this.batchSize = kDefaultBatchSize,
     this.thinkingBudgetTokens,
+    this.chatTemplate,
     this.builtinModelId,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
@@ -104,6 +122,7 @@ class LocalProvider {
     String? cacheTypeV,
     int? batchSize,
     Object? thinkingBudgetTokens = _sentinel,
+    Object? chatTemplate = _sentinel,
   }) {
     return LocalProvider(
       id: id,
@@ -121,6 +140,9 @@ class LocalProvider {
       thinkingBudgetTokens: identical(thinkingBudgetTokens, _sentinel)
           ? this.thinkingBudgetTokens
           : thinkingBudgetTokens as int?,
+      chatTemplate: identical(chatTemplate, _sentinel)
+          ? this.chatTemplate
+          : chatTemplate as String?,
       builtinModelId: builtinModelId,
       createdAt: createdAt,
     );
@@ -184,6 +206,7 @@ class LocalProvider {
     'cacheTypeV': cacheTypeV,
     'batchSize': batchSize,
     'thinkingBudgetTokens': thinkingBudgetTokens,
+    'chatTemplate': chatTemplate,
     'builtinModelId': builtinModelId,
     'createdAt': createdAt.toIso8601String(),
   };
@@ -215,11 +238,23 @@ class LocalProvider {
       thinkingBudgetTokens: (rawBudget == null || rawBudget <= 0)
           ? null
           : rawBudget,
+      chatTemplate: _normalizeChatTemplate(json['chatTemplate']),
       builtinModelId: json['builtinModelId'] as String?,
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.now(),
     );
+  }
+
+  /// Coerce a persisted chat-template value to a clean form:
+  /// `null`, non-string, or whitespace-only strings all map to
+  /// `null` (the "use the GGUF-bundled template" sentinel).
+  /// We never trim non-empty templates — the user's hand-edited
+  /// whitespace around Jinja delimiters is significant.
+  static String? _normalizeChatTemplate(Object? raw) {
+    if (raw is! String) return null;
+    final trimmed = raw.trim();
+    return trimmed.isEmpty ? null : raw;
   }
 
   static String? _normalizeCacheType(Object? raw) {

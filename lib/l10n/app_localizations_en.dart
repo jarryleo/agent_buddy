@@ -411,6 +411,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get localProviderClearMmproj => 'Clear';
 
   @override
+  String get localProviderChatTemplate => 'Template (jinja)';
+
+  @override
+  String get localProviderChatTemplateHint =>
+      'Prompt template — directly affects model quality. Find the matching chat_template.jinja for your model and paste it here. Leave empty to use the template embedded in the GGUF.';
+
+  @override
+  String get localProviderChatTemplateClear => 'Clear';
+
+  @override
+  String get localProviderChatTemplateLoadFailed =>
+      'Failed to load template. Check the asset bundle.';
+
+  @override
   String get builtinModelSectionTitle => 'Built-in Models';
 
   @override

@@ -244,6 +244,11 @@ class LocalLlmService extends ChangeNotifier {
           batchSize: provider.batchSize > 0
               ? provider.batchSize
               : LocalProvider.kDefaultBatchSize,
+          // Forward the user-supplied chat-template override, if
+          // any. Passing `null` lets llamadart fall back to the
+          // template embedded in the GGUF metadata (the upstream
+          // llama.cpp behavior).
+          chatTemplate: _chatTemplateParamFor(provider.chatTemplate),
         ),
       );
       if (provider.mmprojPath != null && provider.mmprojPath!.isNotEmpty) {
@@ -794,6 +799,24 @@ class LocalLlmService extends ChangeNotifier {
       default:
         return KvCacheType.f16;
     }
+  }
+
+  /// Coerce the user-supplied chat-template override into the shape
+  /// `ModelParams.chatTemplate` expects.
+  ///
+  /// `null` / whitespace-only → `null` (let llamadart fall back to
+  /// the template embedded in the GGUF). Whitespace around a
+  /// non-empty template is preserved (Jinja is whitespace-
+  /// sensitive near delimiters), but we still strip the leading /
+  /// trailing newlines that the bundled `.jinja` assets end with
+  /// so the user sees the same payload they'd see in an upstream
+  /// PR — a trailing `\n` would otherwise show up as an empty
+  /// last line in the textarea.
+  static String? _chatTemplateParamFor(String? raw) {
+    if (raw == null) return null;
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+    return trimmed;
   }
 
   /// Resolves the [ThinkingBudget] to attach to the engine's
