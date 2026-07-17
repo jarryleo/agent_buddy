@@ -642,6 +642,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Manage device files — any path on desktop; on mobile: system file picker + relative paths inside the user-selected working directory (no Android runtime permission needed).';
 
   @override
+  String get toolDescSearch =>
+      'Regex-search file contents across a directory or a list of files; returns file + line + column + matched text. Skips heavy dirs (.git/node_modules/binaries) by default so large repos stay fast.';
+
+  @override
   String get toolDescLoadSkill =>
       'Pull a skill\'s full instructions on demand.';
 
@@ -698,6 +702,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolNameFile => 'Files';
+
+  @override
+  String get toolNameSearch => 'Search';
 
   @override
   String get toolNameLoadSkill => 'Load Skill';

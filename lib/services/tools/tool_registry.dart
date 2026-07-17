@@ -17,6 +17,7 @@ import 'mcp_tool.dart';
 import 'notification_tool.dart';
 import 'timer_tool.dart';
 import 'google_sheet_tool.dart';
+import 'search_tool.dart';
 
 /// Central registry that maps tool [id] to [ToolBase] instances.
 ///
@@ -55,6 +56,7 @@ class ToolRegistry {
     DownloadTool(),
     RunCommandTool(),
     FileTool(),
+    SearchTool(),
     GetEnvironmentTool(),
 
     // System (auto / not user-facing)

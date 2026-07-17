@@ -613,6 +613,10 @@ class AppLocalizationsZh extends AppLocalizations {
       '管理设备上的文件:电脑任意路径,手机走系统文件选择器,或在用户选定的工作目录下使用相对路径(无需 Android 权限)。';
 
   @override
+  String get toolDescSearch =>
+      '用正则搜索文件内容,返回匹配的文件+行号+原文(比一个个读文件省 token)。大仓库默认跳过 .git/node_modules/二进制 等重目录。';
+
+  @override
   String get toolDescLoadSkill => '按需读取某个技能的完整说明。';
 
   @override
@@ -665,6 +669,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get toolNameFile => '文件';
+
+  @override
+  String get toolNameSearch => '搜索';
 
   @override
   String get toolNameLoadSkill => '加载技能';

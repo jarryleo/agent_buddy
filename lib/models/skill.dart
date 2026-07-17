@@ -121,6 +121,14 @@ class BuiltinSkills {
   - **Android 工作目录权限自动续期**:写入工作目录如果失败(用户在系统设置里清掉了应用的存储),系统会自动弹出 SAF 重新授权对话框,用户授权后写入会自动重试;如果用户取消授权,会返回 {ok:false,cancelled:true} 软失败,这时让用户通过聊天工具栏重新选一次工作目录,不要让用户自己去系统设置找授权入口。
   - delete / rename / list_dir 只对 working:// 起作用;picker 路径只支持 read/write/edit/release(系统授权是按 URI 的)。
 
+- search(搜索):用正则批量搜整个工作目录或一批文件,**比 file read 一遍省 token**。
+  - **首选用法**:搜符号 / 字符串 / 函数名 — `search(pattern: "ToolException", include_glob: "*.dart")` 一秒扫整个 lib/。
+  - 必填 pattern(ECMAScript 正则,^ 行首 \$ 行尾),可选 path(空=工作目录,桌面)/ files=[绝对路径列表]。
+  - 常用参数:include_glob 限定类型(如 "*.dart" / "**/*.dart" / "src/**");exclude_glob 排除(如 "*.g.dart,*.freezed.dart");case_sensitive 默认 false;context_lines 拿上下文。
+  - **默认自动跳过** .git / node_modules / build / .dart_tool / Pods / target / dist / .idea / .vscode / __pycache__ / .next / .nuxt 等重目录,以及图片/视频/压缩包/可执行文件/.lock/.map 等二进制 — 不用你自己排除,大仓库默认就快。
+  - 有 max_results(默认 200)/ max_files(默认 5000)/ max_file_size_mb(默认 5MB) 三道保护,跑了半天还没结果就降低 max_files 或加 include_glob 收紧范围。
+  - **找到之后**:匹配行带行号+列号+原文,直接拿 line 字段当 file read 的 offset_lines、或当 file edit 的 old_text 锚点用(配合 file read 行号前缀,完美衔接)。
+
 - timer(计时):用户说"X 分钟后提醒我 Y"就用这个。create 时给 delay_seconds(或 fire_at_iso),label 必填,prompt 写提醒正文,action_hint 写"调用 notification 通知用户…"这种建议。**只在程序运行时有效,App 被杀就不响了**,长时段务必先告知用户。
 
 - notification(通知):给用户推一条本地通知(手机系统通知 / 电脑右下角弹窗)。计时器到点时,如果用户正看着聊天,就由你来调它把提醒正式发出去。

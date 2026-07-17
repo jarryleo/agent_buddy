@@ -120,11 +120,23 @@ class MarkdownContent extends StatelessWidget {
       p: base.p?.merge(theme.textTheme.bodyMedium ?? TextStyle()),
     );
 
-    return MarkdownBody(
-      data: data,
-      selectable: true,
-      shrinkWrap: true,
-      styleSheet: styleSheet,
+    // NOTE: `MarkdownBody(selectable: true)` builds an internal
+    // Viewport for the selectable text. When the markdown content is
+    // empty / near-empty (e.g. the streaming placeholder that is just
+    // a single space, or a message that is pure image/code block) that
+    // Viewport has no hit-testable sliver child, and the first pointer
+    // event crashes inside `RenderViewportBase.hitTestChildren`
+    // (viewport.dart:886) with "Null check operator used on a null
+    // value". We disable the built-in selectable and instead wrap the
+    // whole body in a `SelectionArea`, which provides text selection
+    // without relying on markdown's internal viewport and therefore
+    // does not have the empty-content hit-test bug.
+    return SelectionArea(
+      child: MarkdownBody(
+        data: data,
+        selectable: false,
+        shrinkWrap: true,
+        styleSheet: styleSheet,
       onTapLink: (text, href, title) async {
         if (href == null || href.isEmpty) return;
         final uri = Uri.tryParse(href);
@@ -233,7 +245,8 @@ class MarkdownContent extends StatelessWidget {
           ),
         );
       },
-      builders: {'pre': _CodeBlockBuilder()},
+        builders: {'pre': _CodeBlockBuilder()},
+      ),
     );
   }
 }

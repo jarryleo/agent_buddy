@@ -315,4 +315,9 @@ class ToolService {
     final tool = ToolRegistry.byId('file')!;
     return tool.execute(args, this);
   }
+
+  Future<String> runSearch(Map<String, dynamic> args) async {
+    final tool = ToolRegistry.byId('search')!;
+    return tool.execute(args, this);
+  }
 }

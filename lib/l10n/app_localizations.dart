@@ -1224,6 +1224,12 @@ abstract class AppLocalizations {
   /// **'Manage device files — any path on desktop; on mobile: system file picker + relative paths inside the user-selected working directory (no Android runtime permission needed).'**
   String get toolDescFile;
 
+  /// No description provided for @toolDescSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Regex-search file contents across a directory or a list of files; returns file + line + column + matched text. Skips heavy dirs (.git/node_modules/binaries) by default so large repos stay fast.'**
+  String get toolDescSearch;
+
   /// No description provided for @toolDescLoadSkill.
   ///
   /// In en, this message translates to:
@@ -1331,6 +1337,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Files'**
   String get toolNameFile;
+
+  /// No description provided for @toolNameSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Search'**
+  String get toolNameSearch;
 
   /// No description provided for @toolNameLoadSkill.
   ///

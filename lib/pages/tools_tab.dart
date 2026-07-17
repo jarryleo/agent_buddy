@@ -228,6 +228,8 @@ String _toolUserDescription(AppLocalizations l10n, String id) {
       return l10n.toolDescDownload;
     case 'file':
       return l10n.toolDescFile;
+    case 'search':
+      return l10n.toolDescSearch;
     case 'load_skill':
       return l10n.toolDescLoadSkill;
     case 'notification':
