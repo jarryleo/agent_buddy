@@ -950,6 +950,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String chatRetryStatus(String attempt, String seconds) {
+    return '网络抖动,第 $attempt 次重试,$seconds 秒后重连';
+  }
+
+  @override
   String get generalSectionAppearance => '外观';
 
   @override

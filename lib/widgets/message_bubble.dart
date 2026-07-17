@@ -393,11 +393,13 @@ class _MessageBubbleState extends State<MessageBubble> {
   Widget _buildAssistant(BuildContext context, ChatMessage m) {
     final hasThinking = m.thinking.isNotEmpty;
     final hasTools = m.toolCalls.isNotEmpty;
+    final isRetrying = m.isRetrying;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 48, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (isRetrying) _buildRetryBanner(context, m),
           if (hasThinking) _buildThinking(context, m),
           if (hasTools) _buildToolCallsSection(context, m),
           // Bubble + footer are sized together so the footer
@@ -590,6 +592,66 @@ class _MessageBubbleState extends State<MessageBubble> {
             const SizedBox(height: 6),
             _buildToolCalls(context, m.toolCalls),
           ],
+        ],
+      ),
+    );
+  }
+
+  /// Renders the auto-retry banner above the assistant bubble
+  /// while the cloud provider path is waiting on the next
+  /// attempt of the exponential-backoff schedule. Reads the live
+  /// `m.nextRetryAt` on every rebuild so the countdown label
+  /// updates second-by-second — driven by the 1-second ticker
+  /// inside [ChatProvider] (which calls `notifyListeners` while
+  /// any message has a pending retry).
+  ///
+  /// Visually: a thin warning-tinted row with a refresh icon
+  /// and the localized "网络抖动,第 N 次重试,X 秒后重连" label
+  /// (or the English equivalent). Sits OUTSIDE the streaming
+  /// bubble so the spinner / typewriter that lives inside the
+  /// bubble never has to compete with the countdown label.
+  Widget _buildRetryBanner(BuildContext context, ChatMessage m) {
+    final l10n = AppLocalizations.of(context);
+    final nextAt = m.nextRetryAt;
+    final seconds = nextAt == null
+        ? 0
+        : nextAt.difference(DateTime.now()).inSeconds.clamp(0, 1 << 30);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+      decoration: BoxDecoration(
+        // A muted warning tone — distinct from both the
+        // bubble's assistant bg and the tool-call bg so the
+        // user can read it at a glance but it doesn't look
+        // like a hard error.
+        color: const Color(0xFFFFF4E5),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE6A23C)),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.6,
+              valueColor: AlwaysStoppedAnimation(Color(0xFFE6A23C)),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              l10n.chatRetryStatus(
+                m.retryAttempt.toString(),
+                seconds.toString(),
+              ),
+              style: const TextStyle(
+                fontSize: 12,
+                color: Color(0xFF8A5C00),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
         ],
       ),
     );

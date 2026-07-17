@@ -324,6 +324,26 @@ class ChatMessage {
   /// never produced any tokens (error before first chunk, etc.).
   final MessageMetrics? metrics;
 
+  /// Auto-retry state for the cloud provider path. When the
+  /// request fails with a transient network error (e.g.
+  /// `ClientException: Connection closed before full header was
+  /// received` against OpenRouter), `ChatProvider` flips this
+  /// from `0` to a positive count and sets [nextRetryAt] to the
+  /// wall-clock instant the next attempt will fire. The bubble
+  /// renders a "第 N 次重试,下次重试倒计时 Xs" banner above the
+  /// streaming content while these are set. Both fields are
+  /// cleared as soon as the first token arrives (so the user
+  /// doesn't see a stale countdown on a healthy stream) or when
+  /// a non-retryable error replaces the bubble with a hard-error
+  /// message.
+  ///
+  /// Session-only: intentionally NOT persisted to JSON, because a
+  /// retry that survives an app kill is rarely useful (network
+  /// conditions usually need a user action to recover) and would
+  /// also resurface a stale countdown on the next launch.
+  final int retryAttempt;
+  final DateTime? nextRetryAt;
+
   ChatMessage({
     required this.id,
     required this.role,
@@ -336,6 +356,8 @@ class ChatMessage {
     this.fileAttachments = const [],
     this.hidden = false,
     this.metrics,
+    this.retryAttempt = 0,
+    this.nextRetryAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
   ChatMessage copyWith({
@@ -348,6 +370,9 @@ class ChatMessage {
     List<ChatFileAttachment>? fileAttachments,
     bool? hidden,
     MessageMetrics? metrics,
+    int? retryAttempt,
+    DateTime? nextRetryAt,
+    bool clearNextRetryAt = false,
   }) {
     return ChatMessage(
       id: id,
@@ -361,8 +386,19 @@ class ChatMessage {
       fileAttachments: fileAttachments ?? this.fileAttachments,
       hidden: hidden ?? this.hidden,
       metrics: metrics ?? this.metrics,
+      // `retryAttempt` is treated as a regular value but always
+      // takes the explicit copyWith value when the caller
+      // mentions it; since `0` is a valid "no retry pending"
+      // state, callers that want to RESET to 0 just pass 0.
+      retryAttempt: retryAttempt ?? this.retryAttempt,
+      nextRetryAt: clearNextRetryAt ? null : (nextRetryAt ?? this.nextRetryAt),
     );
   }
+
+  /// True while an auto-retry is pending (countdown is showing
+  /// on the bubble). Equivalent to `retryAttempt > 0 &&
+  /// nextRetryAt != null`.
+  bool get isRetrying => retryAttempt > 0 && nextRetryAt != null;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -378,6 +414,10 @@ class ChatMessage {
     // round-trip identically. Default on read is `false`.
     if (hidden) 'hidden': true,
     if (metrics != null) 'metrics': metrics!.toJson(),
+    // `retryAttempt` / `nextRetryAt` intentionally omitted: auto-
+    // retry is session-only state that resets on launch (see the
+    // field doc above). Persisting them would surface a stale
+    // countdown on next launch after a network blip.
   };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {

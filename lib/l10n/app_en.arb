@@ -468,6 +468,15 @@
     }
   },
 
+  "chatRetryStatus": "Network hiccup — retrying ({attempt}/∞) in {seconds}s",
+  "@chatRetryStatus": {
+    "description": "Banner shown above an assistant bubble while the cloud provider path is auto-retrying a transient connection failure on its exponential backoff schedule. `attempt` is the 1-indexed retry count (1, 2, 3, …); `seconds` is the live whole-second countdown to the next attempt.",
+    "placeholders": {
+      "attempt": { "type": "String" },
+      "seconds": { "type": "String" }
+    }
+  },
+
   "generalSectionAppearance": "Appearance",
   "generalDarkMode": "Dark mode",
   "generalThemeSystem": "Follow system",

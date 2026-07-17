@@ -330,6 +330,7 @@
   "chatNoProvider": "请先在设置中添加并启用一个模型提供商。",
   "chatNoModel": "当前提供商没有可用模型,请先在设置中获取模型列表并选择一个模型。",
   "chatRequestFailed": "请求失败: {error}",
+  "chatRetryStatus": "网络抖动,第 {attempt} 次重试,{seconds} 秒后重连",
 
   "generalSectionAppearance": "外观",
   "generalDarkMode": "夜间模式",

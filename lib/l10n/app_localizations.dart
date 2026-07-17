@@ -1830,6 +1830,12 @@ abstract class AppLocalizations {
   /// **'Request failed: {error}'**
   String chatRequestFailed(String error);
 
+  /// Banner shown above an assistant bubble while the cloud provider path is auto-retrying a transient connection failure on its exponential backoff schedule. `attempt` is the 1-indexed retry count (1, 2, 3, …); `seconds` is the live whole-second countdown to the next attempt.
+  ///
+  /// In en, this message translates to:
+  /// **'Network hiccup — retrying ({attempt}/∞) in {seconds}s'**
+  String chatRetryStatus(String attempt, String seconds);
+
   /// No description provided for @generalSectionAppearance.
   ///
   /// In en, this message translates to:

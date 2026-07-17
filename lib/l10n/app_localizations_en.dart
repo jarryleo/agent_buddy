@@ -989,6 +989,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String chatRetryStatus(String attempt, String seconds) {
+    return 'Network hiccup — retrying ($attempt/∞) in ${seconds}s';
+  }
+
+  @override
   String get generalSectionAppearance => 'Appearance';
 
   @override

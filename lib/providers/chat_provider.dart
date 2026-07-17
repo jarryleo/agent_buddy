@@ -8,8 +8,10 @@ import '../l10n/app_localizations.dart';
 import '../models/chat_session.dart';
 import '../models/download.dart';
 import '../models/file_attachment.dart';
+import '../models/local_provider.dart';
 import '../models/mcp_provider.dart';
 import '../models/message.dart';
+import '../models/provider.dart';
 import '../models/skill.dart';
 import '../models/timer_task.dart';
 import '../services/api_service.dart';
@@ -23,6 +25,41 @@ import '../services/tool_orchestrator.dart';
 import '../services/tool_service.dart';
 import '../services/tools/tool_registry.dart';
 import 'settings_provider.dart';
+
+/// Internal status of a single streaming turn attempt, returned
+/// by `ChatProvider._runAssistantTurnStreamAttempt` to its
+/// orchestrator. Three terminal possibilities:
+///
+///   * [success]     — the stream produced at least one `done`
+///                     event and the bubble is finalized
+///                     (streaming=false, metrics stamped).
+///   * [hardError]   — a non-retryable error surfaced (auth
+///                     failure, validation error, …). The
+///                     message body carries the localized
+///                     "出错了: …" text and the bubble is
+///                     finalized.
+///   * [retryable]   — a transient network error occurred (the
+///                     canonical example is `ClientException:
+///                     Connection closed before full header was
+///                     received` against OpenRouter). The bubble
+///                     carries the auto-retry state and the
+///                     orchestrator is supposed to schedule the
+///                     next attempt on the exponential-backoff
+///                     schedule. No finalization happens here;
+///                     the orchestrator owns the bubble's state
+///                     until the chain unwinds.
+enum _TurnOutcomeKind { success, hardError, retryable }
+
+class _TurnOutcome {
+  final _TurnOutcomeKind kind;
+  final String? error;
+  const _TurnOutcome._(this.kind, this.error);
+  static const _TurnOutcome success = _TurnOutcome._(_TurnOutcomeKind.success, null);
+  factory _TurnOutcome.hardError(String err) =>
+      _TurnOutcome._(_TurnOutcomeKind.hardError, err);
+  factory _TurnOutcome.retryable(String err) =>
+      _TurnOutcome._(_TurnOutcomeKind.retryable, err);
+}
 
 /// Builds the always-on base system prompt for a chat turn.
 ///
@@ -151,6 +188,23 @@ class ChatProvider extends ChangeNotifier {
   /// up here. Entries are removed as soon as the corresponding
   /// `toolDone` arrives, so the map stays small.
   final Map<String, Map<String, String>> _transportToUiToolCallId = {};
+
+  /// Periodic 1-second ticker that drives the auto-retry
+  /// countdown UI. Started by [_setRetryStateOnMessage] the
+  /// first time any assistant message enters the retry state
+  /// and stopped when no messages have a pending retry. The
+  /// ticker only exists while at least one message is waiting
+  /// to retry, so its overhead while idle is zero.
+  Timer? _retryTickTimer;
+
+  /// Completer signaled when the orchestrator is currently
+  /// parked inside the exponential-backoff wait between retry
+  /// attempts. [stopGeneration] completes it so the orchestrator
+  /// doesn't have to sit out the remaining 320-second interval
+  /// of a backoff when the user taps "stop" mid-retry. Set /
+  /// cleared exclusively by [_runAssistantTurn] on the cloud
+  /// retry path.
+  Completer<void>? _retryWakeup;
 
   /// Returns `true` when a tool call is parked waiting on a
   /// native UI flow (system file picker, OS permission dialog,
@@ -556,6 +610,207 @@ class ChatProvider extends ChangeNotifier {
     );
     _replaceMessages([...s.messages, assistantMsg]);
     return assistantId;
+  }
+
+  // -------- Auto-retry / backoff (cloud provider path) --------
+  //
+  // The third-party model APIs (OpenRouter, Volcano, OpenAI via a
+  // routed gateway, …) occasionally drop the TCP connection
+  // *before* the response headers arrive, surfacing the failure
+  // to Dart as `ClientException: Connection closed before full
+  // header was received`. The user wants the chat to silently
+  // retry these with exponential backoff (5s → 10s → 20s → …
+  // → cap at 320s) until the next attempt succeeds, with the
+  // current retry count + countdown showing inside the bubble.
+  //
+  // The retries are an inner loop around
+  // [_runAssistantTurnStreamAttempt] — the latter runs ONE
+  // HTTP-streaming attempt and reports whether it ended in
+  // success, a hard (non-retryable) error, or a transient
+  // network failure that should be retried. On retryable
+  // failure we surface the retry state to the bubble and wait
+  // for the next backoff window before kicking off another
+  // attempt. The chain unwinds once the stream yields content
+  // or hits a hard error.
+  //
+  // Local LLM (llamadart / in-process GGUF) doesn't go through
+  // the retry path — see [_runAssistantTurn].
+
+  /// Initial auto-retry delay for the 1st retry (i.e. right after
+  /// the FIRST connection failure). Doubles for every subsequent
+  /// retry until it hits [_retryMaxBackoff].
+  static const Duration _retryInitialBackoff = Duration(seconds: 5);
+
+  /// Cap on the auto-retry delay. The interval plateaus here for
+  /// repeated failures on a flaky third-party provider; the user
+  /// asked for "无限重试" (infinite retries), so we never stop —
+  /// we just don't widen the gap past 5m20s.
+  static const Duration _retryMaxBackoff = Duration(seconds: 320);
+
+  /// Computes the auto-retry backoff for [attempt]. `attempt == 1`
+  /// = first retry (right after the very first failure),
+  /// `attempt == 2` = second retry, etc. The interval doubles each
+  /// time and caps at [_retryMaxBackoff]. Pure helper — exposed as
+  /// `@visibleForTesting` so the schedule can be unit-tested
+  /// without spinning up the full provider.
+  @visibleForTesting
+  static Duration computeRetryBackoff(int attempt) {
+    if (attempt <= 0) return Duration.zero;
+    // 5s * 2^(attempt-1), clamped at 320s. Done with millisecond
+    // arithmetic on `int` to avoid floating-point rounding — the
+    // schedule matters for the UI countdown and we want exact
+    // whole-second ticks.
+    final ms = _retryInitialBackoff.inMilliseconds;
+    var total = ms;
+    for (var i = 1; i < attempt && total < _retryMaxBackoff.inMilliseconds;
+        i++) {
+      final doubled = total * 2;
+      total = doubled > _retryMaxBackoff.inMilliseconds
+          ? _retryMaxBackoff.inMilliseconds
+          : doubled;
+    }
+    return Duration(milliseconds: total);
+  }
+
+  /// Classifies a stream error string as transient (worth
+  /// retrying on the backoff schedule) or hard (auth errors,
+  /// validation failures — those should surface immediately
+  /// and not be retried forever). Substring match against the
+  /// `dart:io` / `http` exception class names plus a few
+  /// HTTP 5xx codes that are commonly caused by an
+  /// upstream-by-them glitch.
+  ///
+  /// Exposed as `@visibleForTesting` so the classifier can be
+  /// unit-tested against representative error strings without a
+  /// running API.
+  @visibleForTesting
+  static bool isRetryableNetworkError(String error) {
+    if (error.isEmpty) return false;
+    final e = error.toLowerCase();
+    // http / dart:io exception classes (the ones that wrap any
+    // socket- or DNS-level glitch into a single string).
+    if (e.contains('clientexception') ||
+        e.contains('socketexception') ||
+        e.contains('handshakeexception') ||
+        e.contains('timeoutexception')) {
+      return true;
+    }
+    // Common TCP / DNS messages that don't come with a class
+    // prefix but show up verbatim in the message body.
+    if (e.contains('connection closed') ||
+        e.contains('connection refused') ||
+        e.contains('connection reset') ||
+        e.contains('failed host lookup') ||
+        e.contains('network is unreachable') ||
+        e.contains('no address associated with hostname') ||
+        e.contains('ssl exception') ||
+        e.contains('certificate verify failed')) {
+      return true;
+    }
+    // HTTP 5xx — the user's third-party providers tend to
+    // occasionally return 502/503/504 on a flaky edge. The
+    // Gemini/Claude/OpenAI-style strings include "HTTP 502:"
+    // etc. We deliberately keep this conservative — only the
+    // well-known transient codes, NOT plain "HTTP 500:" which
+    // can also be a permanent application error.
+    if (e.contains('http 502') ||
+        e.contains('http 503') ||
+        e.contains('http 504') ||
+        e.contains('http 524') ||
+        e.contains('service unavailable') ||
+        e.contains('bad gateway') ||
+        e.contains('gateway timeout')) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Writes the retry state ([retryAttempt] + [nextRetryAt]) to
+  /// the assistant message and ensures the periodic countdown
+  /// ticker is running so the bubble UI updates every second.
+  /// Idempotent — calling with `attempt <= existing attempt` is
+  /// a no-op for the bubble (we don't want to roll the countdown
+  /// backwards or rewrite state during a tear-down race).
+  void _setRetryStateOnMessage(
+    String assistantId,
+    int attempt,
+    DateTime nextAttemptAt,
+  ) {
+    final s = _activeSession;
+    if (s == null) return;
+    _replaceMessages([
+      for (final m in s.messages)
+        if (m.id == assistantId)
+          m.copyWith(
+            streaming: false,
+            retryAttempt: attempt,
+            nextRetryAt: nextAttemptAt,
+            // Clear the metrics so the footer doesn't show a
+            // garbage TTFT=0s marker from the failed attempt.
+            metrics: null,
+          )
+        else
+          m,
+    ]);
+    _ensureRetryTickTimer();
+    notifyListeners();
+  }
+
+  /// Strips the retry state from a message (used between
+  /// retries — once the wait elapses and the next attempt
+  /// begins, the bubble should look like a normal streaming
+  /// turn again, not a countdown to one).
+  void _clearRetryStateOnMessage(String assistantId) {
+    final s = _activeSession;
+    if (s == null) return;
+    _replaceMessages([
+      for (final m in s.messages)
+        if (m.id == assistantId)
+          m.copyWith(
+            streaming: true,
+            retryAttempt: 0,
+            clearNextRetryAt: true,
+          )
+        else
+          m,
+    ]);
+    notifyListeners();
+  }
+
+  /// Starts the 1-second countdown ticker if it isn't running
+  /// already. The ticker ONLY exists while at least one message
+  /// has a pending retry; it just calls [notifyListeners] every
+  /// second so the bubble UI can recompute its countdown label.
+  /// The MessageBubble does the actual `nextRetryAt -
+  /// DateTime.now()` math — this provider just drives the
+  /// periodic rebuild.
+  void _ensureRetryTickTimer() {
+    if (_retryTickTimer != null) return;
+    if (_disposed) return;
+    _retryTickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_disposed) {
+        _retryTickTimer?.cancel();
+        _retryTickTimer = null;
+        return;
+      }
+      notifyListeners();
+    });
+  }
+
+  /// Stops the countdown ticker if no messages are still in
+  /// the pending-retry state. Called every time the retry loop
+  /// completes (success or terminal hard error) so the ticker
+  /// doesn't idle forever.
+  void _maybeStopRetryTickTimer() {
+    if (_retryTickTimer == null) return;
+    final stillPending = _activeSession?.messages.any(
+          (m) => m.isRetrying,
+        ) ??
+        false;
+    if (!stillPending) {
+      _retryTickTimer?.cancel();
+      _retryTickTimer = null;
+    }
   }
 
   Future<String> _onToolCall(
@@ -1122,33 +1377,147 @@ class ChatProvider extends ChangeNotifier {
     return p.selectedModel != null || p.models.isNotEmpty;
   }
 
-  /// Shared streaming turn runner. Validates the provider / model,
-  /// builds the request list, kicks off the streamChat call, and
-  /// drives the listener that updates the in-place assistant
-  /// message with reasoning / content / tool-call deltas. Used by
-  /// both the user-initiated path ([sendMessage]) and the
+  /// Shared streaming turn runner. Builds the request list,
+  /// drives the stream, and finalizes the bubble. Used by both
+  /// the user-initiated path ([sendMessage]) and the
   /// timer-driven path ([continueWithLastUserMessage]).
+  ///
+  /// Cloud path also wraps the streaming body in an automatic
+  /// retry loop. Transient network failures (the canonical
+  /// example is `ClientException: Connection closed before full
+  /// header was received` against OpenRouter) trigger an
+  /// exponential-backoff retry: 5s → 10s → 20s → 40s → … →
+  /// 320s cap, then plateaus. Successful connection in any
+  /// attempt clears the retry state — the next failure will
+  /// start the schedule over from 5s. The local-LLM path
+  /// (in-process GGUF) runs straight through with no retry.
   Future<void> _runAssistantTurn(
     BuildContext context,
     String assistantId,
   ) async {
-    final l10n = AppLocalizations.of(context);
     final useLocal = _settings.useLocalModel;
     final provider = _settings.activeProvider;
     final localProvider = _settings.activeLocalProvider;
 
-    // Build request messages, converting any local image paths to
-    // base64 data URLs just-in-time so we don't keep huge blobs in
-    // memory. The user message's text (if any) is preserved; if the
-    // user sent only images, the API will receive an image-only
-    // content array which both OpenAI and Anthropic accept.
-    final requestMessages = <ChatRequestMessage>[];
-    final cur = _activeSession;
-    if (cur == null) {
+    // Build request messages ONCE — they're identical for
+    // every retry attempt.
+    final requestMessages = await _buildRequestMessages(
+      assistantId: assistantId,
+      useLocal: useLocal,
+    );
+    if (requestMessages == null) {
+      // Active session has been torn down between the start of
+      // sendMessage and now (rare — only on rapid session
+      // switching during the bootstrap). Nothing to stream.
       _sending = false;
       if (!_disposed) notifyListeners();
       return;
     }
+    final systemPrompts = _buildSystemPrompts();
+    final tools = await _buildToolsSchema();
+
+    if (useLocal) {
+      // In-process GGUF — no network involved, so transient
+      // network errors do not apply. Single attempt.
+      await _runAssistantTurnStreamAttempt(
+        // ignore: use_build_context_synchronously
+        context: context,
+        assistantId: assistantId,
+        requestMessages: requestMessages,
+        systemPrompts: systemPrompts,
+        tools: tools,
+        useLocal: true,
+        localProvider: localProvider,
+        provider: null,
+        attempt: 0,
+      );
+    } else {
+      // Cloud. Drive the retry loop. `attempt == 0` is the
+      // first try; `attempt == N (>=1)` is the (N+1)-th try
+      // after N previous failures. Each iteration:
+      //   - body runs one HTTP streaming attempt
+      //   - returns success / hardError → break, finalize
+      //   - returns retryable         → bump attempt, wait
+      //                                `computeRetryBackoff(attempt)`
+      //                                seconds, then loop
+      var attempt = 0;
+      while (!_disposed) {
+        final outcome = await _runAssistantTurnStreamAttempt(
+          // ignore: use_build_context_synchronously
+          context: context,
+          assistantId: assistantId,
+          requestMessages: requestMessages,
+          systemPrompts: systemPrompts,
+          tools: tools,
+          useLocal: false,
+          localProvider: null,
+          provider: provider,
+          attempt: attempt,
+        );
+        if (outcome.kind != _TurnOutcomeKind.retryable) break;
+
+        attempt++;
+        final delay = computeRetryBackoff(attempt);
+        final nextAt = DateTime.now().add(delay);
+        _setRetryStateOnMessage(assistantId, attempt, nextAt);
+        _ensureRetryTickTimer();
+
+        // Wait for either the backoff interval to elapse or
+        // `stopGeneration` to wake us up early. The latter is
+        // necessary because the user's "stop" tap otherwise has
+        // to wait out the remaining portion of a (potentially
+        // up to 320s) backoff interval — they'd be staring at
+        // a frozen countdown for minutes.
+        final wakeup = Completer<void>();
+        _retryWakeup = wakeup;
+        Timer(delay, () {
+          if (!wakeup.isCompleted) wakeup.complete();
+        });
+        await wakeup.future;
+        if (identical(_retryWakeup, wakeup)) _retryWakeup = null;
+
+        if (_disposed || !_sending) {
+          _clearRetryStateOnMessage(assistantId);
+          _maybeStopRetryTickTimer();
+          _sending = false;
+          if (!_disposed) notifyListeners();
+          return;
+        }
+
+        // Reset the bubble to "actively streaming" state so
+        // the user sees the typewriter again rather than a
+        // stale countdown.
+        _clearRetryStateOnMessage(assistantId);
+      }
+    }
+
+    // One-shot cleanup that runs regardless of whether the
+    // chain unwound via the local single-attempt path, the
+    // cloud success path, the cloud hard-error path, or the
+    // user-stopped-during-wait path.
+    _sending = false;
+    _maybeStopRetryTickTimer();
+    final saveCur = _activeSession;
+    if (saveCur != null) {
+      await _storage.sessions.save(saveCur);
+    }
+    refreshSessionList();
+    if (!_disposed) notifyListeners();
+  }
+
+  /// Pulls every persisted user/assistant message out of the
+  /// active session — EXCEPT the in-flight assistant
+  /// placeholder — and converts them to ChatRequestMessage
+  /// objects (translating image paths to base64 data URLs in
+  /// the cloud path, preparing file attachments). Returns null
+  /// when the active session is gone.
+  Future<List<ChatRequestMessage>?> _buildRequestMessages({
+    required String assistantId,
+    required bool useLocal,
+  }) async {
+    final cur = _activeSession;
+    if (cur == null) return null;
+    final out = <ChatRequestMessage>[];
     for (final m in cur.messages) {
       if (m.id == assistantId) continue;
       if (m.role != MessageRole.user && m.role != MessageRole.assistant) {
@@ -1191,7 +1560,7 @@ class ChatProvider extends ChangeNotifier {
           );
         }
       }
-      requestMessages.add(
+      out.add(
         ChatRequestMessage(
           role: m.role,
           content: m.content,
@@ -1201,14 +1570,42 @@ class ChatProvider extends ChangeNotifier {
         ),
       );
     }
+    return out;
+  }
 
-    final systemPrompts = _buildSystemPrompts();
-    final tools = await _buildToolsSchema();
-
+  /// Runs ONE streaming turn attempt. Returns the [_TurnOutcome]
+  /// so the orchestrator can decide whether to retry on the
+  /// exponential-backoff schedule or to finalize the bubble.
+  /// The body must NOT set `_sending=false` — that's the
+  /// orchestrator's job once the chain unwinds.
+  ///
+  /// **Retry classification rule** — on `error` event /
+  /// `onError` in the cloud path only, the error string is fed
+  /// to [isRetryableNetworkError]:
+  ///   - matches → return [_TurnOutcome.retryable]; the
+  ///               orchestrator schedules the next attempt on
+  ///               the exponential-backoff schedule.
+  ///   - no match → existing hard-error path (write the
+  ///                localized "出错了: …" text into the bubble)
+  ///                and return [_TurnOutcome.hardError].
+  ///
+  /// The same body is reused across the local and the cloud
+  /// path; the local path skips the retry branch because the
+  /// condition `useLocal == true` short-circuits the
+  /// classifier.
+  Future<_TurnOutcome> _runAssistantTurnStreamAttempt({
+    required BuildContext context,
+    required String assistantId,
+    required List<ChatRequestMessage> requestMessages,
+    required List<String> systemPrompts,
+    required List<Map<String, dynamic>> tools,
+    required bool useLocal,
+    required LocalProvider? localProvider,
+    required ModelProvider? provider,
+    required int attempt,
+  }) async {
+    final l10n = AppLocalizations.of(context);
     bool updated = false;
-    StreamSubscription<StreamEvent>? sub;
-    final controller = StreamController<void>();
-    final completer = Completer<void>();
 
     // Per-turn metrics (TTFT, tokens/sec, token counts). The
     // turnStartedAt timestamp anchors time-to-first-token;
@@ -1220,7 +1617,9 @@ class ChatProvider extends ChangeNotifier {
     // usage callbacks (OpenAI/Anthropic SSE doesn't include
     // them by default). The final [MessageMetrics] is written
     // back to the in-place assistant message in the
-    // post-stream cleanup block below.
+    // post-stream cleanup block below (only on success /
+    // hard-error — retryable outcomes are handled by the
+    // orchestrator).
     final turnStartedAt = DateTime.now();
     var inputTokens = 0;
     for (final p in systemPrompts) {
@@ -1250,6 +1649,23 @@ class ChatProvider extends ChangeNotifier {
     var lastTokenAt = null as DateTime?;
     var outputTokens = 0;
 
+    final completer = Completer<_TurnOutcome>();
+    StreamSubscription<StreamEvent>? sub;
+    final controller = StreamController<void>();
+
+    // Single-shot guard: once we've recorded an outcome (any
+    // kind), subsequent events from the stream become no-ops.
+    // This guards against a late 'content' / 'error' / 'done'
+    // event that arrives AFTER we've decided the attempt is
+    // retryable — the upstream stream may still flush
+    // buffered events after we tear down.
+    var outcomeRecorded = false;
+    void recordOutcome(_TurnOutcome o) {
+      if (outcomeRecorded) return;
+      outcomeRecorded = true;
+      if (!completer.isCompleted) completer.complete(o);
+    }
+
     final stream = useLocal
         ? _localLlm.streamChat(
             provider: localProvider!,
@@ -1278,6 +1694,7 @@ class ChatProvider extends ChangeNotifier {
     _streamSub = sub;
     sub = stream.listen(
       (event) {
+        if (outcomeRecorded) return;
         if (event.type == 'toolStart') {
           final s = _activeSession;
           if (s != null) {
@@ -1477,9 +1894,25 @@ class ChatProvider extends ChangeNotifier {
             controller.add(null);
           }
         } else if (event.type == 'error') {
+          // Cloud path: classify as transient BEFORE writing
+          // the error to the bubble. A retryable error flips
+          // the bubble to "retrying" state and lets the
+          // orchestrator schedule another attempt on the
+          // exponential-backoff schedule.
+          final raw = event.error ?? '';
+          if (!useLocal && isRetryableNetworkError(raw)) {
+            recordOutcome(_TurnOutcome.retryable(raw));
+            _setRetryStateOnMessage(
+              assistantId,
+              attempt + 1,
+              DateTime.now().add(computeRetryBackoff(attempt + 1)),
+            );
+            return;
+          }
+          // Hard error path (existing behavior).
           final s = _activeSession;
           if (s != null) {
-            final errText = l10n.messageErrorPrefix(event.error ?? '');
+            final errText = l10n.messageErrorPrefix(raw);
             _replaceMessages([
               for (final mm in s.messages)
                 if (mm.id == assistantId)
@@ -1493,15 +1926,26 @@ class ChatProvider extends ChangeNotifier {
             ]);
             controller.add(null);
           }
-          if (!completer.isCompleted) completer.complete();
+          recordOutcome(_TurnOutcome.hardError(raw));
         } else if (event.type == 'done') {
-          if (!completer.isCompleted) completer.complete();
+          recordOutcome(_TurnOutcome.success);
         }
       },
       onError: (e) {
+        if (outcomeRecorded) return;
+        final raw = e.toString();
+        if (!useLocal && isRetryableNetworkError(raw)) {
+          recordOutcome(_TurnOutcome.retryable(raw));
+          _setRetryStateOnMessage(
+            assistantId,
+            attempt + 1,
+            DateTime.now().add(computeRetryBackoff(attempt + 1)),
+          );
+          return;
+        }
         final s = _activeSession;
         if (s != null) {
-          final errText = l10n.messageErrorPrefix(e.toString());
+          final errText = l10n.messageErrorPrefix(raw);
           _replaceMessages([
             for (final mm in s.messages)
               if (mm.id == assistantId)
@@ -1515,7 +1959,7 @@ class ChatProvider extends ChangeNotifier {
           ]);
           controller.add(null);
         }
-        if (!completer.isCompleted) completer.complete();
+        recordOutcome(_TurnOutcome.hardError(raw));
       },
     );
 
@@ -1541,12 +1985,12 @@ class ChatProvider extends ChangeNotifier {
       });
     });
 
-    await completer.future;
+    final outcome = await completer.future;
     await sub.cancel();
     await controller.close();
     persistTimer?.cancel();
     final s = _activeSession;
-    if (s != null) {
+    if (s != null && outcome.kind != _TurnOutcomeKind.retryable) {
       // Stamp the final [MessageMetrics] onto the assistant
       // message before flipping `streaming: false`. The bubble
       // footer reads from [ChatMessage.metrics] — if it's null
@@ -1559,6 +2003,11 @@ class ChatProvider extends ChangeNotifier {
       // `for ... if ... else` rebuild is side-effect free —
       // matches the pattern used everywhere else in this
       // method.
+      //
+      // Skipped on retryable outcomes — those already wrote
+      // streaming=false + null metrics into the bubble via
+      // [_setRetryStateOnMessage], so re-stamping would
+      // overwrite the retry state we just set.
       final finalMetrics = MessageMetrics(
         turnStartedAt: turnStartedAt,
         firstTokenAt: firstTokenAt,
@@ -1574,13 +2023,7 @@ class ChatProvider extends ChangeNotifier {
             m,
       ]);
     }
-    _sending = false;
-    final saveCur = _activeSession;
-    if (saveCur != null) {
-      await _storage.sessions.save(saveCur);
-    }
-    refreshSessionList();
-    if (!_disposed) notifyListeners();
+    return outcome;
   }
 
   /// Stops the current generation immediately. Cancels the stream
@@ -1599,36 +2042,41 @@ class ChatProvider extends ChangeNotifier {
       }
     }
     _pendingAskUser.clear();
+    // Wake up any in-flight retry wait so the orchestrator
+    // unwinds immediately instead of sitting out the rest of
+    // a (potentially 320s) backoff interval.
+    final wakeup = _retryWakeup;
+    if (wakeup != null && !wakeup.isCompleted) wakeup.complete();
     // Cancel the stream subscription — no more events will be
     // processed by ChatProvider.
     _streamSub?.cancel();
     _streamSub = null;
     // Mark the in-flight assistant message as done (remove streaming
-    // flag, add a truncated marker).
+    // flag, add a truncated marker; clear any auto-retry state
+    // so the bubble doesn't keep showing a stale countdown).
     final s = _activeSession;
     if (s != null && s.messages.isNotEmpty) {
       final last = s.messages.last;
-      if (last.role == MessageRole.assistant && last.streaming) {
-        final truncated = last.content.isEmpty
-            ? ''
-            : '${last.content}\n\n*(stopped)*';
-        // If the streamed turn never got to write its final
-        // metrics (stopGeneration races the post-stream cleanup
-        // block), fall back to whatever the in-place
-        // [ChatMessage.metrics] already carries. The bubble
-        // footer tolerates a null [firstTokenAt] (renders only
-        // the chips it can derive), so the worst-case UX is
-        // "no metrics for a stopped turn" — that's fine.
+      if (last.role == MessageRole.assistant) {
+        final truncated = (last.streaming || last.isRetrying)
+            ? (last.content.isEmpty ? '' : '${last.content}\n\n*(stopped)*')
+            : last.content;
         _replaceMessages([
           for (var i = 0; i < s.messages.length; i++)
             if (i == s.messages.length - 1)
-              last.copyWith(content: truncated, streaming: false)
+              last.copyWith(
+                content: truncated,
+                streaming: false,
+                retryAttempt: 0,
+                clearNextRetryAt: true,
+              )
             else
               s.messages[i],
         ]);
       }
     }
     _sending = false;
+    _maybeStopRetryTickTimer();
     if (!_disposed) notifyListeners();
   }
 
@@ -1751,6 +2199,11 @@ class ChatProvider extends ChangeNotifier {
       }
     }
     _pendingAskUser.clear();
+    // Cancel any pending retry-wait waiter + countdown ticker.
+    final wakeup = _retryWakeup;
+    if (wakeup != null && !wakeup.isCompleted) wakeup.complete();
+    _retryTickTimer?.cancel();
+    _retryTickTimer = null;
     _disposed = true;
     super.dispose();
   }
