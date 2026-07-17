@@ -788,40 +788,47 @@ class _ProviderCard extends StatelessWidget {
               ],
               SizedBox(height: 8),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  TextButton.icon(
-                    onPressed: onSetActive,
-                    icon: const Icon(Icons.check_circle_outline, size: 16),
-                    label: Text(l10n.providerSetAsDefault),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      minimumSize: const Size(0, 32),
-                      visualDensity: VisualDensity.compact,
+                  Expanded(
+                    child: Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      alignment: WrapAlignment.start,
+                      children: [
+                        TextButton.icon(
+                          onPressed: onSetActive,
+                          icon: const Icon(Icons.check_circle_outline, size: 16),
+                          label: Text(l10n.providerSetAsDefault),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            minimumSize: const Size(0, 32),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: onTest,
+                          icon: const Icon(Icons.wifi_tethering, size: 16),
+                          label: Text(l10n.providerTest),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            minimumSize: const Size(0, 32),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: onFetch,
+                          icon: const Icon(Icons.refresh, size: 16),
+                          label: Text(l10n.providerFetchModels),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            minimumSize: const Size(0, 32),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  TextButton.icon(
-                    onPressed: onTest,
-                    icon: const Icon(Icons.wifi_tethering, size: 16),
-                    label: Text(l10n.providerTest),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      minimumSize: const Size(0, 32),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  TextButton.icon(
-                    onPressed: onFetch,
-                    icon: const Icon(Icons.refresh, size: 16),
-                    label: Text(l10n.providerFetchModels),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      minimumSize: const Size(0, 32),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-                  const Spacer(),
                   IconButton(
                     onPressed: onDelete,
                     icon: const Icon(
