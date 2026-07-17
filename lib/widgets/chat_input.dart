@@ -1119,7 +1119,7 @@ class _ChatInputState extends State<ChatInput> {
         border: Border(top: BorderSide(color: context.appBorder)),
       ),
       padding: EdgeInsets.fromLTRB(
-        10,
+        8,
         8,
         10,
         8 + MediaQuery.of(context).padding.bottom,
@@ -1132,7 +1132,8 @@ class _ChatInputState extends State<ChatInput> {
             if (hasAttachments) _buildThumbnails(l10n),
             if (_voiceListening) _buildVoiceBar(l10n),
             Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 SizedBox(
                   width: 40,
@@ -1157,7 +1158,7 @@ class _ChatInputState extends State<ChatInput> {
                     tooltip: l10n.chatToolsTooltip,
                   ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 4),
                 Expanded(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(
@@ -1701,6 +1702,7 @@ class _InputFieldState extends State<_InputField> {
     return Focus(
       onKeyEvent: _onKey,
       child: Stack(
+        alignment: AlignmentGeometry.center,
         children: [
           // Volume-monitor background. Sits behind the [TextField]
           // (Stack children paint in order). `fillColor: transparent`
@@ -1709,6 +1711,8 @@ class _InputFieldState extends State<_InputField> {
           // so the bar never bleeds past the rounded corners.
           if (widget.voiceActive)
             Positioned.fill(
+              left: 1.5,
+              right: 1.5,
               // Volume-monitor background. The bar's width is the
               // raw `level` (left-anchored via `FractionallySizedBox`
               // + `Align`). We deliberately do *not* tween between
@@ -1726,7 +1730,7 @@ class _InputFieldState extends State<_InputField> {
                   alignment: Alignment.centerLeft,
                   child: FractionallySizedBox(
                     widthFactor: factor,
-                    heightFactor: 1,
+                    heightFactor: 0.9,
                     child: Container(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
