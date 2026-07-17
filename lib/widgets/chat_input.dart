@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -12,7 +13,8 @@ import '../l10n/app_localizations.dart';
 import '../models/file_attachment.dart';
 import '../services/file_attachment_service.dart';
 import '../services/image_service.dart';
-import '../services/platform/calendar_service.dart' show PlatformPermissionStatus;
+import '../services/platform/calendar_service.dart'
+    show PlatformPermissionStatus;
 import '../services/platform/voice_service.dart';
 import '../theme/app_theme.dart';
 import 'image_preview.dart';
@@ -98,6 +100,21 @@ class _ChatInputState extends State<ChatInput> {
   bool _voiceListening = false;
   double _voiceLevel = 0.0;
   String _voicePartial = '';
+  // Listenable view of [_voiceLevel], consumed by [_InputField] so
+  // the input's volume-monitor background can repaint on every level
+  // tick without rebuilding the whole chat input column.
+  final ValueNotifier<double> _voiceLevelNotifier = ValueNotifier<double>(0);
+  // Periodic decay timer for the synthetic level bump (see
+  // [_bumpSyntheticLevel] / [_onVoiceResult]). Once real amplitude
+  // data starts arriving from the engine, the real callback resets
+  // the timer and the synthetic path stops running.
+  Timer? _voiceLevelDecayTimer;
+  // Cached text of the previous partial transcript — used to detect
+  // "the engine produced new content" so we can pulse the level
+  // meter when no real amplitude data is available (e.g. on Windows,
+  // where `speech_to_text`'s `onSoundLevelChange` is known to be
+  // unreliable).
+  String _lastRecognizedPartial = '';
   // True only once the engine confirms it is actually listening
   // (status == 'listening'). Used to distinguish a real recording
   // session from a long-press whose pointer was released because the
@@ -152,6 +169,9 @@ class _ChatInputState extends State<ChatInput> {
       _voiceListening = false;
       _voiceActuallyStarted = false;
     }
+    _voiceLevelDecayTimer?.cancel();
+    _voiceLevelDecayTimer = null;
+    _voiceLevelNotifier.dispose();
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -351,11 +371,15 @@ class _ChatInputState extends State<ChatInput> {
         selection: TextSelection.collapsed(offset: _voiceInsertOffset),
       );
     }
+    _voiceLevelDecayTimer?.cancel();
+    _voiceLevelDecayTimer = null;
+    _voiceLevelNotifier.value = 0.0;
     setState(() {
       _voiceListening = false;
       _voiceActuallyStarted = false;
       _voiceLevel = 0.0;
       _voicePartial = '';
+      _lastRecognizedPartial = '';
       _voiceLongPressOrigin = null;
       _voiceCancelledByDrag = false;
     });
@@ -449,6 +473,7 @@ class _ChatInputState extends State<ChatInput> {
       _voiceLevel = 0.0;
       _voicePartial = '';
       _voiceActuallyStarted = false;
+      _lastRecognizedPartial = '';
     });
   }
 
@@ -462,7 +487,25 @@ class _ChatInputState extends State<ChatInput> {
     // would re-mirror text into the input box that the user just
     // had us clear.
     if (!_voiceListening) return;
+    // Treat the first real, non-empty result as definitive proof
+    // the session is alive. We no longer rely solely on
+    // `onStatus('listening')` because on Windows the WinRT
+    // speech engine sometimes never fires that string even while
+    // delivering results — leaving the release-long-press path
+    // stuck in the "engine never entered listening, do nothing"
+    // branch and orphaning the session.
+    final becameStarted = !_voiceActuallyStarted && result.text.isNotEmpty;
+    if (becameStarted) _voiceActuallyStarted = true;
+    final updated = result.text != _lastRecognizedPartial;
     setState(() => _voicePartial = result.text);
+    if (updated) {
+      _lastRecognizedPartial = result.text;
+      // Pulse the volume meter on every genuinely new partial —
+      // some platforms (notably Windows) never emit
+      // `onSoundLevelChange`, so without this the user would see
+      // a frozen meter while speaking.
+      if (result.text.isNotEmpty) _bumpSyntheticLevel();
+    }
     // Mirror the live transcript into the input box at the
     // snapshotted offset so the user sees their words being typed
     // in real time. The original prefix + suffix is preserved
@@ -510,13 +553,60 @@ class _ChatInputState extends State<ChatInput> {
   }
 
   void _onVoiceLevel(double level) {
-    if (mounted) setState(() => _voiceLevel = level);
+    if (!mounted) return;
+    // The engine produced a real amplitude sample; trust it and
+    // let the meter follow the actual waveform. Cancel the
+    // synthetic decay so the bar doesn't drop when the engine
+    // goes momentarily silent between samples.
+    _voiceLevelDecayTimer?.cancel();
+    _voiceLevelDecayTimer = null;
+    final clamped = level.clamp(0.0, 1.0);
+    _voiceLevelNotifier.value = clamped;
+    setState(() => _voiceLevel = clamped);
+  }
+
+  /// Drive the volume meter from new partial transcripts when the
+  /// underlying engine doesn't deliver `onSoundLevelChange` updates
+  /// (the WinRT [speech_to_text] backend on Windows is one such
+  /// case). Each new partial bumps the level to a randomised value
+  /// in `0.55..0.95` and a decaying timer walks it back down so
+  /// the visual feels organic even with no amplitude data.
+  void _bumpSyntheticLevel() {
+    final pulse = 0.55 + math.Random().nextDouble() * 0.40;
+    final next = math.max(_voiceLevel, pulse);
+    _voiceLevel = next;
+    _voiceLevelNotifier.value = next;
+    _scheduleSyntheticDecay();
+  }
+
+  void _scheduleSyntheticDecay() {
+    _voiceLevelDecayTimer?.cancel();
+    _voiceLevelDecayTimer = Timer.periodic(const Duration(milliseconds: 90), (
+      t,
+    ) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      final next = math.max(0.0, _voiceLevel - 0.06);
+      _voiceLevel = next;
+      _voiceLevelNotifier.value = next;
+      if (next <= 0.0001) {
+        _voiceLevel = 0.0;
+        _voiceLevelNotifier.value = 0.0;
+        t.cancel();
+        _voiceLevelDecayTimer = null;
+      }
+    });
   }
 
   Future<void> _stopVoice() async {
     if (!_voiceListening) return;
     await widget.voiceService.stopListening();
     if (mounted) {
+      _voiceLevelDecayTimer?.cancel();
+      _voiceLevelDecayTimer = null;
+      _voiceLevelNotifier.value = 0.0;
       setState(() {
         _voiceListening = false;
         _voiceActuallyStarted = false;
@@ -1018,6 +1108,9 @@ class _ChatInputState extends State<ChatInput> {
                       sending: widget.sending,
                       onSubmit: _send,
                       onPaste: _handlePaste,
+                      voiceLevelNotifier: _voiceLevelNotifier,
+                      voiceActive: _voiceListening,
+                      voiceDragCancelled: _voiceCancelledByDrag,
                     ),
                   ),
                 ),
@@ -1141,20 +1234,16 @@ class _ChatInputState extends State<ChatInput> {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onLongPressStart:
-              longPressHandlers['onLongPressStart'] as void Function(
-                LongPressStartDetails,
-              )?,
+              longPressHandlers['onLongPressStart']
+                  as void Function(LongPressStartDetails)?,
           onLongPressEnd:
-              longPressHandlers['onLongPressEnd'] as void Function(
-                LongPressEndDetails,
-              )?,
+              longPressHandlers['onLongPressEnd']
+                  as void Function(LongPressEndDetails)?,
           child: ElevatedButton(
             onPressed: widget.enabled ? _send : null,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.primary,
-              disabledBackgroundColor: AppTheme.primary.withValues(
-                alpha: 0.4,
-              ),
+              disabledBackgroundColor: AppTheme.primary.withValues(alpha: 0.4),
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
@@ -1185,13 +1274,11 @@ class _ChatInputState extends State<ChatInput> {
         behavior: HitTestBehavior.opaque,
         onTap: () => _focusNode.requestFocus(),
         onLongPressStart:
-            longPressHandlers['onLongPressStart'] as void Function(
-              LongPressStartDetails,
-            )?,
+            longPressHandlers['onLongPressStart']
+                as void Function(LongPressStartDetails)?,
         onLongPressEnd:
-            longPressHandlers['onLongPressEnd'] as void Function(
-              LongPressEndDetails,
-            )?,
+            longPressHandlers['onLongPressEnd']
+                as void Function(LongPressEndDetails)?,
         child: Semantics(
           button: true,
           label: l10n.chatMicTooltip,
@@ -1240,7 +1327,11 @@ class _ChatInputState extends State<ChatInput> {
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: _voiceCancelledByDrag ? color : AppTheme.primary),
+          Icon(
+            icon,
+            size: 16,
+            color: _voiceCancelledByDrag ? color : AppTheme.primary,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -1267,9 +1358,7 @@ class _ChatInputState extends State<ChatInput> {
                   decoration: BoxDecoration(
                     color: _voiceCancelledByDrag
                         ? (active ? color : context.appBorder)
-                        : (active
-                              ? AppTheme.primary
-                              : context.appBorder),
+                        : (active ? AppTheme.primary : context.appBorder),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 );
@@ -1406,7 +1495,16 @@ class _ScrollingFileNameState extends State<_ScrollingFileName> {
 ///     Focus handler is a no-op and Enter naturally falls through
 ///     to the IME's newline behavior). The user has to tap the
 ///     send button.
-class _InputField extends StatelessWidget {
+///
+/// When [voiceActive] is `true` the field shows a left-anchored
+/// gradient bar (green → yellow → red, width proportional to
+/// [voiceLevelNotifier].value) as the live volume meter. This is
+/// the user-visible feedback for voice input: louder sound =
+/// wider bar; no sound = bar collapses to zero. The bar lives
+/// *behind* the [TextField] (in a [Stack]) so the text stays
+/// fully readable; on a drag-to-cancel the gradient flips to a
+/// red/orange tint via [voiceDragCancelled].
+class _InputField extends StatefulWidget {
   const _InputField({
     required this.controller,
     required this.focusNode,
@@ -1414,6 +1512,9 @@ class _InputField extends StatelessWidget {
     required this.sending,
     required this.onSubmit,
     this.onPaste,
+    this.voiceLevelNotifier,
+    this.voiceActive = false,
+    this.voiceDragCancelled = false,
   });
 
   final TextEditingController controller;
@@ -1422,6 +1523,53 @@ class _InputField extends StatelessWidget {
   final bool sending;
   final VoidCallback onSubmit;
   final VoidCallback? onPaste;
+
+  /// Live 0..1 amplitude sample (or a synthetic pulse) emitted by
+  /// the parent while a voice session is active. The input listens
+  /// to this notifier so the background gradient repaints without
+  /// rebuilding the whole chat input column on every sample.
+  final ValueListenable<double>? voiceLevelNotifier;
+
+  /// Whether a voice session is currently active. While `false`
+  /// the gradient collapses to zero width and stays invisible
+  /// regardless of the level notifier's value.
+  final bool voiceActive;
+
+  /// `true` while the user is dragging-to-cancel. Switches the
+  /// gradient to a red/orange palette so the input itself doubles
+  /// as a cancel affordance, matching the red text + icon in the
+  /// voice bar above it.
+  final bool voiceDragCancelled;
+
+  @override
+  State<_InputField> createState() => _InputFieldState();
+}
+
+class _InputFieldState extends State<_InputField> {
+  @override
+  void initState() {
+    super.initState();
+    widget.voiceLevelNotifier?.addListener(_onLevelChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _InputField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.voiceLevelNotifier != widget.voiceLevelNotifier) {
+      oldWidget.voiceLevelNotifier?.removeListener(_onLevelChanged);
+      widget.voiceLevelNotifier?.addListener(_onLevelChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.voiceLevelNotifier?.removeListener(_onLevelChanged);
+    super.dispose();
+  }
+
+  void _onLevelChanged() {
+    if (mounted) setState(() {});
+  }
 
   bool get _isDesktop {
     if (kIsWeb) return true;
@@ -1438,8 +1586,8 @@ class _InputField extends StatelessWidget {
       final isPasteModifier =
           HardwareKeyboard.instance.isControlPressed ||
           HardwareKeyboard.instance.isMetaPressed;
-      if (isPasteModifier && onPaste != null) {
-        onPaste!();
+      if (isPasteModifier && widget.onPaste != null) {
+        widget.onPaste!();
         return KeyEventResult.handled;
       }
       if (isPasteModifier) return KeyEventResult.handled;
@@ -1458,8 +1606,8 @@ class _InputField extends StatelessWidget {
       // newline behavior.
       return KeyEventResult.ignored;
     }
-    if (!enabled) return KeyEventResult.ignored;
-    onSubmit();
+    if (!widget.enabled) return KeyEventResult.ignored;
+    widget.onSubmit();
     return KeyEventResult.handled;
   }
 
@@ -1472,49 +1620,129 @@ class _InputField extends StatelessWidget {
   /// already existed in l10n; it just wasn't wired up.
   String _hintText(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    if (!enabled && sending) return l10n.chatInputHintReplying;
-    if (!enabled) return l10n.chatInputHintNoModel;
+    if (!widget.enabled && widget.sending) return l10n.chatInputHintReplying;
+    if (!widget.enabled) return l10n.chatInputHintNoModel;
     return l10n.chatInputHint;
   }
 
   @override
   Widget build(BuildContext context) {
+    // Read the level locally so the bar repaints whenever the
+    // notifier fires, even when the parent ChatInput didn't
+    // rebuild. Clamp to [0, 1] to keep fractional-noise from
+    // plugins (some report >1 dB) from over-filling the bar.
+    final rawLevel = widget.voiceActive
+        ? (widget.voiceLevelNotifier?.value ?? 0.0)
+        : 0.0;
+    final factor = (0.02 + rawLevel.clamp(0.0, 1.0) * 0.98).clamp(0.02, 1.0);
     return Focus(
       onKeyEvent: _onKey,
-      child: TextField(
-        controller: controller,
-        focusNode: focusNode,
-        enabled: enabled,
-        minLines: _kMaxLinesCollapsed,
-        maxLines: _kMaxLinesExpanded,
-        textInputAction: TextInputAction.newline,
-        keyboardType: TextInputType.multiline,
-        style: const TextStyle(fontSize: 15, height: 1.4),
-        decoration: InputDecoration(
-          hintText: _hintText(context),
-          hintStyle: TextStyle(color: context.textSecondary),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 10,
+      child: Stack(
+        children: [
+          // Volume-monitor background. Sits behind the [TextField]
+          // (Stack children paint in order). `fillColor: transparent`
+          // lets the gradient show through the field's fill area; the
+          // rounded `ClipRRect` matches the field's `borderRadius`
+          // so the bar never bleeds past the rounded corners.
+          if (widget.voiceActive)
+            Positioned.fill(
+              // Volume-monitor background. The bar's width is the
+              // raw `level` (left-anchored via `FractionallySizedBox`
+              // + `Align`). We deliberately do *not* tween between
+              // samples here — the synthetic-decay timer already
+              // walks the level down in 60 ms ticks, which gives a
+              // smoother-looking animation than any tween between
+              // discrete samples would, and avoids the
+              // TweenAnimationBuilder-restart race that periodic
+              // updates can trigger. The 2% baseline keeps a thin
+              // sliver visible at zero amplitude so the field
+              // still reads as "live" between phrases.
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: factor,
+                    heightFactor: 1,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: widget.voiceDragCancelled
+                              ? const [
+                                  Color(0xFFFFCDD2), // red 100
+                                  Color(0xFFE57373), // red 300
+                                  Color(0xFFEF5350), // red 400
+                                ]
+                              : const [
+                                  Color(0xFF81C784), // green 300
+                                  Color(0xFFFFF176), // yellow 300
+                                  Color(0xFFE57373), // red 300
+                                ],
+                          stops: const [0.0, 0.55, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          TextField(
+            controller: widget.controller,
+            focusNode: widget.focusNode,
+            enabled: widget.enabled,
+            minLines: _kMaxLinesCollapsed,
+            maxLines: _kMaxLinesExpanded,
+            textInputAction: TextInputAction.newline,
+            keyboardType: TextInputType.multiline,
+            style: const TextStyle(fontSize: 15, height: 1.4),
+            decoration: InputDecoration(
+              hintText: _hintText(context),
+              hintStyle: TextStyle(color: context.textSecondary),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+              filled: true,
+              // Transparent fill so the gradient volume bar painted
+              // behind this TextField (via the Stack above) shows
+              // through. The OutlineInputBorder still draws the
+              // rounded outline on top.
+              fillColor: Colors.transparent,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(20),
+                borderSide: BorderSide(color: context.appBorder),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(20),
+                borderSide: BorderSide(color: context.appBorder),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(20),
+                borderSide: const BorderSide(
+                  color: AppTheme.primary,
+                  width: 1.2,
+                ),
+              ),
+              isDense: true,
+            ),
           ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(20),
-            borderSide: BorderSide(color: context.appBorder),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(20),
-            borderSide: BorderSide(color: context.appBorder),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(20),
-            borderSide: const BorderSide(color: AppTheme.primary, width: 1.2),
-          ),
-          isDense: true,
-        ),
+        ],
       ),
     );
   }
 }
+
+/// Left-anchored colored bar that fills `level`-fraction of its
+/// container. Width is proportional to the live microphone
+/// amplitude; the palette is a horizontal gradient that flows
+/// green → yellow → red by default and switches to a
+/// red-only "cancel warning" palette while [dragCancelled] is
+/// `true`. The full gradient spans the bar's actual width, so at
+/// low volumes only the leftmost (green) part of the palette is
+/// visible; at high volumes the yellow / red end of the rainbow
+/// slides into view. A 2% baseline strip keeps the bar visible
+/// even at zero amplitude so the user knows the field is in
+/// "live" mode between phrases.
 
 class _AttachmentThumbnail extends StatelessWidget {
   const _AttachmentThumbnail({

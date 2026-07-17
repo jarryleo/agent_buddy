@@ -176,11 +176,7 @@ void main() {
     ) async {
       final voice = FakeVoiceService();
       final sent = <String>[];
-      await _pumpInput(
-        tester,
-        voice: voice,
-        onSend: (t, _, _) => sent.add(t),
-      );
+      await _pumpInput(tester, voice: voice, onSend: (t, _, _) => sent.add(t));
 
       // Empty input → mic button visible.
       final mic = find.descendant(
@@ -211,15 +207,12 @@ void main() {
       expect(sent, isEmpty, reason: 'long-press should NOT send anything');
     });
 
-    testWidgets('long-press the send button (non-empty input) starts voice',
-        (tester) async {
+    testWidgets('long-press the send button (non-empty input) starts voice', (
+      tester,
+    ) async {
       final voice = FakeVoiceService();
       final sent = <String>[];
-      await _pumpInput(
-        tester,
-        voice: voice,
-        onSend: (t, _, _) => sent.add(t),
-      );
+      await _pumpInput(tester, voice: voice, onSend: (t, _, _) => sent.add(t));
 
       // Type some text so the send button appears.
       await tester.enterText(find.byType(TextField), 'draft message');
@@ -248,14 +241,11 @@ void main() {
       );
     });
 
-    testWidgets('partial transcript is mirrored live into the input box',
-        (tester) async {
+    testWidgets('partial transcript is mirrored live into the input box', (
+      tester,
+    ) async {
       final voice = FakeVoiceService();
-      await _pumpInput(
-        tester,
-        voice: voice,
-        onSend: (_, _, _) {},
-      );
+      await _pumpInput(tester, voice: voice, onSend: (_, _, _) {});
 
       final mic = find.descendant(
         of: find.byType(ChatInput),
@@ -280,55 +270,53 @@ void main() {
     });
 
     testWidgets(
-        'release after recording leaves text in the input box (no auto-send)',
-        (tester) async {
+      'release after recording leaves text in the input box (no auto-send)',
+      (tester) async {
+        final voice = FakeVoiceService();
+        final sent = <String>[];
+        await _pumpInput(
+          tester,
+          voice: voice,
+          onSend: (t, _, _) => sent.add(t),
+        );
+
+        final mic = find.descendant(
+          of: find.byType(ChatInput),
+          matching: find.byIcon(Icons.mic_none_rounded),
+        );
+        await _longPress(tester, mic);
+        await tester.pumpAndSettle();
+
+        voice.emitStatus('listening');
+        voice.emitResult('hi there');
+        voice.emitResult('hi there, how are you', finalResult: true);
+        await tester.pump();
+
+        // Now we need to simulate the long-press *end*. The
+        // longPress helper already released the gesture; we just
+        // need to pump the engine a bit.
+        await tester.pumpAndSettle();
+
+        final field = tester.widget<TextField>(find.byType(TextField));
+        expect(
+          field.controller!.text,
+          'hi there, how are you',
+          reason: 'text should be in the box for the user to review',
+        );
+        expect(
+          sent,
+          isEmpty,
+          reason: 'release must NOT auto-send the transcribed text',
+        );
+      },
+    );
+
+    testWidgets('drag-away-to-cancel discards the partial transcript', (
+      tester,
+    ) async {
       final voice = FakeVoiceService();
       final sent = <String>[];
-      await _pumpInput(
-        tester,
-        voice: voice,
-        onSend: (t, _, _) => sent.add(t),
-      );
-
-      final mic = find.descendant(
-        of: find.byType(ChatInput),
-        matching: find.byIcon(Icons.mic_none_rounded),
-      );
-      await _longPress(tester, mic);
-      await tester.pumpAndSettle();
-
-      voice.emitStatus('listening');
-      voice.emitResult('hi there');
-      voice.emitResult('hi there, how are you', finalResult: true);
-      await tester.pump();
-
-      // Now we need to simulate the long-press *end*. The
-      // longPress helper already released the gesture; we just
-      // need to pump the engine a bit.
-      await tester.pumpAndSettle();
-
-      final field = tester.widget<TextField>(find.byType(TextField));
-      expect(
-        field.controller!.text,
-        'hi there, how are you',
-        reason: 'text should be in the box for the user to review',
-      );
-      expect(
-        sent,
-        isEmpty,
-        reason: 'release must NOT auto-send the transcribed text',
-      );
-    });
-
-    testWidgets('drag-away-to-cancel discards the partial transcript',
-        (tester) async {
-      final voice = FakeVoiceService();
-      final sent = <String>[];
-      await _pumpInput(
-        tester,
-        voice: voice,
-        onSend: (t, _, _) => sent.add(t),
-      );
+      await _pumpInput(tester, voice: voice, onSend: (t, _, _) => sent.add(t));
 
       final mic = find.descendant(
         of: find.byType(ChatInput),
@@ -355,50 +343,49 @@ void main() {
     });
 
     testWidgets(
-        'permission denied (permanently) shows the right snackbar + never starts',
-        (tester) async {
-      final voice = FakeVoiceService(
-        permission: PlatformPermissionStatus.permanentlyDenied,
-        errorOnFail: VoiceError.permanentlyDenied,
-      );
-      final sent = <String>[];
-      await _pumpInput(
-        tester,
-        voice: voice,
-        onSend: (t, _, _) => sent.add(t),
-      );
+      'permission denied (permanently) shows the right snackbar + never starts',
+      (tester) async {
+        final voice = FakeVoiceService(
+          permission: PlatformPermissionStatus.permanentlyDenied,
+          errorOnFail: VoiceError.permanentlyDenied,
+        );
+        final sent = <String>[];
+        await _pumpInput(
+          tester,
+          voice: voice,
+          onSend: (t, _, _) => sent.add(t),
+        );
 
-      final mic = find.descendant(
-        of: find.byType(ChatInput),
-        matching: find.byIcon(Icons.mic_none_rounded),
-      );
-      await _longPress(tester, mic);
-      await tester.pumpAndSettle();
+        final mic = find.descendant(
+          of: find.byType(ChatInput),
+          matching: find.byIcon(Icons.mic_none_rounded),
+        );
+        await _longPress(tester, mic);
+        await tester.pumpAndSettle();
 
-      expect(voice.requestPermissionCalls, 1);
-      expect(
-        voice.startListeningCalls,
-        0,
-        reason: 'engine should not be asked to start when permission is denied',
-      );
-      expect(sent, isEmpty);
+        expect(voice.requestPermissionCalls, 1);
+        expect(
+          voice.startListeningCalls,
+          0,
+          reason:
+              'engine should not be asked to start when permission is denied',
+        );
+        expect(sent, isEmpty);
 
-      // The snackbar should be visible.
-      expect(
-        find.textContaining('permanently', findRichText: true),
-        findsOneWidget,
-      );
-    });
+        // The snackbar should be visible.
+        expect(
+          find.textContaining('permanently', findRichText: true),
+          findsOneWidget,
+        );
+      },
+    );
 
-    testWidgets('listening: tap on the pulsing mic stops recording (no send)',
-        (tester) async {
+    testWidgets('listening: tap on the pulsing mic stops recording (no send)', (
+      tester,
+    ) async {
       final voice = FakeVoiceService();
       final sent = <String>[];
-      await _pumpInput(
-        tester,
-        voice: voice,
-        onSend: (t, _, _) => sent.add(t),
-      );
+      await _pumpInput(tester, voice: voice, onSend: (t, _, _) => sent.add(t));
 
       final mic = find.descendant(
         of: find.byType(ChatInput),
@@ -429,6 +416,281 @@ void main() {
         isEmpty,
         reason: 'tap-to-stop must not send; text just stays in the box',
       );
+    });
+  });
+
+  group('ChatInput voice input — bug fixes + volume meter', () {
+    /// Counts how many [FractionallySizedBox] widgets are mounted
+    /// in the tree. The codebase only uses it for the
+    /// `_VoiceVolumeBar` inside the input field's volume-meter
+    /// background, so the delta between "not listening" and
+    /// "listening" cleanly reflects whether the bar is rendered.
+    int fsbCount(WidgetTester t) =>
+        find.byType(FractionallySizedBox).evaluate().length;
+
+    /// Finds the gradient-painted [Container] painted by the
+    /// volume meter (when listening) and returns its current
+    /// [LinearGradient.colors], or `null` when none is mounted.
+    List<Color>? gradientColors(WidgetTester t) {
+      final matches = find.byWidgetPredicate(
+        (w) =>
+            w is Container &&
+            w.decoration is BoxDecoration &&
+            (w.decoration! as BoxDecoration).gradient is LinearGradient,
+      );
+      if (matches.evaluate().isEmpty) return null;
+      final container = t.widget<Container>(matches.first);
+      final gradient =
+          (container.decoration! as BoxDecoration).gradient! as LinearGradient;
+      return gradient.colors;
+    }
+
+    testWidgets(
+      'first partial result flips _voiceActuallyStarted (no onStatus needed)',
+      (tester) async {
+        final voice = FakeVoiceService();
+        final sent = <String>[];
+        await _pumpInput(
+          tester,
+          voice: voice,
+          onSend: (t, _, _) => sent.add(t),
+        );
+
+        final mic = find.descendant(
+          of: find.byType(ChatInput),
+          matching: find.byIcon(Icons.mic_none_rounded),
+        );
+        await _longPress(tester, mic);
+        await tester.pumpAndSettle();
+
+        // Engine reports a partial result WITHOUT first reporting
+        // status='listening'. This is the Windows scenario where
+        // the WinRT speech recognizer streams results before any
+        // status callback fires — and was the bug behind the
+        // "无法启动语音输入" snackbar (the release path bailed
+        // because `actuallyStarted` was never set).
+        voice.emitResult('hello');
+        await tester.pump();
+
+        // Tapping the (now-pulsing, because started) mic stops the
+        // session cleanly.
+        final pulsingMic = find.descendant(
+          of: find.byType(ChatInput),
+          matching: find.byWidgetPredicate(
+            (w) => w is Icon && w.icon == Icons.mic && w.size == 18,
+          ),
+        );
+        expect(pulsingMic, findsOneWidget);
+        await tester.tap(pulsingMic);
+        await tester.pumpAndSettle();
+
+        expect(
+          voice.stopListeningCalls,
+          1,
+          reason:
+              'first result must flip _voiceActuallyStarted → tap-to-stop works',
+        );
+      },
+    );
+
+    testWidgets('input field shows the gradient volume bar while listening', (
+      tester,
+    ) async {
+      final voice = FakeVoiceService();
+      await _pumpInput(tester, voice: voice, onSend: (_, _, _) {});
+      final beforeFsbCount = fsbCount(tester);
+      expect(beforeFsbCount, 0, reason: 'no volume bar before voice starts');
+
+      final mic = find.descendant(
+        of: find.byType(ChatInput),
+        matching: find.byIcon(Icons.mic_none_rounded),
+      );
+      await _longPress(tester, mic);
+      await tester.pumpAndSettle();
+      voice.emitStatus('listening');
+      await tester.pump();
+
+      expect(
+        fsbCount(tester),
+        beforeFsbCount + 1,
+        reason:
+            'a FractionallySizedBox (the volume bar) is mounted during listening',
+      );
+      expect(gradientColors(tester), isNotNull);
+    });
+
+    testWidgets('synthetic level bumps with each new partial', (tester) async {
+      final voice = FakeVoiceService();
+      await _pumpInput(tester, voice: voice, onSend: (_, _, _) {});
+
+      final mic = find.descendant(
+        of: find.byType(ChatInput),
+        matching: find.byIcon(Icons.mic_none_rounded),
+      );
+      await _longPress(tester, mic);
+      await tester.pumpAndSettle();
+      voice.emitStatus('listening');
+      await tester.pump();
+
+      // The volume bar is rendered with a baseline factor of 0.02
+      // (very thin sliver). At rest, no real onLevel callback has
+      // fired (Windows doesn't reliably emit one) so the bar's
+      // factor floor is the 2% baseline.
+      var factor =
+          (tester
+              .widget<FractionallySizedBox>(find.byType(FractionallySizedBox))
+              .widthFactor!) -
+          0.02;
+      expect(factor, lessThan(0.05), reason: 'baseline factor is ~2% at rest');
+
+      // Push a partial transcript — the synthetic-level bump
+      // should drive the widthFactor well above the baseline.
+      voice.emitResult('hello');
+      // TweenAnimationBuilder interpolates 0 → level over 110ms;
+      // pump past that so we observe the settled meter width.
+      await tester.pump(const Duration(milliseconds: 130));
+      factor = tester
+          .widget<FractionallySizedBox>(find.byType(FractionallySizedBox))
+          .widthFactor!;
+      expect(
+        factor,
+        greaterThan(0.3),
+        reason:
+            'a partial result must bump the synthetic level so the meter visibly responds',
+      );
+
+      // After ~500ms of no further results the decay timer
+      // should have ticked the bar back below the peak.
+      await tester.pump(const Duration(milliseconds: 500));
+      // Final factor is non-zero (the baseline keeps the bar
+      // visible) and below the peak we just saw.
+      final decayed = tester
+          .widget<FractionallySizedBox>(find.byType(FractionallySizedBox))
+          .widthFactor!;
+      expect(decayed, lessThan(factor));
+      expect(decayed, greaterThanOrEqualTo(0.02));
+    });
+
+    testWidgets('real amplitude (onLevel) drives the bar directly', (
+      tester,
+    ) async {
+      final voice = FakeVoiceService();
+      await _pumpInput(tester, voice: voice, onSend: (_, _, _) {});
+      final mic = find.descendant(
+        of: find.byType(ChatInput),
+        matching: find.byIcon(Icons.mic_none_rounded),
+      );
+      await _longPress(tester, mic);
+      await tester.pumpAndSettle();
+      voice.emitStatus('listening');
+      await tester.pump();
+
+      // Real amplitude at the noisy end of the spectrum (~0.9)
+      // should drive the bar above 80%. `pumpAndSettle` lets the
+      // 110 ms tween animation fully run to completion (no
+      // periodic timers are scheduled by the real-amplitude path
+      // so settle does terminate).
+      voice.emitLevel(0.9);
+      await tester.pumpAndSettle();
+      final factor = tester
+          .widget<FractionallySizedBox>(find.byType(FractionallySizedBox))
+          .widthFactor!;
+      expect(
+        factor,
+        greaterThan(0.75),
+        reason: 'real-amplitude callback must dominate over synthetic',
+      );
+    });
+
+    testWidgets('drag-to-cancel switches the bar to the red palette', (
+      tester,
+    ) async {
+      final voice = FakeVoiceService();
+      await _pumpInput(tester, voice: voice, onSend: (_, _, _) {});
+      final mic = find.descendant(
+        of: find.byType(ChatInput),
+        matching: find.byIcon(Icons.mic_none_rounded),
+      );
+
+      // Hold the press without releasing so we can inspect the
+      // palette mid-drag.
+      final center = tester.getCenter(mic);
+      final gesture = await tester.startGesture(center);
+      await tester.pump(const Duration(milliseconds: 600));
+      voice.emitStatus('listening');
+      voice.emitResult('partial');
+      voice.emitLevel(0.7);
+      await tester.pump();
+
+      // Normal meter — green dominant.
+      final normalColors = gradientColors(tester);
+      expect(
+        normalColors,
+        isNotNull,
+        reason: 'volume bar renders while listening',
+      );
+      expect(
+        normalColors!.first.g,
+        greaterThan(normalColors.first.r),
+        reason:
+            'active meter starts with green (meter palette, not cancel palette)',
+      );
+
+      // Drag past the 80px threshold WITHOUT releasing. The bar
+      // palette must switch to the red-only cancel ramp while
+      // still being mounted (the gesture is still down).
+      await gesture.moveBy(const Offset(200, 0));
+      await tester.pump();
+
+      final dragColors = gradientColors(tester);
+      expect(
+        dragColors,
+        isNotNull,
+        reason: 'bar remains mounted while dragging',
+      );
+      expect(
+        dragColors!.first.r,
+        greaterThan(dragColors.first.g),
+        reason:
+            'drag-cancel palette is dominated by red, not the green/yellow/red meter',
+      );
+
+      // Now release — listening ends, bar unmounts.
+      await gesture.up();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('volume bar disappears once listening ends', (tester) async {
+      final voice = FakeVoiceService();
+      await _pumpInput(tester, voice: voice, onSend: (_, _, _) {});
+      final mic = find.descendant(
+        of: find.byType(ChatInput),
+        matching: find.byIcon(Icons.mic_none_rounded),
+      );
+
+      // Long-press → drag → release (drag-cancel flow).
+      final center = tester.getCenter(mic);
+      final gesture = await tester.startGesture(center);
+      await tester.pump(const Duration(milliseconds: 600));
+      voice.emitStatus('listening');
+      voice.emitResult('captured');
+      await tester.pump();
+
+      expect(
+        fsbCount(tester),
+        greaterThan(0),
+        reason: 'bar mounts during listening',
+      );
+
+      // Release after dragging past threshold — listening
+      // cleanly tears down, the bar unmounts.
+      await gesture.moveBy(const Offset(200, 0));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(fsbCount(tester), 0, reason: 'bar unmounts once the session ends');
+      expect(gradientColors(tester), isNull);
     });
   });
 }
