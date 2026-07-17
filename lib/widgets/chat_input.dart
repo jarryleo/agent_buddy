@@ -1768,7 +1768,7 @@ class _AttachmentThumbnail extends StatelessWidget {
     // 4k photo costs ~30MB of texture memory for a 64dp chip and looks
     // washed-out on hi-dpi screens.
     final dpr = MediaQuery.of(context).devicePixelRatio;
-    final cacheSize = (64 * dpr).round();
+    final cacheSize = (128 * dpr).round();
     return SizedBox(
       width: 64,
       height: 64,
@@ -1780,12 +1780,15 @@ class _AttachmentThumbnail extends StatelessWidget {
               child: isImage
                   ? GestureDetector(
                       onTap: onTap,
-                      child: Image.file(
-                        File(path),
+                      child: Image(
+                        image: ResizeImage(
+                          FileImage(File(path)),
+                          width: cacheSize,
+                          height: cacheSize,
+                          policy: ResizeImagePolicy.fit,
+                        ),
                         fit: BoxFit.cover,
                         filterQuality: FilterQuality.high,
-                        cacheWidth: cacheSize,
-                        cacheHeight: cacheSize,
                         errorBuilder: (context, error, stack) =>
                             _fileIcon(context, name),
                       ),
