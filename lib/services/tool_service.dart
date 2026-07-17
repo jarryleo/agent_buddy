@@ -22,6 +22,7 @@ import 'platform/reminders_service_factory.dart';
 import 'platform/tasks_service.dart';
 import 'platform/working_dir_backend.dart';
 import 'storage_service.dart';
+import 'sub_agent_service.dart';
 import 'timer_service.dart';
 import 'tools/tool_registry.dart';
 
@@ -55,6 +56,7 @@ class ToolService {
     NotificationService? notificationService,
     StorageService? storage,
     GoogleSheetsService? googleSheets,
+    SubAgentService? subAgent,
   }) {
     _storage = storage;
     if (notesBox != null) {
@@ -90,6 +92,9 @@ class ToolService {
         httpClient: _client,
       );
     }
+    if (subAgent != null) {
+      _subAgent = subAgent;
+    }
   }
 
   late final http.Client _client;
@@ -109,6 +114,7 @@ class ToolService {
   NotificationService? _notifications;
   McpService? _mcp;
   GoogleSheetsService? _googleSheets;
+  SubAgentService? _subAgent;
   StorageService? _storage;
 
   /// The shared HTTP client used by [FetchWebTool].
@@ -218,6 +224,22 @@ class ToolService {
     );
   }
 
+  /// The shared in-process sub-agent service used by the
+  /// `subagent` tool. The chat provider constructs the singleton
+  /// in `main.dart` and injects it via the [subAgent] constructor
+  /// param so the tool layer can route delegation through it.
+  /// Throws when no instance was injected (e.g. in unit tests
+  /// that build a `ToolService` without going through the chat
+  /// provider), which keeps the type non-nullable while still
+  /// failing loudly.
+  SubAgentService get subAgent {
+    if (_subAgent != null) return _subAgent!;
+    throw StateError(
+      'SubAgentService is not available on this ToolService '
+      '(no SubAgentService was injected)',
+    );
+  }
+
   void dispose() {
     if (_ownsClient) _client.close();
   }
@@ -318,6 +340,11 @@ class ToolService {
 
   Future<String> runSearch(Map<String, dynamic> args) async {
     final tool = ToolRegistry.byId('search')!;
+    return tool.execute(args, this);
+  }
+
+  Future<String> runSubAgent(Map<String, dynamic> args) async {
+    final tool = ToolRegistry.byId('subagent')!;
     return tool.execute(args, this);
   }
 }

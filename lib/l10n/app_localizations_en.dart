@@ -665,6 +665,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolDescCallMcp => 'Call tools on a configured MCP server.';
 
   @override
+  String get toolDescSubAgent =>
+      'Delegate a self-contained research / information-gathering task to an isolated sub-agent that runs in its own context window and returns a compressed report. Keeps the main conversation clean and saves tokens.';
+
+  @override
   String get toolNameFetchWeb => 'Fetch Web';
 
   @override
@@ -720,6 +724,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolNameCallMcp => 'MCP Tools';
+
+  @override
+  String get toolNameSubAgent => 'Sub-Agent';
 
   @override
   String get downloadStatusPending => 'Waiting…';

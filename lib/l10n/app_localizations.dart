@@ -1260,6 +1260,12 @@ abstract class AppLocalizations {
   /// **'Call tools on a configured MCP server.'**
   String get toolDescCallMcp;
 
+  /// No description provided for @toolDescSubAgent.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegate a self-contained research / information-gathering task to an isolated sub-agent that runs in its own context window and returns a compressed report. Keeps the main conversation clean and saves tokens.'**
+  String get toolDescSubAgent;
+
   /// No description provided for @toolNameFetchWeb.
   ///
   /// In en, this message translates to:
@@ -1373,6 +1379,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'MCP Tools'**
   String get toolNameCallMcp;
+
+  /// No description provided for @toolNameSubAgent.
+  ///
+  /// In en, this message translates to:
+  /// **'Sub-Agent'**
+  String get toolNameSubAgent;
 
   /// No description provided for @downloadStatusPending.
   ///

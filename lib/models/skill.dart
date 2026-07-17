@@ -102,6 +102,20 @@ class BuiltinSkills {
       content: '''
 每个工具的最终参数以 function schema 为准;下面是使用经验和坑点。
 
+- **subagent(子 agent)——大量用,不要省**:任何与当前主对话上下文无关的独立调研/搜集/搜索任务都优先用 subagent,别让主对话自己 fetch_web 一串。
+  - 用法:`subagent(action: "delegate", task: "...", want: "...", context: "...")`。
+  - `task` 具体;`want` 描述你希望拿回的报告形状(越具体越好,如"200 字结论 + 3 条事实 + 来源 URL");`context` 只放主对话里相关的关键事实,**不要把整段对话都塞进去**。
+  - 子 agent 可用工具:`fetch_web` / `search` / `current_time` / `location` / `memory` / `run_command`。
+  - 子 agent 不可用:`ask_user` / `notification` / `timer` / `download` / `file`(写) / `google_sheet`(写) / `mcp__*` 等需要用户交互或改用户数据的工具 —— 想做这些等子 agent 报告回来后主对话自己做。
+  - 适用场景(基本上"任务结果不依赖本次对话前文 + 主对话不需要看到中间过程"就用):
+    - 查新闻 / 查天气 / 查最新资讯
+    - 查 API 文档 / 调研某个主题
+    - 批量搜索本地文件 / 跑只读命令拿系统信息
+    - 查 long-term memory 里的某条旧信息
+  - 用了之后主对话只拿到一份压缩好的报告,中间过程都跑在子 agent 的上下文里 —— **主对话的 token 省下了,上下文也更整洁**。
+  - 用 `action: "list"` / `"get"` / `"cancel"` 查/取消子 agent 任务。
+  - 多个独立任务可以**并发**调 subagent(同轮发多个 function_call),最后一起用结果。
+
 - fetch_web(抓网页):如果用 link_text 只返回链接 URL(不返回页面内容),必须再调一次 fetch_web 抓那个链接。一路深入直到找到答案,别只看首页。抓不到就换 UA / 换源,或告诉用户搜不到。
 
 - memory(记忆):写入时带 tags(3~6 个关键词);查询用 keywords: string[] 给多个相关词(OR 语义,覆盖 content + tags)。没头绪就先 list 看看有什么。

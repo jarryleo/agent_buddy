@@ -632,6 +632,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolDescCallMcp => '调用外部 MCP 服务器上的工具。';
 
   @override
+  String get toolDescSubAgent =>
+      '把一个独立的调研/搜集任务交给子 AI 跑 —— 子 agent 在独立的上下文里执行,完成后只把压缩后的报告回给主对话,节省 token 并保持主对话整洁。';
+
+  @override
   String get toolNameFetchWeb => 'Fetch Web';
 
   @override
@@ -687,6 +691,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get toolNameCallMcp => '调用 MCP 工具';
+
+  @override
+  String get toolNameSubAgent => '子 Agent';
 
   @override
   String get downloadStatusPending => '等待中…';

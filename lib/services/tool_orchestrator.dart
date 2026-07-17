@@ -192,6 +192,11 @@ class ToolOrchestrator {
   /// Set to true by [cancel] so the [run] generator can stop early.
   bool _cancelled = false;
 
+  /// True if [cancel] has been called since the last [run] started.
+  /// Public read-only so callers (e.g. the sub-agent service) can
+  /// distinguish a user-cancelled run from a natural completion.
+  bool get cancelled => _cancelled;
+
   /// Signals the [run] loop to stop at the next checkpoint. Pending
   /// tool executions already in flight will still complete, but no
   /// new rounds are started.

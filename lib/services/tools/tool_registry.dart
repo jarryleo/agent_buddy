@@ -18,6 +18,7 @@ import 'notification_tool.dart';
 import 'timer_tool.dart';
 import 'google_sheet_tool.dart';
 import 'search_tool.dart';
+import 'sub_agent_tool.dart';
 
 /// Central registry that maps tool [id] to [ToolBase] instances.
 ///
@@ -45,6 +46,13 @@ class ToolRegistry {
     // Information gathering
     FetchWebTool(),
     AskUserTool(),
+
+    // Sub-agent: delegate research / information-gathering tasks
+    // to an isolated AI lane so the main conversation stays clean.
+    // Auto-seeded on by default; the system prompt points the main
+    // model at it aggressively. The tool itself is just a
+    // dispatcher — the actual runner lives in SubAgentService.
+    SubAgentTool(),
 
     // Personal data management
     NotesTool(),

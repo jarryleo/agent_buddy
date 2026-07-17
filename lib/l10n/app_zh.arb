@@ -214,6 +214,7 @@
   "toolDescTimer": "在指定时间后让模型再次回复你(仅运行时有效)。",
   "toolDescGoogleSheet": "读写你账号下的 Google 表格(仅桌面端)。",
   "toolDescCallMcp": "调用外部 MCP 服务器上的工具。",
+  "toolDescSubAgent": "把一个独立的调研/搜集任务交给子 AI 跑 —— 子 agent 在独立的上下文里执行,完成后只把压缩后的报告回给主对话,节省 token 并保持主对话整洁。",
 
   "toolNameFetchWeb": "Fetch Web",
   "toolNameCurrentTime": "当前时间",
@@ -234,6 +235,7 @@
   "toolNameTimer": "计时器",
   "toolNameGoogleSheet": "Google Sheet",
   "toolNameCallMcp": "调用 MCP 工具",
+  "toolNameSubAgent": "子 Agent",
 
 
   "downloadStatusPending": "等待中…",

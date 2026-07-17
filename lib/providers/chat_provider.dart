@@ -20,9 +20,11 @@ import '../services/file_attachment_service.dart';
 import '../services/image_service.dart';
 import '../services/local_llm_service.dart';
 import '../services/storage_service.dart';
+import '../services/sub_agent_service.dart';
 import '../services/timer_service.dart';
 import '../services/tool_orchestrator.dart';
 import '../services/tool_service.dart';
+import '../services/tools/sub_agent_tool.dart';
 import '../services/tools/tool_registry.dart';
 import 'settings_provider.dart';
 
@@ -54,7 +56,10 @@ class _TurnOutcome {
   final _TurnOutcomeKind kind;
   final String? error;
   const _TurnOutcome._(this.kind, this.error);
-  static const _TurnOutcome success = _TurnOutcome._(_TurnOutcomeKind.success, null);
+  static const _TurnOutcome success = _TurnOutcome._(
+    _TurnOutcomeKind.success,
+    null,
+  );
   factory _TurnOutcome.hardError(String err) =>
       _TurnOutcome._(_TurnOutcomeKind.hardError, err);
   factory _TurnOutcome.retryable(String err) =>
@@ -102,7 +107,18 @@ String buildBaseSystemPrompt({
       '- 最佳实践、推荐用法、坑点都在技能"工具使用提示"里。'
       '第一次涉及某个工具、或结果不像预期时,先 load_skill(skill_name: "工具使用提示") 看一眼。\n'
       '- 工具调用失败返回的是软错误时(比如 cancelled / not_found / permission_denied),'
-      '根据 message 给用户讲清楚,然后给个替代方案,不要直接放弃。$workingDirectoryHint$mcpHint';
+      '根据 message 给用户讲清楚,然后给个替代方案,不要直接放弃。\n'
+      '\n'
+      '## 子 agent(subagent)——大量用\n'
+      '任何与主对话上下文无关的独立调研/搜集/搜索任务都优先调 subagent(action: "delegate"),'
+      '别让主对话自己 fetch_web 一串。'
+      '判断标准:**结果不依赖本次对话前文 + 主对话不需要看到中间过程 → 用 subagent**。\n'
+      '参数要写清楚:task(具体任务)、want(你希望拿回的报告形状,越具体越好)、'
+      'context(只放主对话里相关的关键事实,不要把整段对话都塞进去)。'
+      '主对话只拿到最终报告,中间过程都跑在子 agent 的上下文里,**能省下大量 token**。\n'
+      '哪怕只调一个 fetch_web,只要不依赖前文,就用 subagent。'
+      '完整用法和并发模式见 load_skill(skill_name: "工具使用提示")。'
+      '$workingDirectoryHint$mcpHint';
 }
 
 class ChatProvider extends ChangeNotifier {
@@ -196,6 +212,13 @@ class ChatProvider extends ChangeNotifier {
   /// ticker only exists while at least one message is waiting
   /// to retry, so its overhead while idle is zero.
   Timer? _retryTickTimer;
+
+  /// Coalesces the burst of `notifyListeners` calls the
+  /// `subagent` tool's progress callback would otherwise fire
+  /// (a chatty sub-agent can call `search` / `fetch_web` several
+  /// times in a row). Mirrors the streaming layer's ~80ms
+  /// throttle so the chat list doesn't repaint on every event.
+  Timer? _subAgentNotifyTimer;
 
   /// Completer signaled when the orchestrator is currently
   /// parked inside the exponential-backoff wait between retry
@@ -662,8 +685,11 @@ class ChatProvider extends ChangeNotifier {
     // whole-second ticks.
     final ms = _retryInitialBackoff.inMilliseconds;
     var total = ms;
-    for (var i = 1; i < attempt && total < _retryMaxBackoff.inMilliseconds;
-        i++) {
+    for (
+      var i = 1;
+      i < attempt && total < _retryMaxBackoff.inMilliseconds;
+      i++
+    ) {
       final doubled = total * 2;
       total = doubled > _retryMaxBackoff.inMilliseconds
           ? _retryMaxBackoff.inMilliseconds
@@ -766,11 +792,7 @@ class ChatProvider extends ChangeNotifier {
     _replaceMessages([
       for (final m in s.messages)
         if (m.id == assistantId)
-          m.copyWith(
-            streaming: true,
-            retryAttempt: 0,
-            clearNextRetryAt: true,
-          )
+          m.copyWith(streaming: true, retryAttempt: 0, clearNextRetryAt: true)
         else
           m,
     ]);
@@ -803,10 +825,8 @@ class ChatProvider extends ChangeNotifier {
   /// doesn't idle forever.
   void _maybeStopRetryTickTimer() {
     if (_retryTickTimer == null) return;
-    final stillPending = _activeSession?.messages.any(
-          (m) => m.isRetrying,
-        ) ??
-        false;
+    final stillPending =
+        _activeSession?.messages.any((m) => m.isRetrying) ?? false;
     if (!stillPending) {
       _retryTickTimer?.cancel();
       _retryTickTimer = null;
@@ -823,8 +843,8 @@ class ChatProvider extends ChangeNotifier {
         (toolCall['arguments'] as Map?)?.cast<String, dynamic>() ?? const {};
 
     // Special cases that need ChatProvider state (ask_user, download,
-    // load_skill) are handled directly. Everything else delegates to
-    // the tool's own execute method via the registry.
+    // load_skill, subagent) are handled directly. Everything else
+    // delegates to the tool's own execute method via the registry.
     switch (name) {
       case 'ask_user':
         final question = args['question'] as String? ?? '';
@@ -871,6 +891,8 @@ class ChatProvider extends ChangeNotifier {
         return await _runDownload(context, toolCall, assistantId, args);
       case 'load_skill':
         return await _loadSkill(args);
+      case 'subagent':
+        return await _onSubAgentCall(context, toolCall, assistantId, args);
       default:
         if (name.startsWith('mcp__')) {
           return await _onMcpToolCall(name, args);
@@ -883,6 +905,189 @@ class ChatProvider extends ChangeNotifier {
           return await tool.execute(args, _tools);
         }
     }
+  }
+
+  /// Backs the `subagent` tool. Resolves the per-turn transport
+  /// (cloud vs local) from the active provider settings, then
+  /// delegates to `SubAgentTool.runDelegate` which routes through
+  /// the shared `SubAgentService`. The sub-agent's progress is
+  /// mirrored into the `ToolCall` card in the chat bubble so the
+  /// user can see what the sub-agent did while the main turn
+  /// stayed silent.
+  Future<String> _onSubAgentCall(
+    BuildContext context,
+    Map<String, dynamic> toolCall,
+    String assistantId,
+    Map<String, dynamic> args,
+  ) async {
+    final action = (args['action'] as String? ?? '').trim();
+    // list / get / cancel are pure lookups; the tool handles them
+    // directly. delegate is the one that needs the chat
+    // provider's transport config.
+    if (action != 'delegate') {
+      final tool = ToolRegistry.byId('subagent')!;
+      return tool.execute(args, _tools);
+    }
+    final useLocal = _settings.useLocalModel;
+    final SubAgentConfig config;
+    if (useLocal) {
+      final lp = _settings.activeLocalProvider;
+      if (lp == null) {
+        throw ToolException(
+          'subagent.delegate: useLocalModel is on but no local provider is active',
+        );
+      }
+      config = SubAgentConfig(useLocal: true, localProvider: lp);
+    } else {
+      final p = _settings.activeProvider;
+      if (p == null) {
+        throw ToolException(
+          'subagent.delegate: no active cloud provider configured',
+        );
+      }
+      config = SubAgentConfig(useLocal: false, provider: p);
+    }
+    final task = (args['task'] as String? ?? '').trim();
+    final want = (args['want'] as String? ?? '').trim();
+    final ctx = (args['context'] as String? ?? '').trim();
+    if (task.isEmpty) {
+      throw ToolException(
+        'subagent.delegate: "task" is required and must be non-empty',
+      );
+    }
+    if (want.isEmpty) {
+      throw ToolException(
+        'subagent.delegate: "want" is required and must be non-empty',
+      );
+    }
+    final toolId = toolCall['id'] as String? ?? '';
+    final tool = ToolRegistry.byId('subagent')! as SubAgentTool;
+    // Mirror the sub-agent's progress into the in-place
+    // `ToolCall` card so the user can see the sub-agent working.
+    // We re-resolve the assistant message + tool call on every
+    // progress event because the orchestrator may have inserted
+    // other tool calls in the meantime (though in practice the
+    // main turn is silent while the sub-agent runs). The result
+    // panel shows the sub-agent's actual REPORT (streaming in
+    // live) — not the messy list of intermediate tool calls —
+    // because that's the summary the sub-agent hands back to the
+    // main agent. See [formatSubAgentSnapshot].
+    void mirrorProgress(SubAgentProgress p) {
+      final cur = _activeSession;
+      if (cur == null) return;
+      final terminal =
+          p.phase == SubAgentProgressPhase.report ||
+          p.phase == SubAgentProgressPhase.failed ||
+          p.phase == SubAgentProgressPhase.cancelled;
+      _replaceMessages([
+        for (final m in cur.messages)
+          if (m.id == assistantId)
+            m.copyWith(
+              toolCalls: [
+                for (final tc in m.toolCalls)
+                  if (tc.id == toolId)
+                    tc.copyWith(
+                      result: formatSubAgentSnapshot(p.task),
+                      error: p.task.error,
+                      status: switch (p.task.status) {
+                        SubAgentStatus.running => ToolCallStatus.running,
+                        SubAgentStatus.completed => ToolCallStatus.success,
+                        SubAgentStatus.failed => ToolCallStatus.failed,
+                        SubAgentStatus.cancelled => ToolCallStatus.failed,
+                      },
+                      finishedAt: terminal ? DateTime.now() : null,
+                    )
+                  else
+                    tc,
+              ],
+            )
+          else
+            m,
+      ]);
+      // Throttled notify (the streaming layer throttles to ~80ms;
+      // mirror that here so we don't spam repaints while the
+      // sub-agent hammers search / fetch_web).
+      _maybeThrottledNotify();
+    }
+
+    final result = await tool.runDelegate(
+      services: _tools,
+      config: config,
+      task: task,
+      want: want,
+      context: ctx,
+      onProgress: mirrorProgress,
+    );
+    // One last notify so the bubble flips to the terminal state
+    // immediately even if the throttle was about to fire.
+    if (_subAgentNotifyTimer != null) {
+      _subAgentNotifyTimer!.cancel();
+      _subAgentNotifyTimer = null;
+    }
+    notifyListeners();
+    return result;
+  }
+
+  /// Renders the sub-agent task into a short human-readable
+  /// string the chat bubble can show in the result panel.
+  ///
+  /// The snapshot always prefers the sub-agent's REPORT (the
+  /// actual answer the sub-agent is composing for the main agent)
+  /// over the messy list of intermediate tool calls — those are
+  /// scratch work the main agent doesn't need to see, and showing
+  /// them in the bubble was confusing the user.
+  ///
+  ///   * **Running with report content** → stream the partial
+  ///     report verbatim. This is what the sub-agent is saying to
+  ///     the main agent; the bubble shows it in real time.
+  ///   * **Running without any report yet** → a single clean
+  ///     progress line ("子 agent 调研中…") instead of a
+  ///     tool-call arrow list.
+  ///   * **Completed** → the final (capped) report.
+  ///   * **Failed / cancelled** → the error / cancelled message
+  ///     prefixed with `Error:` so it renders in the same code
+  ///     block as a normal tool error.
+  ///
+  /// The format is plain monospace text so the bubble's existing
+  /// code block renders it without any extra styling.
+  ///
+  /// Exposed as a `@visibleForTesting` static so the snapshot
+  /// rules can be unit-tested without standing up the full
+  /// provider / stream pipeline.
+  @visibleForTesting
+  static String formatSubAgentSnapshot(SubAgentTask task) {
+    switch (task.status) {
+      case SubAgentStatus.running:
+        final partial = task.report;
+        if (partial != null && partial.isNotEmpty) {
+          return partial;
+        }
+        if (task.toolCalls.isEmpty) {
+          return '子 agent 正在准备…';
+        }
+        final done = task.toolCalls
+            .where((c) => c.status != SubAgentToolStatus.running)
+            .length;
+        final total = task.toolCalls.length;
+        return '子 agent 调研中… (已完成 $done / $total 个工具调用)';
+      case SubAgentStatus.completed:
+        return task.report ?? '(empty report)';
+      case SubAgentStatus.failed:
+        return 'Error: ${task.error ?? 'unknown error'}';
+      case SubAgentStatus.cancelled:
+        return 'Error: cancelled';
+    }
+  }
+
+  /// Throttled `notifyListeners` — mirrors the streaming layer's
+  /// ~80ms throttle so a noisy sub-agent (e.g. one that fires
+  /// five `search` calls in quick succession) doesn't repaint
+  /// the chat list five times in a row.
+  void _maybeThrottledNotify() {
+    _subAgentNotifyTimer ??= Timer(const Duration(milliseconds: 80), () {
+      _subAgentNotifyTimer = null;
+      if (!_disposed) notifyListeners();
+    });
   }
 
   Future<String> _loadSkill(Map<String, dynamic> args) async {

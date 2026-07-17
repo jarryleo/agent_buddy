@@ -286,6 +286,7 @@
   "toolDescTimer": "Schedule a delayed callback to the model (only while the app is running).",
   "toolDescGoogleSheet": "Read and edit your Google Sheet (desktop only).",
   "toolDescCallMcp": "Call tools on a configured MCP server.",
+  "toolDescSubAgent": "Delegate a self-contained research / information-gathering task to an isolated sub-agent that runs in its own context window and returns a compressed report. Keeps the main conversation clean and saves tokens.",
 
   "toolNameFetchWeb": "Fetch Web",
   "toolNameCurrentTime": "Current Time",
@@ -306,6 +307,7 @@
   "toolNameTimer": "Timer",
   "toolNameGoogleSheet": "Google Sheet",
   "toolNameCallMcp": "MCP Tools",
+  "toolNameSubAgent": "Sub-Agent",
 
 
   "downloadStatusPending": "Waiting…",

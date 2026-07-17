@@ -179,6 +179,8 @@ String _toolUserName(AppLocalizations l10n, String id) {
       return l10n.toolNameDownload;
     case 'file':
       return l10n.toolNameFile;
+    case 'search':
+      return l10n.toolNameSearch;
     case 'load_skill':
       return l10n.toolNameLoadSkill;
     case 'notification':
@@ -189,6 +191,8 @@ String _toolUserName(AppLocalizations l10n, String id) {
       return l10n.toolNameGoogleSheet;
     case 'call_mcp':
       return l10n.toolNameCallMcp;
+    case 'subagent':
+      return l10n.toolNameSubAgent;
     default:
       return '';
   }
@@ -240,6 +244,8 @@ String _toolUserDescription(AppLocalizations l10n, String id) {
       return l10n.toolDescGoogleSheet;
     case 'call_mcp':
       return l10n.toolDescCallMcp;
+    case 'subagent':
+      return l10n.toolDescSubAgent;
     default:
       return '';
   }

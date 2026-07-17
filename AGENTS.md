@@ -191,6 +191,65 @@ The schema carries a multi-line description in `file_tool.dart` that calls out t
 - iOS: `ios/Runner/FileBridge.swift` (`UIDocumentPickerViewController` with security-scoped URL lifecycle, FIFO queue); `AppDelegate.swift` (registers the bridge).
 - Tests: `test/file_service_test.dart`, extended `test/file_tool_working_dir_test.dart`.
 
+### Sub-agent (`subagent` tool + SubAgentService)
+
+The main agent can delegate self-contained research /
+information-gathering tasks to a sub-agent that runs in its
+own context window. The sub-agent uses a curated read-only /
+information-gathering toolset (`fetch_web` / `search` /
+`current_time` / `location` / `memory` / `run_command`) and
+a different system prompt, so its intermediate tool calls and
+scratch text never appear in the main session. The main agent
+only ever sees the final compressed report as a tool result.
+
+- `lib/services/sub_agent_service.dart` — the runner. Holds
+  the per-task state in memory (newest-first via `tasks`),
+  exposes a `run(config, toolService, task, want, context,
+  onProgress)` API, and reuses the production `ApiService` /
+  `LocalLlmService` so the sub-agent uses the same engine +
+  API key the user already paid for. Tests inject a fake via
+  `SubAgentService.setStreamFactory(...)`. The service is
+  intentionally NOT auto-started in `main.dart` — it's
+  registered as a lazy `Provider` so the local LLM's heavy
+  native-assets download doesn't fire on cold start until the
+  user actually invokes the sub-agent tool. The runner also
+  emits a `SubAgentProgressPhase.content` event every time the
+  model's report tokens stream in — the chat bubble uses these
+  events to render the streaming REPORT (the summary the
+  sub-agent is composing for the main agent) instead of the
+  messy list of intermediate tool calls.
+- `lib/services/tools/sub_agent_tool.dart` — the tool layer
+  (`delegate` / `list` / `get` / `cancel`). The `delegate`
+  action throws a `ToolException` when called via
+  `tool.execute(...)` directly; `ChatProvider._onSubAgentCall`
+  is the only path that can supply the per-turn transport
+  config and call `SubAgentTool.runDelegate(...)`.
+- `lib/providers/chat_provider.dart` — wires
+  `SubAgentService` (via `ProxyProvider<SubAgentService,
+  ToolService>`) and adds the `subagent` special case in
+  `_onToolCall`. The progress callback mirrors the
+  sub-agent's tool calls + streaming report into the in-place
+  `ToolCall` card so the user can see the sub-agent working
+  while the main turn stays silent. Throttled via the same
+  80ms `notifyListeners` coalescing as the streaming layer.
+  The bubble's result panel always shows the sub-agent's
+  REPORT (streaming or final) — never the intermediate tool
+  call scratch work. See
+  `ChatProvider.formatSubAgentSnapshot` (a `@visibleForTesting`
+  static that pins down the precedence rules).
+- The base system prompt (always-on) carries a short
+  "use subagent aggressively" rule that points the model at
+  the sub-agent tool + the on-demand `tool_usage` skill for
+  the full reference.
+
+The sub-agent's prompt is deliberately long-form English and
+instructs the model to compress aggressively. The curated
+toolset is enforced at the schema level (see
+`SubAgentService.buildToolsSchema`) so the sub-agent can't
+reach `ask_user` / `notification` / `timer` / `download` /
+`file write` / `google_sheet write` / `mcp__*` even if it
+tried.
+
 ### Memory system (`memory` tool + Memory tab)
 Cross-session long-term memory for the AI. Backed by a `hive_ce` box (`memories`), persisted via `MemoryRepository` (`lib/services/memory_repository.dart`) and surfaced to the user in Settings → Memory.
 

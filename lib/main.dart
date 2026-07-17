@@ -30,6 +30,7 @@ import 'services/notification_service.dart';
 import 'services/platform/notes_service.dart';
 import 'services/platform/tasks_service.dart';
 import 'services/storage_service.dart';
+import 'services/sub_agent_service.dart';
 import 'services/timer_service.dart';
 import 'services/tool_service.dart';
 import 'theme/app_theme.dart';
@@ -150,16 +151,6 @@ class AgentBuddyApp extends StatelessWidget {
         ChangeNotifierProvider<BuiltinModelDownloadService>.value(
           value: builtinDownloadService,
         ),
-        Provider<ToolService>(
-          create: (_) => ToolService(
-            notesBox: notesBox,
-            tasksBox: tasksBox,
-            memoriesBox: memoriesBox,
-            timerService: timerService,
-            storage: storage,
-            googleSheets: googleSheets,
-          ),
-        ),
         Provider<ImageService>(create: (_) => ImageService()),
         Provider<FileAttachmentService>(
           create: (_) => const FileAttachmentService(),
@@ -170,6 +161,46 @@ class AgentBuddyApp extends StatelessWidget {
         ),
         ChangeNotifierProvider<LocalLlmService>(
           create: (_) => LocalLlmService(),
+        ),
+        // The sub-agent service is the runner the `subagent`
+        // tool uses to delegate research / information-gathering
+        // tasks to an isolated AI lane. We declare it before
+        // ToolService so the ProxyProvider below can inject it.
+        // Lazy construction means the local LLM's heavy
+        // native-assets download doesn't fire on cold start
+        // until the user actually invokes the sub-agent tool.
+        //
+        // We use `ListenableProvider` (not `Provider`) because
+        // [SubAgentService] extends [ChangeNotifier] — Provider
+        // refuses to host a `Listenable` for safety, since a
+        // plain `Provider` won't re-publish on `notifyListeners`
+        // and would silently drop updates. The chat provider is
+        // the only thing that listens; UI never needs to
+        // rebuild on sub-agent notifications, so we just need
+        // a provider that accepts the type.
+        ListenableProvider<SubAgentService>(
+          create: (ctx) => SubAgentService(
+            apiService: ctx.read<ApiService>(),
+            localLlmService: ctx.read<LocalLlmService>(),
+          ),
+          lazy: true,
+        ),
+        // ToolService depends on SubAgentService; we use a
+        // ProxyProvider so the dependency is wired automatically
+        // (and stays consistent if either instance is ever
+        // rebuilt by a hot-reload).
+        ProxyProvider<SubAgentService, ToolService>(
+          update: (_, subAgent, prev) =>
+              prev ??
+              ToolService(
+                notesBox: notesBox,
+                tasksBox: tasksBox,
+                memoriesBox: memoriesBox,
+                timerService: timerService,
+                storage: storage,
+                googleSheets: googleSheets,
+                subAgent: subAgent,
+              ),
         ),
         ChangeNotifierProxyProvider6<
           SettingsProvider,
