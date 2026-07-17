@@ -1620,6 +1620,54 @@ abstract class AppLocalizations {
   /// **'Thinking'**
   String get chatToolThinking;
 
+  /// No description provided for @chatMicTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Hold to talk'**
+  String get chatMicTooltip;
+
+  /// No description provided for @chatMicListeningHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Listening… release to stop'**
+  String get chatMicListeningHint;
+
+  /// No description provided for @chatVoiceDragToCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Release to cancel'**
+  String get chatVoiceDragToCancel;
+
+  /// No description provided for @chatVoicePermissionDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Microphone permission denied. Please grant it in system settings to use voice input.'**
+  String get chatVoicePermissionDenied;
+
+  /// No description provided for @chatVoicePermanentlyDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Microphone permission permanently denied. Open system settings to enable voice input.'**
+  String get chatVoicePermanentlyDenied;
+
+  /// No description provided for @chatVoiceUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice input is unavailable on this device.'**
+  String get chatVoiceUnavailable;
+
+  /// No description provided for @chatVoiceListenFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t start voice input. Please try again.'**
+  String get chatVoiceListenFailed;
+
+  /// No description provided for @chatVoiceTooShort.
+  ///
+  /// In en, this message translates to:
+  /// **'No speech detected. Try again.'**
+  String get chatVoiceTooShort;
+
   /// No description provided for @fileRemoveTooltip.
   ///
   /// In en, this message translates to:

@@ -31,6 +31,8 @@ import 'services/platform/notes_service.dart';
 import 'services/platform/tasks_service.dart';
 import 'services/storage_service.dart';
 import 'services/sub_agent_service.dart';
+import 'services/platform/voice_service.dart';
+import 'services/platform/voice_service_factory.dart';
 import 'services/timer_service.dart';
 import 'services/tool_service.dart';
 import 'theme/app_theme.dart';
@@ -156,6 +158,7 @@ class AgentBuddyApp extends StatelessWidget {
           create: (_) => const FileAttachmentService(),
         ),
         Provider<DownloadService>(create: (_) => DownloadService()),
+        Provider<VoiceService>(create: (_) => createVoiceService()),
         ChangeNotifierProvider<MemoryProvider>(
           create: (_) => MemoryProvider(memoryRepo),
         ),

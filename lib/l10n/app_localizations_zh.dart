@@ -821,6 +821,30 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatToolThinking => '思考模式';
 
   @override
+  String get chatMicTooltip => '按住说话';
+
+  @override
+  String get chatMicListeningHint => '正在聆听…松手结束';
+
+  @override
+  String get chatVoiceDragToCancel => '松手取消';
+
+  @override
+  String get chatVoicePermissionDenied => '麦克风权限被拒绝,请在系统设置中授予后使用语音输入。';
+
+  @override
+  String get chatVoicePermanentlyDenied => '麦克风权限已被永久拒绝,请打开系统设置启用语音输入。';
+
+  @override
+  String get chatVoiceUnavailable => '当前设备不支持语音输入。';
+
+  @override
+  String get chatVoiceListenFailed => '无法启动语音输入,请重试。';
+
+  @override
+  String get chatVoiceTooShort => '没有检测到语音,请重试。';
+
+  @override
   String get fileRemoveTooltip => '移除文件';
 
   @override

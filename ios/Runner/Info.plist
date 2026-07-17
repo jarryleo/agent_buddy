@@ -19,6 +19,10 @@
 	<string>Agent Buddy needs full reminders access to let the AI read, create, update, complete, and delete your reminders and to-dos.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Agent Buddy uses your location to answer questions about local weather, time zone, and nearby places.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Agent Buddy uses the microphone to transcribe your voice into text when you hold the voice-input button.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Agent Buddy uses on-device speech recognition to turn your voice into a chat message.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

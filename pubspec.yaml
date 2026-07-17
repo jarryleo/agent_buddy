@@ -40,6 +40,16 @@ dependencies:
   hive_ce_flutter: ^2.3.4
   package_info_plus: ^9.0.1
   window_manager: ^0.5.0
+  speech_to_text: ^7.4.0
+  # Explicit, well-tested cross-platform permission flow. The
+  # `speech_to_text` plugin handles its own permission prompt on
+  # paper, but in practice the OS dialog is unreliable on some
+  # Android skins (MIUI / EMUI / ColorOS) and the plugin can fail
+  # silently. `permission_handler` is the de-facto standard
+  # permission helper and gives us a reliable `microphone` request
+  # with a `permanentlyDenied` distinction so the UI can point the
+  # user at system settings.
+  permission_handler: ^11.3.1
 
 
 dev_dependencies:

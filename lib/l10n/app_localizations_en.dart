@@ -857,6 +857,34 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatToolThinking => 'Thinking';
 
   @override
+  String get chatMicTooltip => 'Hold to talk';
+
+  @override
+  String get chatMicListeningHint => 'Listening… release to stop';
+
+  @override
+  String get chatVoiceDragToCancel => 'Release to cancel';
+
+  @override
+  String get chatVoicePermissionDenied =>
+      'Microphone permission denied. Please grant it in system settings to use voice input.';
+
+  @override
+  String get chatVoicePermanentlyDenied =>
+      'Microphone permission permanently denied. Open system settings to enable voice input.';
+
+  @override
+  String get chatVoiceUnavailable =>
+      'Voice input is unavailable on this device.';
+
+  @override
+  String get chatVoiceListenFailed =>
+      'Couldn\'t start voice input. Please try again.';
+
+  @override
+  String get chatVoiceTooShort => 'No speech detected. Try again.';
+
+  @override
   String get fileRemoveTooltip => 'Remove file';
 
   @override

@@ -1,0 +1,434 @@
+import 'package:agent_buddy/l10n/app_localizations.dart';
+import 'package:agent_buddy/services/file_attachment_service.dart';
+import 'package:agent_buddy/services/image_service.dart';
+import 'package:agent_buddy/services/platform/calendar_service.dart'
+    show PlatformPermissionStatus;
+import 'package:agent_buddy/services/platform/voice_service.dart';
+import 'package:agent_buddy/widgets/chat_input.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+/// A controllable fake [VoiceService] that lets tests push partial /
+/// final transcripts + status events into the widget without touching
+/// the microphone. Built on top of the public callbacks the UI
+/// registers via [startListening].
+class FakeVoiceService implements VoiceService {
+  FakeVoiceService({
+    this.permission = PlatformPermissionStatus.granted,
+    this.available = true,
+    this.errorOnFail = VoiceError.unknown,
+  });
+
+  final PlatformPermissionStatus permission;
+  final bool available;
+  final VoiceError errorOnFail;
+
+  var ensurePermissionCalls = 0;
+  var requestPermissionCalls = 0;
+  var startListeningCalls = 0;
+  var stopListeningCalls = 0;
+  var cancelListeningCalls = 0;
+  @override
+  VoiceError lastError = VoiceError.none;
+  bool _listening = false;
+  VoiceResultCallback? _onResult;
+  VoiceStatusCallback? _onStatus;
+  VoiceLevelCallback? _onLevel;
+
+  bool get listening => _listening;
+
+  @override
+  Future<PlatformPermissionStatus> ensurePermission() async {
+    ensurePermissionCalls++;
+    return permission;
+  }
+
+  @override
+  Future<PlatformPermissionStatus> requestPermission() async {
+    requestPermissionCalls++;
+    return permission;
+  }
+
+  @override
+  Future<bool> get isAvailable async => available;
+
+  @override
+  bool get isListening => _listening;
+
+  @override
+  Future<bool> startListening({
+    required VoiceResultCallback onResult,
+    VoiceStatusCallback? onStatus,
+    VoiceLevelCallback? onLevel,
+    Duration listenFor = const Duration(seconds: 30),
+    Duration pauseFor = const Duration(seconds: 3),
+  }) async {
+    if (!available ||
+        permission == PlatformPermissionStatus.denied ||
+        permission == PlatformPermissionStatus.permanentlyDenied) {
+      lastError = errorOnFail;
+      return false;
+    }
+    startListeningCalls++;
+    _listening = true;
+    lastError = VoiceError.none;
+    _onResult = onResult;
+    _onStatus = onStatus;
+    _onLevel = onLevel;
+    return true;
+  }
+
+  @override
+  Future<void> stopListening() async {
+    stopListeningCalls++;
+    _listening = false;
+  }
+
+  @override
+  Future<void> cancelListening() async {
+    cancelListeningCalls++;
+    _listening = false;
+  }
+
+  // ----- test helpers --------------------------------------------------
+
+  void emitResult(String text, {bool finalResult = false}) {
+    _onResult?.call(VoiceResult(text: text, finalResult: finalResult));
+  }
+
+  void emitStatus(String status) {
+    _onStatus?.call(status);
+  }
+
+  void emitLevel(double level) {
+    _onLevel?.call(level);
+  }
+}
+
+Future<void> _pumpInput(
+  WidgetTester tester, {
+  required FakeVoiceService voice,
+  required void Function(String, List<String>, List<Object?>) onSend,
+  bool enabled = true,
+  bool sending = false,
+}) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+      ],
+      supportedLocales: const [Locale('en'), Locale('zh')],
+      locale: const Locale('en'),
+      home: Scaffold(
+        body: ChatInput(
+          onSend: onSend,
+          enabled: enabled,
+          sending: sending,
+          imageService: ImageService(),
+          fileAttachmentService: const FileAttachmentService(),
+          voiceService: voice,
+        ),
+      ),
+    ),
+  );
+}
+
+/// Fires a synthesized long-press sequence (start → move → end) at
+/// the centre of [finder]. Long-press detection in Flutter needs the
+/// pointer to stay put for ~500ms; we use Flutter's built-in
+/// [WidgetTester.longPress] which already handles the timing
+/// correctly. For the drag-to-cancel case the pointer is moved past
+/// the recognizer's slop before being released.
+Future<void> _longPress(
+  WidgetTester tester,
+  Finder finder, {
+  double dragDelta = 0,
+}) async {
+  final center = tester.getCenter(finder);
+  if (dragDelta == 0) {
+    // Simple case: delegate to the framework's longPress helper.
+    await tester.longPress(finder);
+    return;
+  }
+  // Drag case: hold for the long-press timeout, then move past the
+  // 80px cancel threshold before releasing.
+  final gesture = await tester.startGesture(center);
+  await tester.pump(const Duration(milliseconds: 600));
+  await gesture.moveTo(center + Offset(dragDelta, 0));
+  await tester.pump(const Duration(milliseconds: 50));
+  await gesture.up();
+  await tester.pump();
+}
+
+/// The action button in idle (non-listening) state. With text it's
+/// an `ElevatedButton`; without text it's a mic-icon `Container`.
+/// We find it by icon in each test (the icon is unique per state)
+/// so this helper isn't needed.
+
+void main() {
+  group('ChatInput voice input — long-press start, release stop', () {
+    testWidgets('long-press the mic button (empty input) starts voice', (
+      tester,
+    ) async {
+      final voice = FakeVoiceService();
+      final sent = <String>[];
+      await _pumpInput(
+        tester,
+        voice: voice,
+        onSend: (t, _, _) => sent.add(t),
+      );
+
+      // Empty input → mic button visible.
+      final mic = find.descendant(
+        of: find.byType(ChatInput),
+        matching: find.byIcon(Icons.mic_none_rounded),
+      );
+      expect(mic, findsOneWidget);
+
+      // Use the manual long-press sequence (start + wait + end)
+      // because `tester.longPress` doesn't always reliably fire
+      // `onLongPressStart` on a gesture recognizer that only
+      // declares start/move/end handlers (no plain `onLongPress`).
+      final center = tester.getCenter(mic);
+      final gesture = await tester.startGesture(center);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 600));
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(
+        voice.requestPermissionCalls,
+        1,
+        reason:
+            'manual long-press should fire onLongPressStart, which calls _startVoice, which calls requestPermission',
+      );
+      expect(voice.startListeningCalls, 1);
+      expect(sent, isEmpty, reason: 'long-press should NOT send anything');
+    });
+
+    testWidgets('long-press the send button (non-empty input) starts voice',
+        (tester) async {
+      final voice = FakeVoiceService();
+      final sent = <String>[];
+      await _pumpInput(
+        tester,
+        voice: voice,
+        onSend: (t, _, _) => sent.add(t),
+      );
+
+      // Type some text so the send button appears.
+      await tester.enterText(find.byType(TextField), 'draft message');
+      await tester.pump();
+
+      final sendBtn = find.descendant(
+        of: find.byType(ChatInput),
+        matching: find.byIcon(Icons.send_rounded),
+      );
+      expect(sendBtn, findsOneWidget);
+
+      await _longPress(tester, sendBtn);
+      await tester.pumpAndSettle();
+
+      expect(
+        voice.requestPermissionCalls,
+        1,
+        reason: 'long-press on send must trigger the same voice flow',
+      );
+      expect(voice.startListeningCalls, 1);
+      expect(
+        sent,
+        isEmpty,
+        reason:
+            'long-press on the send button must NOT send the existing draft',
+      );
+    });
+
+    testWidgets('partial transcript is mirrored live into the input box',
+        (tester) async {
+      final voice = FakeVoiceService();
+      await _pumpInput(
+        tester,
+        voice: voice,
+        onSend: (_, _, _) {},
+      );
+
+      final mic = find.descendant(
+        of: find.byType(ChatInput),
+        matching: find.byIcon(Icons.mic_none_rounded),
+      );
+      await _longPress(tester, mic);
+      await tester.pumpAndSettle();
+
+      // Engine reports it's actually listening.
+      voice.emitStatus('listening');
+      await tester.pump();
+
+      // Partial transcript streams in.
+      voice.emitResult('hello');
+      await tester.pump();
+      voice.emitResult('hello world');
+      await tester.pump();
+
+      // The input box should now mirror "hello world" live.
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.controller!.text, 'hello world');
+    });
+
+    testWidgets(
+        'release after recording leaves text in the input box (no auto-send)',
+        (tester) async {
+      final voice = FakeVoiceService();
+      final sent = <String>[];
+      await _pumpInput(
+        tester,
+        voice: voice,
+        onSend: (t, _, _) => sent.add(t),
+      );
+
+      final mic = find.descendant(
+        of: find.byType(ChatInput),
+        matching: find.byIcon(Icons.mic_none_rounded),
+      );
+      await _longPress(tester, mic);
+      await tester.pumpAndSettle();
+
+      voice.emitStatus('listening');
+      voice.emitResult('hi there');
+      voice.emitResult('hi there, how are you', finalResult: true);
+      await tester.pump();
+
+      // Now we need to simulate the long-press *end*. The
+      // longPress helper already released the gesture; we just
+      // need to pump the engine a bit.
+      await tester.pumpAndSettle();
+
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(
+        field.controller!.text,
+        'hi there, how are you',
+        reason: 'text should be in the box for the user to review',
+      );
+      expect(
+        sent,
+        isEmpty,
+        reason: 'release must NOT auto-send the transcribed text',
+      );
+    });
+
+    testWidgets('drag-away-to-cancel discards the partial transcript',
+        (tester) async {
+      final voice = FakeVoiceService();
+      final sent = <String>[];
+      await _pumpInput(
+        tester,
+        voice: voice,
+        onSend: (t, _, _) => sent.add(t),
+      );
+
+      final mic = find.descendant(
+        of: find.byType(ChatInput),
+        matching: find.byIcon(Icons.mic_none_rounded),
+      );
+      // Long-press with a 200px drag to the right (well over the
+      // 80px cancel threshold).
+      await _longPress(tester, mic, dragDelta: 200);
+      await tester.pumpAndSettle();
+
+      voice.emitStatus('listening');
+      voice.emitResult('partial garbage');
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(
+        field.controller!.text,
+        '',
+        reason:
+            'drag-to-cancel should restore the input to its pre-recording state',
+      );
+      expect(sent, isEmpty);
+    });
+
+    testWidgets(
+        'permission denied (permanently) shows the right snackbar + never starts',
+        (tester) async {
+      final voice = FakeVoiceService(
+        permission: PlatformPermissionStatus.permanentlyDenied,
+        errorOnFail: VoiceError.permanentlyDenied,
+      );
+      final sent = <String>[];
+      await _pumpInput(
+        tester,
+        voice: voice,
+        onSend: (t, _, _) => sent.add(t),
+      );
+
+      final mic = find.descendant(
+        of: find.byType(ChatInput),
+        matching: find.byIcon(Icons.mic_none_rounded),
+      );
+      await _longPress(tester, mic);
+      await tester.pumpAndSettle();
+
+      expect(voice.requestPermissionCalls, 1);
+      expect(
+        voice.startListeningCalls,
+        0,
+        reason: 'engine should not be asked to start when permission is denied',
+      );
+      expect(sent, isEmpty);
+
+      // The snackbar should be visible.
+      expect(
+        find.textContaining('permanently', findRichText: true),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('listening: tap on the pulsing mic stops recording (no send)',
+        (tester) async {
+      final voice = FakeVoiceService();
+      final sent = <String>[];
+      await _pumpInput(
+        tester,
+        voice: voice,
+        onSend: (t, _, _) => sent.add(t),
+      );
+
+      final mic = find.descendant(
+        of: find.byType(ChatInput),
+        matching: find.byIcon(Icons.mic_none_rounded),
+      );
+      await _longPress(tester, mic);
+      await tester.pumpAndSettle();
+      voice.emitStatus('listening');
+      voice.emitResult('captured');
+      await tester.pump();
+
+      // The mic icon is now the solid `mic` (pulsing); tap it.
+      // The voice bar also shows a (different) mic icon at 16px,
+      // so we filter on size to target the action button.
+      final pulsingMic = find.descendant(
+        of: find.byType(ChatInput),
+        matching: find.byWidgetPredicate(
+          (w) => w is Icon && w.icon == Icons.mic && w.size == 18,
+        ),
+      );
+      expect(pulsingMic, findsOneWidget);
+      await tester.tap(pulsingMic);
+      await tester.pumpAndSettle();
+
+      expect(voice.stopListeningCalls, 1);
+      expect(
+        sent,
+        isEmpty,
+        reason: 'tap-to-stop must not send; text just stays in the box',
+      );
+    });
+  });
+}

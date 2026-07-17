@@ -8,6 +8,7 @@ import '../providers/chat_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/file_attachment_service.dart';
 import '../services/image_service.dart';
+import '../services/platform/voice_service.dart';
 import '../services/local_llm_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat_input.dart';
@@ -452,6 +453,7 @@ class _ChatInputArea extends StatelessWidget {
       },
       onThinkingChanged: settings.setThinkingModeEnabled,
       onStop: () => chat.stopGeneration(),
+      voiceService: context.read<VoiceService>(),
       onSend: (text, imagePaths, fileAttachments) {
         // Mark the next auto-scroll as "force" so the latest
         // message comes into view even if the user had

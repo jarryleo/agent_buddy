@@ -2,6 +2,7 @@ import 'package:agent_buddy/l10n/app_localizations.dart';
 import 'package:agent_buddy/services/api_service.dart';
 import 'package:agent_buddy/services/file_attachment_service.dart';
 import 'package:agent_buddy/services/image_service.dart';
+import 'package:agent_buddy/services/platform/voice_service_factory.dart';
 import 'package:agent_buddy/widgets/chat_input.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,6 +32,7 @@ void main() {
               enabled: true,
               imageService: ImageService(),
               fileAttachmentService: const FileAttachmentService(),
+              voiceService: createVoiceServiceStub(),
             ),
           ),
         ),
@@ -140,6 +142,7 @@ void main() {
                   sending: sending,
                   imageService: ImageService(),
                   fileAttachmentService: const FileAttachmentService(),
+                  voiceService: createVoiceServiceStub(),
                 );
               },
             ),

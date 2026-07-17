@@ -12,6 +12,8 @@ import '../l10n/app_localizations.dart';
 import '../models/file_attachment.dart';
 import '../services/file_attachment_service.dart';
 import '../services/image_service.dart';
+import '../services/platform/calendar_service.dart' show PlatformPermissionStatus;
+import '../services/platform/voice_service.dart';
 import '../theme/app_theme.dart';
 import 'image_preview.dart';
 
@@ -28,6 +30,7 @@ class ChatInput extends StatefulWidget {
     this.onThinkingChanged,
     this.sending = false,
     this.onStop,
+    required this.voiceService,
   });
 
   final void Function(
@@ -41,6 +44,7 @@ class ChatInput extends StatefulWidget {
   final VoidCallback? onStop;
   final ImageService imageService;
   final FileAttachmentService fileAttachmentService;
+  final VoiceService voiceService;
   final String? workingDirectory;
   final bool thinkingEnabled;
 
@@ -90,8 +94,64 @@ class _ChatInputState extends State<ChatInput> {
   bool _pickingFile = false;
   bool _toolbarOpen = false;
 
+  // Voice input state.
+  bool _voiceListening = false;
+  double _voiceLevel = 0.0;
+  String _voicePartial = '';
+  // True only once the engine confirms it is actually listening
+  // (status == 'listening'). Used to distinguish a real recording
+  // session from a long-press whose pointer was released because the
+  // OS permission dialog appeared — in that case we must NOT stop the
+  // session on release, or the user would never get to record.
+  bool _voiceActuallyStarted = false;
+  // Snapshot of the input box's text + cursor position taken when
+  // the long-press begins. The live transcript is inserted at
+  // [_voiceInsertOffset] of this snapshot so we don't trample the
+  // text the user already had.
+  String _voiceOriginalText = '';
+  int _voiceInsertOffset = 0;
+  // Drag-to-cancel state. If the user moves their finger > the
+  // threshold from the long-press origin before releasing, the
+  // recording is aborted and the original text is restored.
+  Offset? _voiceLongPressOrigin;
+  bool _voiceCancelledByDrag = false;
+  // One-shot "abort the in-flight _startVoice pipeline" flag.
+  // Set when the user drags to cancel mid-press; checked by
+  // [_startVoice] after every await so a session that was
+  // spinning up in parallel with the cancel never reaches
+  // `setState` and flips `_voiceListening` back to true. Unlike
+  // `_voiceCancelledByDrag`, this is *not* reset by
+  // [_resetVoiceState] (which runs synchronously and would
+  // otherwise clobber the flag before the still-pending
+  // `_startVoice` microtask resumes).
+  bool _voiceAbortInFlight = false;
+  static const double _kDragCancelThreshold = 80; // logical px
+  bool _hasText = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onTextChanged);
+    _hasText = _controller.text.trim().isNotEmpty;
+  }
+
+  void _onTextChanged() {
+    final has = _controller.text.trim().isNotEmpty;
+    if (has != _hasText) setState(() => _hasText = has);
+  }
+
   @override
   void dispose() {
+    _controller.removeListener(_onTextChanged);
+    if (_voiceListening) {
+      // Tear-down path: we must not call setState (the framework
+      // asserts on this during dispose), so call the engine
+      // directly and clear the bools in place. The input box
+      // is about to be disposed anyway.
+      widget.voiceService.cancelListening();
+      _voiceListening = false;
+      _voiceActuallyStarted = false;
+    }
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -125,6 +185,349 @@ class _ChatInputState extends State<ChatInput> {
       if (open) _focusNode.unfocus();
     });
   }
+
+  // ---- Voice input -------------------------------------------------------
+  //
+  // UX summary (long-press to talk, release to stop, **no auto-send**):
+  //
+  //   1. User long-presses the action button. The button works the
+  //      same whether the input is empty (mic icon) or already has
+  //      text (send icon) — both flavours of the action button
+  //      accept long-press. This matches the requested behaviour
+  //      where long-press voice input is always available.
+  //   2. We *first* run the explicit `requestPermission()` flow
+  //      (via `permission_handler`) so the OS shows a reliable
+  //      microphone dialog on Android — `speech_to_text`'s
+  //      built-in prompt is unreliable on MIUI / EMUI / ColorOS and
+  //      can fail silently. A `denied` / `permanentlyDenied` result
+  //      short-circuits with a precise snackbar.
+  //   3. We snapshot the input box's current text + cursor offset
+  //      so the live transcript can be inserted at the right
+  //      place without destroying the user's existing draft.
+  //   4. While the user holds the button, every partial transcript
+  //      is mirrored live into the input box at the snapshotted
+  //      offset. The voice bar above the input shows the same text
+  //      + a level meter as a redundant, always-visible indicator.
+  //   5. On release, we *stop* the engine and leave the text in
+  //      the input box. **We do NOT send.** The user reviews /
+  //      edits and taps the (now-returned) send button when ready.
+  //   6. Drag-away-to-cancel: if the user moves their finger
+  //      > [_kDragCancelThreshold] from the long-press origin
+  //      before releasing, the partial text is discarded and the
+  //      original draft is restored. Standard WeChat-style affordance.
+
+  void _showVoiceSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  /// Common long-press *start* handler used by both the mic button
+  /// (empty input) and the send button (non-empty input). The
+  /// pointer position is captured so the drag-to-cancel check
+  /// (in [Listener]-driven `_onRawPointerMove` / the release
+  /// handler) can compute the delta.
+  void _onLongPressStart(LongPressStartDetails details) {
+    _voiceLongPressOrigin = details.localPosition;
+    _voiceCancelledByDrag = false;
+    _startVoice();
+  }
+
+  /// Raw pointer move handler. We can't rely on
+  /// [LongPressGestureRecognizer.onLongPressMoveUpdate] for
+  /// drag-to-cancel because the recognizer's
+  /// `postPressSlopTolerance` (default ~100 logical px) silently
+  /// **rejects** the gesture when the pointer drifts past it,
+  /// which suppresses the [LongPressEndDetails] we need in
+  /// order to compute the cancel. Using a raw [Listener] lets
+  /// us observe the pointer even when the recognizer has
+  /// cancelled, so the drag-cancel still works at the natural
+  /// 80 px threshold.
+  void _onRawPointerMove(PointerMoveEvent event) {
+    if (_voiceLongPressOrigin == null) return;
+    final delta = (event.localPosition - _voiceLongPressOrigin!).distance;
+    final shouldCancel = delta > _kDragCancelThreshold;
+    if (shouldCancel != _voiceCancelledByDrag) {
+      setState(() => _voiceCancelledByDrag = shouldCancel);
+    }
+  }
+
+  /// Raw pointer up handler. We also observe pointer-up through
+  /// the [Listener] so the drag-cancel / commit decision doesn't
+  /// depend on the recognizer still being in the accepted state.
+  /// The actual stop / commit logic is in
+  /// [_handleLongPressRelease] which is shared between the
+  /// recognizer-driven end and the raw pointer-up.
+  void _onRawPointerUp(PointerUpEvent event) {
+    _handleLongPressRelease(event.localPosition);
+  }
+
+  /// Common long-press *end* handler. Called when the user lifts
+  /// their finger, *or* when the OS hijacks the gesture (e.g. the
+  /// permission dialog appeared mid-press). Distinguishes the two
+  /// via [_voiceActuallyStarted].
+  ///
+  /// The drag-to-cancel check is done in [_handleLongPressRelease]
+  /// using the final pointer position: if the release is more than
+  /// [_kDragCancelThreshold] away from the origin, we treat the
+  /// gesture as a cancel and restore the pre-recording text. The
+  /// flag flips regardless of [_voiceActuallyStarted] — the user's
+  /// intent is clear (they moved their finger away), and the only
+  /// reason [actually started] might be false is the engine hasn't
+  /// reported 'listening' yet. We always stop/cancel the
+  /// underlying recognizer on a drag-cancel and flip
+  /// [_voiceAbortInFlight] so the still-pending `_startVoice`
+  /// microtask sees the abort and refuses to flip
+  /// `_voiceListening` back to true.
+  Future<void> _onLongPressEnd(LongPressEndDetails details) async {
+    await _handleLongPressRelease(details.localPosition);
+  }
+
+  /// Shared release handler used by both the [LongPressEndDetails]
+  /// path (when the recognizer survives) and the raw
+  /// [PointerUpEvent] path (when the recognizer has rejected due
+  /// to slop tolerance). Either way, the user's intent is what
+  /// matters: dragged past the threshold → cancel; otherwise →
+  /// commit (if the engine had time to actually start).
+  Future<void> _handleLongPressRelease(Offset releasePos) async {
+    final origin = _voiceLongPressOrigin;
+    _voiceLongPressOrigin = null;
+    final dragged =
+        origin != null &&
+        (releasePos - origin).distance > _kDragCancelThreshold;
+    if (dragged) {
+      _voiceAbortInFlight = true;
+      if (_voiceListening) {
+        await widget.voiceService.stopListening();
+      } else {
+        // Engine hasn't entered the listening state yet (e.g. the
+        // user dragged while the permission dialog was up). Cancel
+        // any in-flight initialization to be safe.
+        await widget.voiceService.cancelListening();
+      }
+      _resetVoiceState(restoreOriginal: true);
+      return;
+    }
+    // Normal path: if the engine actually started (past the
+    // permission dialog), stop it and leave the text in the box.
+    // If the gesture was hijacked by the OS dialog, the session is
+    // still alive — keep it running so the user can record after
+    // they grant.
+    if (_voiceActuallyStarted) {
+      await _stopVoice();
+    } else if (_voiceListening) {
+      // The user released before the engine entered 'listening'
+      // and did not drag away. Most likely the permission dialog
+      // stole the gesture — do nothing, let the session continue.
+    }
+  }
+
+  /// Common long-press *end* handler. Called when the user lifts
+  /// their finger, *or* when the OS hijacks the gesture (e.g. the
+  /// permission dialog appeared mid-press). Distinguishes the two
+  /// via [_voiceActuallyStarted].
+  ///
+  /// The drag-to-cancel check is done in [_handleLongPressRelease]
+  /// using the final pointer position: if the release is more than
+  /// [_kDragCancelThreshold] away from the origin, we treat the
+  /// gesture as a cancel and restore the pre-recording text. The
+  /// flag flips regardless of [_voiceActuallyStarted] — the user's
+  /// intent is clear (they moved their finger away), and the only
+  /// reason [actually started] might be false is the engine hasn't
+  /// reported 'listening' yet. We always stop/cancel the
+  /// underlying recognizer on a drag-cancel and flip
+  /// We also process the release through a raw [Listener] (see
+  /// [_onRawPointerUp]) because the recognizer's
+  /// `postPressSlopTolerance` (~100 logical px) silently rejects
+  /// the gesture when the pointer drifts past it, which would
+  /// suppress this callback on a real drag-cancel.
+
+  void _resetVoiceState({bool restoreOriginal = false}) {
+    if (!mounted) return;
+    if (restoreOriginal) {
+      _controller.value = TextEditingValue(
+        text: _voiceOriginalText,
+        selection: TextSelection.collapsed(offset: _voiceInsertOffset),
+      );
+    }
+    setState(() {
+      _voiceListening = false;
+      _voiceActuallyStarted = false;
+      _voiceLevel = 0.0;
+      _voicePartial = '';
+      _voiceLongPressOrigin = null;
+      _voiceCancelledByDrag = false;
+    });
+  }
+
+  Future<void> _startVoice() async {
+    if (_voiceListening || !widget.enabled || widget.sending) return;
+    // Reset the abort flag at the *start* of each new long-press
+    // pipeline so a previous drag-cancel doesn't poison a fresh
+    // attempt. From here on, [_voiceAbortInFlight] is the only
+    // thing that can stop this pipeline mid-flight.
+    _voiceAbortInFlight = false;
+    final l10n = AppLocalizations.of(context);
+
+    // 1. Permission first. `requestPermission` is the explicit,
+    // reliable path — it pops the OS dialog if the user hasn't
+    // been asked yet, or returns the existing state on a re-try.
+    // This is what was missing on Android: the `speech_to_text`
+    // plugin's implicit prompt is unreliable, and users saw a
+    // generic "couldn't start" hint instead of a real dialog.
+    final perm = await widget.voiceService.requestPermission();
+    if (_voiceAbortInFlight) return;
+    switch (perm) {
+      case PlatformPermissionStatus.denied:
+        _showVoiceSnack(l10n.chatVoicePermissionDenied);
+        return;
+      case PlatformPermissionStatus.permanentlyDenied:
+        _showVoiceSnack(l10n.chatVoicePermanentlyDenied);
+        return;
+      case PlatformPermissionStatus.notSupported:
+        _showVoiceSnack(l10n.chatVoiceUnavailable);
+        return;
+      case PlatformPermissionStatus.granted:
+        break;
+    }
+
+    // 2. Snapshot the input box so the live transcript can be
+    // inserted at the right place without clobbering the user's
+    // existing draft. The caret is clamped to a valid offset in
+    // case the field was programmatically empty.
+    _voiceOriginalText = _controller.text;
+    final caret = _controller.selection.baseOffset;
+    _voiceInsertOffset = (caret >= 0 && caret <= _voiceOriginalText.length)
+        ? caret
+        : _voiceOriginalText.length;
+
+    // 3. Start the engine. Failure here means the recognizer
+    // can't come up (e.g. no Google speech services on a Chinese
+    // ROM); surface a precise error via [lastError].
+    final started = await widget.voiceService.startListening(
+      onResult: _onVoiceResult,
+      onStatus: _onVoiceStatus,
+      onLevel: _onVoiceLevel,
+    );
+    // Re-check after the second await — a drag-cancel that fired
+    // while the recognizer was spinning up flips this flag and
+    // tells us to abort cleanly without ever entering the
+    // listening state.
+    if (_voiceAbortInFlight) {
+      if (started) await widget.voiceService.cancelListening();
+      return;
+    }
+    if (!started) {
+      final err = widget.voiceService.lastError;
+      switch (err) {
+        case VoiceError.permissionDenied:
+          _showVoiceSnack(l10n.chatVoicePermissionDenied);
+        case VoiceError.permanentlyDenied:
+          _showVoiceSnack(l10n.chatVoicePermanentlyDenied);
+        case VoiceError.unavailable:
+          _showVoiceSnack(l10n.chatVoiceUnavailable);
+        case VoiceError.unknown:
+        case VoiceError.none:
+          _showVoiceSnack(l10n.chatVoiceListenFailed);
+      }
+      return;
+    }
+    // Final abort check right before flipping _voiceListening. The
+    // recognizer may have completed its async `listen()` faster
+    // than the user-managed `onLongPressEnd` could set
+    // _voiceAbortInFlight — in which case the microtask above
+    // already returned `started = true` and we landed here. The
+    // flag is the only race-safe signal we have for "drop the
+    // session you were about to activate".
+    if (_voiceAbortInFlight) {
+      await widget.voiceService.cancelListening();
+      return;
+    }
+    setState(() {
+      _voiceListening = true;
+      _voiceLevel = 0.0;
+      _voicePartial = '';
+      _voiceActuallyStarted = false;
+    });
+  }
+
+  void _onVoiceResult(VoiceResult result) {
+    if (!mounted) return;
+    // The engine can fire a trailing partial *after* we've already
+    // stopped the session (e.g. the user dragged to cancel and we
+    // called `stopListening`, but the OS still had one more
+    // chunk in the pipeline). Ignore anything that arrives while
+    // we're not actively listening — otherwise a late result
+    // would re-mirror text into the input box that the user just
+    // had us clear.
+    if (!_voiceListening) return;
+    setState(() => _voicePartial = result.text);
+    // Mirror the live transcript into the input box at the
+    // snapshotted offset so the user sees their words being typed
+    // in real time. The original prefix + suffix is preserved
+    // untouched; only the "live" middle is rewritten on each
+    // partial. The caret is moved to the end of the live text so
+    // the user can keep typing after release if they want.
+    final prefix = _voiceOriginalText.substring(0, _voiceInsertOffset);
+    final suffix = _voiceOriginalText.substring(_voiceInsertOffset);
+    _controller.value = TextEditingValue(
+      text: '$prefix${result.text}$suffix',
+      selection: TextSelection.collapsed(
+        offset: prefix.length + result.text.length,
+      ),
+    );
+  }
+
+  void _onVoiceStatus(String status) {
+    if (status == 'listening') {
+      // Ignore late "listening" events that arrive after we have
+      // already stopped the session (e.g. the user dragged to
+      // cancel and we called `stopListening`, but the engine
+      // had a delayed 'listening' still in flight).
+      if (!_voiceListening) return;
+      // The session is truly recording now (past any permission
+      // prompt). From here on, releasing the long-press will stop
+      // the session and leave the text in the box.
+      if (mounted && !_voiceActuallyStarted) {
+        setState(() => _voiceActuallyStarted = true);
+      }
+      return;
+    }
+    if (status == 'notListening' || status == 'done') {
+      if (!_voiceListening) return;
+      // The engine ended on its own (silence / max duration /
+      // error-with-cancelOnError). The text up to this point is
+      // already in the input box, so we just clean up the
+      // listening flag — we do NOT send.
+      if (mounted) {
+        setState(() {
+          _voiceListening = false;
+          _voiceActuallyStarted = false;
+        });
+      }
+    }
+  }
+
+  void _onVoiceLevel(double level) {
+    if (mounted) setState(() => _voiceLevel = level);
+  }
+
+  Future<void> _stopVoice() async {
+    if (!_voiceListening) return;
+    await widget.voiceService.stopListening();
+    if (mounted) {
+      setState(() {
+        _voiceListening = false;
+        _voiceActuallyStarted = false;
+        _voiceLevel = 0.0;
+      });
+    }
+  }
+
+  // `speech_to_text` owns its own listen timeout / pause timeout, so we
+  // don't need a manual countdown here — the engine reports
+  // `notListening`/`done` via [onStatus] when it ends on its own.
 
   Widget _buildToolbar(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -574,6 +977,7 @@ class _ChatInputState extends State<ChatInput> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (hasAttachments) _buildThumbnails(l10n),
+            if (_voiceListening) _buildVoiceBar(l10n),
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -634,21 +1038,7 @@ class _ChatInputState extends State<ChatInput> {
                           ),
                           child: const Icon(Icons.stop_rounded, size: 18),
                         )
-                      : ElevatedButton(
-                          onPressed: widget.enabled ? _send : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.primary,
-                            disabledBackgroundColor: AppTheme.primary
-                                .withValues(alpha: 0.4),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            elevation: 0,
-                          ),
-                          child: const Icon(Icons.send_rounded, size: 18),
-                        ),
+                      : _buildActionButton(context),
                 ),
               ],
             ),
@@ -664,6 +1054,229 @@ class _ChatInputState extends State<ChatInput> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// The right-hand action button.
+  ///
+  ///   * **Listening** → pulsing mic, tap to stop. The text already
+  ///     lives in the input box from the live-transcript updates.
+  ///   * **Has text (idle)** → send button. *Tap* sends the message;
+  ///     *long-press* starts voice input. Both gestures are bound on
+  ///     the same button so the user can always long-press the send
+  ///     key to start a voice session, regardless of whether the
+  ///     input is empty.
+  ///   * **Empty (idle)** → mic button. *Tap* focuses typing;
+  ///     *long-press* starts voice input. Same long-press path as
+  ///     the send-button branch — it goes through the same
+  ///     permission check + live-transcript pipeline.
+  ///
+  /// Long-press is delivered through `GestureDetector` rather than
+  /// the `ElevatedButton`'s own long-press handler (which doesn't
+  /// exist), and supports drag-to-cancel via
+  /// [_onLongPressMoveUpdate].
+  Widget _buildActionButton(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final hasText = _hasText;
+
+    if (_voiceListening) {
+      // While recording, a tap stops. The text is already in the
+      // input box via the live-transcript updates; we do NOT send.
+      return GestureDetector(
+        onTap: _stopVoice,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: AppTheme.primary,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.primary.withValues(alpha: 0.4),
+                blurRadius: 8 + _voiceLevel * 16,
+                spreadRadius: _voiceLevel * 4,
+              ),
+            ],
+          ),
+          child: const Icon(Icons.mic, color: Colors.white, size: 18),
+        ),
+      );
+    }
+
+    // Long-press gesture shared by both the send button (when
+    // there's text) and the mic button (when the input is empty).
+    // On Android / iOS the long-press starts voice input; on
+    // desktop / web, where the mic path is rarely useful, the
+    // empty-input branch still wires long-press for parity, but
+    // [_startVoice] shows the "unavailable" snackbar if the
+    // platform can't actually capture audio.
+    //
+    // Drag-to-cancel is resolved inside [_onLongPressEnd] (not
+    // via `onLongPressMoveUpdate`) for reliability — see the
+    // comment on [_onLongPressStart].
+    final longPressHandlers = <String, dynamic>{
+      'onLongPressStart': _onLongPressStart,
+      'onLongPressEnd': _onLongPressEnd,
+    };
+
+    // Both buttons share a raw [Listener] wrap so the drag-to-cancel
+    // detection in [_onRawPointerMove] / [_onRawPointerUp] survives
+    // even when the LongPressGestureRecognizer has been rejected
+    // by the post-press slop tolerance. The Listener is set to
+    // [HitTestBehavior.translucent] so it doesn't eat the gestures
+    // that the inner GestureDetector / ElevatedButton rely on.
+    if (hasText) {
+      // Send button. Tap sends; long-press starts voice input. We
+      // use a GestureDetector over the visual button so we can
+      // own the long-press gesture without fighting the
+      // ElevatedButton's tap handler. The ElevatedButton's
+      // onPressed is wired to the same tap callback so the
+      // visual feedback (ripple) is consistent.
+      return Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerMove: _onRawPointerMove,
+        onPointerUp: _onRawPointerUp,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onLongPressStart:
+              longPressHandlers['onLongPressStart'] as void Function(
+                LongPressStartDetails,
+              )?,
+          onLongPressEnd:
+              longPressHandlers['onLongPressEnd'] as void Function(
+                LongPressEndDetails,
+              )?,
+          child: ElevatedButton(
+            onPressed: widget.enabled ? _send : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              disabledBackgroundColor: AppTheme.primary.withValues(
+                alpha: 0.4,
+              ),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              elevation: 0,
+            ),
+            child: const Icon(Icons.send_rounded, size: 18),
+          ),
+        ),
+      );
+    }
+
+    // Empty input: mic button. Tap focuses typing; long-press
+    // starts voice input. Same long-press pipeline as the
+    // send-button branch above. We deliberately do *not* wrap the
+    // icon in a [Tooltip] here — the `Tooltip` widget installs its
+    // own internal `LongPressGestureRecognizer` that wins the
+    // gesture arena and would eat the outer GestureDetector's
+    // long-press before our handler runs. The discoverability hint
+    // is provided by the [Semantics] label below, which screen
+    // readers + the chat toolbar's long-press hint cover.
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerMove: _onRawPointerMove,
+      onPointerUp: _onRawPointerUp,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _focusNode.requestFocus(),
+        onLongPressStart:
+            longPressHandlers['onLongPressStart'] as void Function(
+              LongPressStartDetails,
+            )?,
+        onLongPressEnd:
+            longPressHandlers['onLongPressEnd'] as void Function(
+              LongPressEndDetails,
+            )?,
+        child: Semantics(
+          button: true,
+          label: l10n.chatMicTooltip,
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppTheme.primary,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.mic_none_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Live transcript + level meter shown while voice capture is active.
+  Widget _buildVoiceBar(AppLocalizations l10n) {
+    // Three states: pre-listening hint, mid-recording partial,
+    // drag-cancelled warning. The transcript itself is also being
+    // mirrored into the input box in real time — this bar is the
+    // always-visible redundant indicator (in case the input box
+    // is occluded by the keyboard).
+    final String text;
+    final Color color;
+    final IconData icon;
+    if (_voiceCancelledByDrag) {
+      text = l10n.chatVoiceDragToCancel;
+      color = Colors.redAccent;
+      icon = Icons.close_rounded;
+    } else if (_voicePartial.isNotEmpty) {
+      text = _voicePartial;
+      color = context.textPrimary;
+      icon = Icons.mic;
+    } else {
+      text = l10n.chatMicListeningHint;
+      color = context.textSecondary;
+      icon = Icons.mic_none_rounded;
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: _voiceCancelledByDrag ? color : AppTheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 13, color: color),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 48,
+            height: 18,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: List.generate(5, (i) {
+                // Cheap pseudo-bars driven by the mic level so the UI
+                // feels alive without a real frequency analyser.
+                final threshold = i / 5.0;
+                final active = _voiceLevel >= threshold;
+                return Container(
+                  width: 4,
+                  height: 6 + (active ? _voiceLevel * 10 : 0),
+                  decoration: BoxDecoration(
+                    color: _voiceCancelledByDrag
+                        ? (active ? color : context.appBorder)
+                        : (active
+                              ? AppTheme.primary
+                              : context.appBorder),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                );
+              }),
+            ),
+          ),
+        ],
       ),
     );
   }
