@@ -182,7 +182,8 @@ class VoiceServiceImpl implements VoiceService {
     VoiceStatusCallback? onStatus,
     VoiceLevelCallback? onLevel,
     Duration listenFor = const Duration(seconds: 30),
-    Duration pauseFor = const Duration(seconds: 3),
+    Duration pauseFor = const Duration(seconds: 5),
+    String? localeId,
   }) async {
     final available = await _ensureInitialized();
     if (!available) {
@@ -227,8 +228,23 @@ class VoiceServiceImpl implements VoiceService {
           listenFor: listenFor,
           pauseFor: pauseFor,
           partialResults: true,
-          cancelOnError: true,
-          listenMode: stt.ListenMode.confirmation,
+          // Don't tear down the session on a transient engine error
+          // (e.g. WinRT's `error_speech_timeout` on a brief pause,
+          // `error_no_match` on a soft utterance). Errors are still
+          // reported via the `_onError` path so the UI can update
+          // [lastError], but the recognizer keeps listening — which
+          // is what we want for chat input where the user is
+          // long-pressing the button.
+          cancelOnError: false,
+          // `dictation` is tuned for sentences / paragraphs; the
+          // previous `confirmation` mode was optimised for short
+          // command phrases and clipped the user mid-sentence on
+          // WinRT (the engine's `pauseFor` countdown was tuned
+          // aggressively for confirmation utterances). Dictation
+          // mode gives the same WinRT backend a much more natural
+          // model for chat input.
+          listenMode: stt.ListenMode.dictation,
+          localeId: localeId,
         ),
       );
     } catch (e) {

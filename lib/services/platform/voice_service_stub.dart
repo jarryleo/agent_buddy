@@ -28,7 +28,8 @@ class VoiceServiceStub implements VoiceService {
     VoiceStatusCallback? onStatus,
     VoiceLevelCallback? onLevel,
     Duration listenFor = const Duration(seconds: 30),
-    Duration pauseFor = const Duration(seconds: 3),
+    Duration pauseFor = const Duration(seconds: 5),
+    String? localeId,
   }) =>
       Future.value(false);
 

@@ -74,12 +74,31 @@ abstract class VoiceService {
   /// (`listening`, `notListening`, `done`, …); [onLevel] is an optional
   /// 0..1 amplitude meter for a live waveform. Returns false if the
   /// session couldn't be started (e.g. permission denied, no engine).
+  ///
+  /// [listenFor] is the maximum total listen duration (hard cap,
+  /// counted from the moment `_engine.listen` resolves). [pauseFor] is
+  /// the maximum silence gap inside a single listen — once the user
+  /// pauses for that long the engine voluntarily ends the session
+  /// and fires `notListening` / `done`. We default [pauseFor] to 8s
+  /// (vs the `speech_to_text` package default of 3s) because a chat
+  /// user typically thinks between phrases; 3s is tuned for short
+  /// confirmation utterances and tends to cut the user off mid-sentence
+  /// — which on Windows reads as "the engine auto-exited while I was
+  /// still long-pressing".
+  ///
+  /// [localeId] picks the recognition language (e.g. `'zh_CN'`,
+  /// `'en_US'`). When `null`, the engine falls back to the system
+  /// locale — which on Windows is frequently English even for users
+  /// who only speak Chinese, and produces terrible Chinese
+  /// recognition. Callers are strongly encouraged to pass an explicit
+  /// locale that matches the user's app language.
   Future<bool> startListening({
     required VoiceResultCallback onResult,
     VoiceStatusCallback? onStatus,
     VoiceLevelCallback? onLevel,
     Duration listenFor = const Duration(seconds: 30),
-    Duration pauseFor = const Duration(seconds: 3),
+    Duration pauseFor = const Duration(seconds: 5),
+    String? localeId,
   });
 
   /// Stop the active listening session. The final transcript (if any)

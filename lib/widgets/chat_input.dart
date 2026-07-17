@@ -142,6 +142,17 @@ class _ChatInputState extends State<ChatInput> {
   // otherwise clobber the flag before the still-pending
   // `_startVoice` microtask resumes).
   bool _voiceAbortInFlight = false;
+  // True once the underlying speech engine fires `notListening` /
+  // `done` on its own (e.g. the user paused longer than the
+  // engine's internal `pauseFor`, or `listenFor` expired). We track
+  // this separately from `_voiceListening` so the UI can stay in
+  // "listening" mode while the user is still long-pressing the
+  // button — the engine voluntarily ending does *not* mean the
+  // user is done talking. Until the user actually releases, the
+  // pulsing mic / volume bar / live-transcript bar all stay mounted
+  // and we just ignore any trailing partial results that the
+  // recognizer might emit as it winds down.
+  bool _voiceEngineEnded = false;
   static const double _kDragCancelThreshold = 80; // logical px
   bool _hasText = false;
 
@@ -243,6 +254,28 @@ class _ChatInputState extends State<ChatInput> {
     );
   }
 
+  /// Map the app's canonicalized locale (`AppLocalizations.localeName`,
+  /// e.g. `'en'`, `'zh'`) to a `speech_to_text` localeId that the
+  /// underlying recognizer (WinRT on Windows, `SpeechRecognizer` on
+  /// Android, `SFSpeechRecognizer` on iOS) will accept. Returning
+  /// `null` lets the engine pick its default — which on Windows is the
+  /// system locale and is frequently wrong for our users, so the
+  /// caller should still try to pass an explicit value. We only fall
+  /// back to `null` for app locales we don't know about, so an
+  /// unrecognized locale doesn't accidentally regress to "system
+  /// default" if the user's app language is one we've explicitly
+  /// mapped.
+  static String? _localeIdForSpeech(String appLocale) {
+    switch (appLocale) {
+      case 'zh':
+        return 'zh_CN';
+      case 'en':
+        return 'en_US';
+      default:
+        return null;
+    }
+  }
+
   /// Common long-press *start* handler used by both the mic button
   /// (empty input) and the send button (non-empty input). The
   /// pointer position is captured so the drag-to-cancel check
@@ -331,10 +364,13 @@ class _ChatInputState extends State<ChatInput> {
     }
     // Normal path: if the engine actually started (past the
     // permission dialog), stop it and leave the text in the box.
-    // If the gesture was hijacked by the OS dialog, the session is
-    // still alive — keep it running so the user can record after
-    // they grant.
-    if (_voiceActuallyStarted) {
+    // Also stop if the engine has *already* voluntarily ended
+    // (pauseFor / listenFor fired while the user was still
+    // long-pressing — see [_onVoiceStatus]); the recognizer is
+    // idle at this point so `stopListening` is a no-op, but we
+    // still need to flip the UI back to its idle state now that
+    // the user is done.
+    if (_voiceActuallyStarted || _voiceEngineEnded) {
       await _stopVoice();
     } else if (_voiceListening) {
       // The user released before the engine entered 'listening'
@@ -377,6 +413,7 @@ class _ChatInputState extends State<ChatInput> {
     setState(() {
       _voiceListening = false;
       _voiceActuallyStarted = false;
+      _voiceEngineEnded = false;
       _voiceLevel = 0.0;
       _voicePartial = '';
       _lastRecognizedPartial = '';
@@ -429,10 +466,18 @@ class _ChatInputState extends State<ChatInput> {
     // 3. Start the engine. Failure here means the recognizer
     // can't come up (e.g. no Google speech services on a Chinese
     // ROM); surface a precise error via [lastError].
+    //
+    // The `localeId` is derived from the active app locale so the
+    // WinRT recognizer on Windows picks a model that actually
+    // matches the user's language. Without this the engine falls
+    // back to the system locale — which on a Chinese-speaking
+    // user's English-localized Windows install produces
+    // essentially random Chinese recognition.
     final started = await widget.voiceService.startListening(
       onResult: _onVoiceResult,
       onStatus: _onVoiceStatus,
       onLevel: _onVoiceLevel,
+      localeId: _localeIdForSpeech(l10n.localeName),
     );
     // Re-check after the second await — a drag-cancel that fired
     // while the recognizer was spinning up flips this flag and
@@ -473,6 +518,7 @@ class _ChatInputState extends State<ChatInput> {
       _voiceLevel = 0.0;
       _voicePartial = '';
       _voiceActuallyStarted = false;
+      _voiceEngineEnded = false;
       _lastRecognizedPartial = '';
     });
   }
@@ -487,6 +533,14 @@ class _ChatInputState extends State<ChatInput> {
     // would re-mirror text into the input box that the user just
     // had us clear.
     if (!_voiceListening) return;
+    // The engine can also fire trailing partials *after* it has
+    // voluntarily ended the session (e.g. the user paused past
+    // `pauseFor` mid-press and the recognizer fired `done` while
+    // the user was still long-pressing). We keep the UI in
+    // "listening" mode until the user releases, but we must NOT
+    // mirror these late results into the input box — they would
+    // overwrite the final transcript with stale / partial content.
+    if (_voiceEngineEnded) return;
     // Treat the first real, non-empty result as definitive proof
     // the session is alive. We no longer rely solely on
     // `onStatus('listening')` because on Windows the WinRT
@@ -539,16 +593,24 @@ class _ChatInputState extends State<ChatInput> {
     }
     if (status == 'notListening' || status == 'done') {
       if (!_voiceListening) return;
-      // The engine ended on its own (silence / max duration /
-      // error-with-cancelOnError). The text up to this point is
-      // already in the input box, so we just clean up the
-      // listening flag — we do NOT send.
-      if (mounted) {
-        setState(() {
-          _voiceListening = false;
-          _voiceActuallyStarted = false;
-        });
-      }
+      // The engine ended on its own (silence past `pauseFor` /
+      // `listenFor` expired / error-with-cancelOnError). We
+      // deliberately do NOT reset `_voiceListening` or the
+      // visual "listening" state here — the user may still be
+      // long-pressing the button, and the visible
+      // listening state is tied to the user's intent (long-
+      // press), not the engine's lifecycle. The recognizer
+      // may be idle but the user is still recording.
+      //
+      // We DO track that the engine has ended so:
+      //   * [_onVoiceResult] can ignore trailing partials the
+      //     recognizer fires as it winds down — otherwise those
+      //     would clobber the final transcript already in the
+      //     input box.
+      //   * [_handleLongPressRelease] can clean up the UI state
+      //     on release even if `_voiceActuallyStarted` never
+      //     flipped (e.g. the user pressed-and-held in silence).
+      _voiceEngineEnded = true;
     }
   }
 
@@ -610,6 +672,7 @@ class _ChatInputState extends State<ChatInput> {
       setState(() {
         _voiceListening = false;
         _voiceActuallyStarted = false;
+        _voiceEngineEnded = false;
         _voiceLevel = 0.0;
       });
     }
@@ -1698,9 +1761,22 @@ class _InputFieldState extends State<_InputField> {
             decoration: InputDecoration(
               hintText: _hintText(context),
               hintStyle: TextStyle(color: context.textSecondary),
+              // Vertical padding is tuned so the 1-line field's
+              // intrinsic height lands at exactly 40 logical px —
+              // 21px (line height for `fontSize 15 × height 1.4`)
+              // + 2 × 8.5 padding + 2 × 1 border. That matches the
+              // height of the side action / "+ tool" buttons (both
+              // `SizedBox(height: 40)`), so the field's vertical
+              // centre aligns with the buttons' centre on every
+              // platform (Windows included, where the 1.4 line-height
+              // + Roboto metrics make the field noticeably taller
+              // than the side buttons without this nudge). The
+              // Row's `crossAxisAlignment: end` keeps the buttons
+              // pinned to the bottom of the row when the field
+              // grows to multiple lines.
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
-                vertical: 10,
+                vertical: 12,
               ),
               filled: true,
               // Transparent fill so the gradient volume bar painted

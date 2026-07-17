@@ -24,6 +24,7 @@ class FakeVoiceService implements VoiceService {
   var stopListeningCalls = 0;
   var cancelListeningCalls = 0;
   var listening = false;
+  String? lastLocaleId;
   @override
   VoiceError lastError = VoiceError.none;
 
@@ -51,13 +52,15 @@ class FakeVoiceService implements VoiceService {
     VoiceStatusCallback? onStatus,
     VoiceLevelCallback? onLevel,
     Duration listenFor = const Duration(seconds: 30),
-    Duration pauseFor = const Duration(seconds: 3),
+    Duration pauseFor = const Duration(seconds: 5),
+    String? localeId,
   }) async {
     if (!available || permission == PlatformPermissionStatus.denied) {
       lastError = errorOnFail;
       return false;
     }
     startListeningCalls++;
+    lastLocaleId = localeId;
     listening = true;
     lastError = VoiceError.none;
     return true;
@@ -151,6 +154,21 @@ void main() {
       expect(partial.finalResult, isFalse);
       expect(final_.finalResult, isTrue);
       expect(final_.text, 'hello world');
+    });
+
+    test('localeId is forwarded to the engine', () async {
+      final svc = FakeVoiceService();
+      await svc.startListening(
+        onResult: (_) {},
+        localeId: 'zh_CN',
+      );
+      expect(svc.lastLocaleId, 'zh_CN');
+    });
+
+    test('localeId is null by default (system-locale fallback)', () async {
+      final svc = FakeVoiceService();
+      await svc.startListening(onResult: (_) {});
+      expect(svc.lastLocaleId, isNull);
     });
   });
 }

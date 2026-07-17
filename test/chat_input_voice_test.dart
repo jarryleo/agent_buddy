@@ -29,6 +29,7 @@ class FakeVoiceService implements VoiceService {
   var startListeningCalls = 0;
   var stopListeningCalls = 0;
   var cancelListeningCalls = 0;
+  String? lastLocaleId;
   @override
   VoiceError lastError = VoiceError.none;
   bool _listening = false;
@@ -62,7 +63,8 @@ class FakeVoiceService implements VoiceService {
     VoiceStatusCallback? onStatus,
     VoiceLevelCallback? onLevel,
     Duration listenFor = const Duration(seconds: 30),
-    Duration pauseFor = const Duration(seconds: 3),
+    Duration pauseFor = const Duration(seconds: 8),
+    String? localeId,
   }) async {
     if (!available ||
         permission == PlatformPermissionStatus.denied ||
@@ -71,6 +73,7 @@ class FakeVoiceService implements VoiceService {
       return false;
     }
     startListeningCalls++;
+    lastLocaleId = localeId;
     _listening = true;
     lastError = VoiceError.none;
     _onResult = onResult;
@@ -168,6 +171,32 @@ Future<void> _longPress(
 /// an `ElevatedButton`; without text it's a mic-icon `Container`.
 /// We find it by icon in each test (the icon is unique per state)
 /// so this helper isn't needed.
+
+/// Counts how many [FractionallySizedBox] widgets are mounted in
+/// the tree. The codebase only uses it for the volume-meter bar
+/// inside the input field's listening-state background, so the
+/// delta between "not listening" and "listening" cleanly reflects
+/// whether the bar is rendered. Hoisted to file scope so multiple
+/// voice-input test groups can reuse it.
+int fsbCount(WidgetTester t) =>
+    find.byType(FractionallySizedBox).evaluate().length;
+
+/// Finds the gradient-painted [Container] painted by the volume
+/// meter (when listening) and returns its current
+/// [LinearGradient.colors], or `null` when none is mounted.
+List<Color>? gradientColors(WidgetTester t) {
+  final matches = find.byWidgetPredicate(
+    (w) =>
+        w is Container &&
+        w.decoration is BoxDecoration &&
+        (w.decoration! as BoxDecoration).gradient is LinearGradient,
+  );
+  if (matches.evaluate().isEmpty) return null;
+  final container = t.widget<Container>(matches.first);
+  final gradient =
+      (container.decoration! as BoxDecoration).gradient! as LinearGradient;
+  return gradient.colors;
+}
 
 void main() {
   group('ChatInput voice input — long-press start, release stop', () {
@@ -420,30 +449,9 @@ void main() {
   });
 
   group('ChatInput voice input — bug fixes + volume meter', () {
-    /// Counts how many [FractionallySizedBox] widgets are mounted
-    /// in the tree. The codebase only uses it for the
-    /// `_VoiceVolumeBar` inside the input field's volume-meter
-    /// background, so the delta between "not listening" and
-    /// "listening" cleanly reflects whether the bar is rendered.
-    int fsbCount(WidgetTester t) =>
-        find.byType(FractionallySizedBox).evaluate().length;
-
-    /// Finds the gradient-painted [Container] painted by the
-    /// volume meter (when listening) and returns its current
-    /// [LinearGradient.colors], or `null` when none is mounted.
-    List<Color>? gradientColors(WidgetTester t) {
-      final matches = find.byWidgetPredicate(
-        (w) =>
-            w is Container &&
-            w.decoration is BoxDecoration &&
-            (w.decoration! as BoxDecoration).gradient is LinearGradient,
-      );
-      if (matches.evaluate().isEmpty) return null;
-      final container = t.widget<Container>(matches.first);
-      final gradient =
-          (container.decoration! as BoxDecoration).gradient! as LinearGradient;
-      return gradient.colors;
-    }
+    // [fsbCount] / [gradientColors] are defined as top-level
+    // helpers above `main()` so the voice-input groups below can
+    // share them.
 
     testWidgets(
       'first partial result flips _voiceActuallyStarted (no onStatus needed)',
@@ -692,5 +700,240 @@ void main() {
       expect(fsbCount(tester), 0, reason: 'bar unmounts once the session ends');
       expect(gradientColors(tester), isNull);
     });
+  });
+
+  group('ChatInput voice input — locale + auto-exit mid-press', () {
+    /// Pumps the input inside a localised [MaterialApp] using the
+    /// given [Locale] so we can assert that the right `localeId`
+    /// gets forwarded to the speech engine.
+    Future<void> pumpWithLocale(
+      WidgetTester tester,
+      FakeVoiceService voice,
+      void Function(String, List<String>, List<Object?>) onSend, {
+      Locale locale = const Locale('en'),
+    }) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+          ],
+          supportedLocales: const [Locale('en'), Locale('zh')],
+          locale: locale,
+          home: Scaffold(
+            body: ChatInput(
+              onSend: onSend,
+              enabled: true,
+              imageService: ImageService(),
+              fileAttachmentService: const FileAttachmentService(),
+              voiceService: voice,
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('zh locale forwards localeId=zh_CN to the engine', (
+      tester,
+    ) async {
+      final voice = FakeVoiceService();
+      await pumpWithLocale(
+        tester,
+        voice,
+        (_, _, _) {},
+        locale: const Locale('zh'),
+      );
+
+      final mic = find.descendant(
+        of: find.byType(ChatInput),
+        matching: find.byIcon(Icons.mic_none_rounded),
+      );
+      await _longPress(tester, mic);
+      await tester.pumpAndSettle();
+
+      expect(
+        voice.lastLocaleId,
+        'zh_CN',
+        reason:
+            'a Chinese app locale must select the Chinese STT model so WinRT '
+            'does not fall back to the system (often English) locale',
+      );
+    });
+
+    testWidgets('en locale forwards localeId=en_US to the engine', (
+      tester,
+    ) async {
+      final voice = FakeVoiceService();
+      await pumpWithLocale(
+        tester,
+        voice,
+        (_, _, _) {},
+        locale: const Locale('en'),
+      );
+
+      final mic = find.descendant(
+        of: find.byType(ChatInput),
+        matching: find.byIcon(Icons.mic_none_rounded),
+      );
+      await _longPress(tester, mic);
+      await tester.pumpAndSettle();
+
+      expect(voice.lastLocaleId, 'en_US');
+    });
+
+    testWidgets(
+      'engine firing notListening mid-press does NOT flip the UI to idle',
+      (tester) async {
+        // Repro for the Windows "session auto-exits while I'm still
+        // long-pressing" bug: the WinRT recognizer's pauseFor fires
+        // `notListening` while the user is still holding the button.
+        // The visual listening state (pulsing mic, voice bar above
+        // input, gradient volume bar) must stay mounted — the UI
+        // listens to the user's intent (long-press), not the
+        // engine's lifecycle.
+        final voice = FakeVoiceService();
+        await pumpWithLocale(tester, voice, (_, _, _) {});
+
+        final mic = find.descendant(
+          of: find.byType(ChatInput),
+          matching: find.byIcon(Icons.mic_none_rounded),
+        );
+        final center = tester.getCenter(mic);
+        final gesture = await tester.startGesture(center);
+        await tester.pump(const Duration(milliseconds: 600));
+        voice.emitStatus('listening');
+        voice.emitResult('partial transcript');
+        await tester.pump();
+
+        expect(
+          fsbCount(tester),
+          greaterThan(0),
+          reason: 'volume bar mounted during listening',
+        );
+        expect(
+          gradientColors(tester),
+          isNotNull,
+          reason: 'listening gradient is mounted',
+        );
+
+        // Engine voluntarily ends (e.g. WinRT's pauseFor fired).
+        voice.emitStatus('notListening');
+        await tester.pump();
+
+        // UI must STILL be in listening mode.
+        expect(
+          fsbCount(tester),
+          greaterThan(0),
+          reason:
+              'volume bar must stay mounted after engine ends mid-press',
+        );
+        expect(
+          gradientColors(tester),
+          isNotNull,
+          reason: 'listening gradient must stay mounted mid-press',
+        );
+
+        // Late partial that arrives after the engine ended must
+        // NOT clobber the input box — the transcript is already
+        // there from the live updates.
+        voice.emitResult('late garbage');
+        await tester.pump();
+        final field = tester.widget<TextField>(find.byType(TextField));
+        expect(
+          field.controller!.text,
+          'partial transcript',
+          reason:
+              'late results after engine ended must not overwrite the live transcript',
+        );
+
+        // Now release — the session should be cleanly torn down
+        // and the UI should return to idle.
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(voice.stopListeningCalls, 1);
+        expect(fsbCount(tester), 0);
+        expect(gradientColors(tester), isNull);
+      },
+    );
+
+    testWidgets(
+      'engine firing done mid-press does NOT flip the UI to idle',
+      (tester) async {
+        final voice = FakeVoiceService();
+        await pumpWithLocale(tester, voice, (_, _, _) {});
+
+        final mic = find.descendant(
+          of: find.byType(ChatInput),
+          matching: find.byIcon(Icons.mic_none_rounded),
+        );
+        final center = tester.getCenter(mic);
+        final gesture = await tester.startGesture(center);
+        await tester.pump(const Duration(milliseconds: 600));
+        voice.emitStatus('listening');
+        voice.emitResult('hi there', finalResult: true);
+        await tester.pump();
+
+        // Engine fires `done` after the final result.
+        voice.emitStatus('done');
+        await tester.pump();
+
+        expect(
+          fsbCount(tester),
+          greaterThan(0),
+          reason:
+              'volume bar stays mounted after engine fires done mid-press',
+        );
+
+        // Release — properly tears down.
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(voice.stopListeningCalls, 1);
+        expect(fsbCount(tester), 0);
+      },
+    );
+
+    testWidgets(
+      'release after engine auto-ended (no results) still cleans up UI',
+      (tester) async {
+        // Edge case: user long-presses the mic but stays silent for
+        // long enough that the engine's pauseFor fires — never
+        // produces a result, never reports 'listening'. The user
+        // eventually releases. The session must still be torn down
+        // even though `_voiceActuallyStarted` was never set.
+        final voice = FakeVoiceService();
+        await pumpWithLocale(tester, voice, (_, _, _) {});
+
+        final mic = find.descendant(
+          of: find.byType(ChatInput),
+          matching: find.byIcon(Icons.mic_none_rounded),
+        );
+        final center = tester.getCenter(mic);
+        final gesture = await tester.startGesture(center);
+        await tester.pump(const Duration(milliseconds: 600));
+
+        // Engine ends without ever reporting `listening` or any
+        // result — pure pauseFor timeout.
+        voice.emitStatus('notListening');
+        await tester.pump();
+
+        // Release.
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(
+          voice.stopListeningCalls,
+          1,
+          reason:
+              'release after engine auto-end must still call stopListening '
+              'to reset the UI',
+        );
+        expect(fsbCount(tester), 0);
+        expect(gradientColors(tester), isNull);
+      },
+    );
   });
 }
