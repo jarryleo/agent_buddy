@@ -41,6 +41,7 @@ dependencies:
   package_info_plus: ^9.0.1
   window_manager: ^0.5.0
   speech_to_text: ^7.4.0
+  speech_to_text_platform_interface: ^2.4.0
   # Explicit, well-tested cross-platform permission flow. The
   # `speech_to_text` plugin handles its own permission prompt on
   # paper, but in practice the OS dialog is unreliable on some

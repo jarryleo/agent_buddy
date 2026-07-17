@@ -1711,8 +1711,8 @@ class _InputFieldState extends State<_InputField> {
           // so the bar never bleeds past the rounded corners.
           if (widget.voiceActive)
             Positioned.fill(
-              left: 1.5,
-              right: 1.5,
+              left: 1.2,
+              right: 1.2,
               // Volume-monitor background. The bar's width is the
               // raw `level` (left-anchored via `FractionallySizedBox`
               // + `Align`). We deliberately do *not* tween between
@@ -1725,12 +1725,12 @@ class _InputFieldState extends State<_InputField> {
               // sliver visible at zero amplitude so the field
               // still reads as "live" between phrases.
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(25),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: FractionallySizedBox(
                     widthFactor: factor,
-                    heightFactor: 0.9,
+                    heightFactor: 0.98,
                     child: Container(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -1789,15 +1789,15 @@ class _InputFieldState extends State<_InputField> {
               // rounded outline on top.
               fillColor: Colors.transparent,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(25),
                 borderSide: BorderSide(color: context.appBorder),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(25),
                 borderSide: BorderSide(color: context.appBorder),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(25),
                 borderSide: const BorderSide(
                   color: AppTheme.primary,
                   width: 1.2,

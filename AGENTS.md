@@ -47,6 +47,12 @@ No CI, no pre-commit hooks, no `melos`/`fvm` — keep it simple.
 ### Localization (l10n)
 - `l10n.yaml` has `nullable-getter: false` → `AppLocalizations.of(context)` is non-nullable, never `!` it.
 - ARB template is `app_en.arb`; Chinese is `app_zh.arb`. Both must be edited together (English is the source of truth for keys / placeholders).
+
+### Voice input on Android (`speech_to_text`)
+- The Android `SpeechToText` plugin returns `false` from `listen()` whenever its internal `listening` flag is still `true` from a previous session that didn't clean up — typical after a hot-reload during dev, a quick re-press before the previous `stop()` round-trip lands, or a recognizer that errored out without firing `onError` (common on AOSP emulators without Google Speech Services, where the mic indicator shows because `SpeechRecognizer.startListening()` is actively buffering audio but no callbacks ever fire).
+- `VoiceServiceImpl.startListening` (`lib/services/platform/voice_service_impl.dart`) defends against that with three things: (a) a defensive `_engine.cancel()` whenever `_engine.isListening == true` before the new `listen()` call, (b) the liveness-probe grace window is now enabled for **all** racy platforms including Android (the previous behaviour was desktop-only), and (c) `_ensureInitialized` catches `PlatformException` so an emulator without a speech service surfaces as `VoiceError.unavailable` ("当前设备不支持语音输入") instead of an unhandled async error.
+- The grace window is 1.5s (covers both WinRT cold-start on Windows and Android's `SpeechRecognizer` binding-to-service + `handler.post` + `onReadyForSpeech` round-trip).
+- Unit-tested in `test/voice_service_impl_test.dart` via a controllable `_FakeSpeechPlatform`; existing `test/voice_service_test.dart` + `test/chat_input_voice_test.dart` cover the UI contract.
 - Service-layer errors stay in English (e.g. `Error: HTTP 401`) because the AI reads them as tool context. Only wrap with localized prefix in the `ChatProvider` (`l10n.messageErrorPrefix`).
 
 ### Streaming

@@ -52,30 +52,59 @@ class VoiceServiceImpl implements VoiceService {
           defaultTargetPlatform == TargetPlatform.iOS);
 
   /// Whether the engine's `listen()` return value is racy enough to
-  /// merit the grace-window logic in [startListening]. Tied to the
-  /// three desktop targets where the WinRT / Cocoa /
-  /// `vosk`-plugin-ish backends often race; not exercised on mobile
-  /// or web where the engine's contract is synchronous.
+  /// merit the grace-window logic in [startListening].
+  ///
+  /// On Android `SpeechRecognizer` the recognizer's `startListening`
+  /// is dispatched to the main looper via `handler.post { ... }`,
+  /// while the plugin's Kotlin side already returned `true` /
+  /// `false` synchronously to Dart. The recognizer then fires
+  /// `onReadyForSpeech` / `onBeginningOfSpeech` / the first partial
+  /// asynchronously; if those callbacks race against a `cancel()`
+  /// from a previous failed session, the plugin can hand back a
+  /// transient `false` even though the new session is alive. We
+  /// also see the same race on the desktop targets (WinRT
+  /// `SpeechRecognizer` on Windows, `AVSpeechRecognizer` on macOS,
+  /// vosk on Linux). iOS / web are excluded because their
+  /// `listen()` contracts are synchronous and authoritative.
   bool get _hasRacyListenReturn =>
       !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.windows ||
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.windows ||
           defaultTargetPlatform == TargetPlatform.macOS ||
           defaultTargetPlatform == TargetPlatform.linux);
 
   /// How long we wait for a liveness callback before deciding the
-  /// session really did fail to start. 1.2s covers the typical WinRT
-  /// `SpeechRecognizer` cold-start on Windows without making the
-  /// user wait noticeably for an honest-failure snackbar.
-  static const Duration _livenessGrace = Duration(milliseconds: 1200);
+  /// session really did fail to start. 1.5s covers the typical
+  /// cold-start of:
+  ///   * WinRT `SpeechRecognizer` on Windows
+  ///   * Android `SpeechRecognizer` (which has to bind to the
+  ///     platform speech service, post `startListening` to the
+  ///     main looper, and then deliver `onReadyForSpeech` /
+  ///     `onBeginningOfSpeech` back through the method channel)
+  /// without making the user wait noticeably for an
+  /// honest-failure snackbar.
+  static const Duration _livenessGrace = Duration(milliseconds: 1500);
 
   Future<bool> _ensureInitialized() async {
     if (_initialized) return _engine.isAvailable;
-    _initialized = await _engine.initialize(
-      onError: _onError,
-      onStatus: _onEngineStatus,
-      debugLogging: false,
-      finalTimeout: const Duration(seconds: 30),
-    );
+    try {
+      _initialized = await _engine.initialize(
+        onError: _onError,
+        onStatus: _onEngineStatus,
+        debugLogging: false,
+        finalTimeout: const Duration(seconds: 30),
+      );
+    } catch (e) {
+      // The Android plugin raises a `PlatformException` from
+      // `SpeechRecognizer.isRecognitionAvailable == false` (e.g.
+      // emulators without Google Speech Services, AOSP-only ROMs).
+      // Surface that as a precise "unavailable" so the UI can
+      // route the user to a precise message instead of an
+      // unhandled async error.
+      _lastError = VoiceError.unavailable;
+      _initialized = false;
+      return false;
+    }
     return _engine.isAvailable;
   }
 
@@ -200,6 +229,37 @@ class VoiceServiceImpl implements VoiceService {
     // even when recognition was actively working in the background.
     _userStatusCallback = onStatus;
 
+    // Defensively clear any stale "listening" flag on the engine
+    // before kicking off a new session.
+    //
+    // The Android `SpeechToText` plugin returns `false` from
+    // `listen()` whenever its internal `listening` flag is still
+    // `true` — which happens after:
+    //   * a hot-reload during development (the Dart instance is
+    //     recreated but the Kotlin plugin survives with
+    //     `listening = true` from the previous session);
+    //   * a previous recognizer that errored out without firing
+    //     `onError` (rare on real devices, common on AOSP emulators
+    //     without a working speech service — the mic indicator
+    //     shows because `SpeechRecognizer.startListening()` is
+    //     actively buffering audio, but no callbacks ever fire);
+    //   * a quick re-press before the previous `stop()` /
+    //     `cancel()` round-trip has reached the platform side.
+    //
+    // Cancel any in-flight session first so the new `listen()`
+    // always gets a clean slate. `cancel()` is a no-op when the
+    // recognizer isn't actually listening, so this is cheap on
+    // the happy path.
+    if (_engine.isListening) {
+      try {
+        await _engine.cancel();
+      } catch (_) {
+        // Worst case the cancel fails; `listen()` will still be
+        // attempted and the grace-window below decides whether
+        // to trust any callbacks that fire.
+      }
+    }
+
     final probe = _livenessProbe = Completer<bool>();
 
     bool? started;
@@ -269,13 +329,17 @@ class VoiceServiceImpl implements VoiceService {
     }
 
     // listen() returned `false` without throwing or erroring. On
-    // desktop the underlying speech backend (WinRT SpeechRecognizer
-    // on Windows, AVSpeechRecognizer on macOS, vosk/etc on Linux)
-    // frequently returns a transient `false` while the recognizer
-    // is still spinning up — but the result / status / level
-    // callbacks WILL fire if/when it actually comes up. So if
-    // we're on a platform with that race, give the engine a short
-    // grace window during which any callback proves liveness.
+    // platforms where the underlying speech backend is known to
+    // race — WinRT `SpeechRecognizer` on Windows,
+    // `AVSpeechRecognizer` on macOS, vosk on Linux, and Android's
+    // `SpeechRecognizer` (whose `startListening` is dispatched via
+    // `handler.post` and can race against a stale `listening`
+    // flag from a previous session) — the engine frequently
+    // returns a transient `false` even though the recognizer is
+    // still spinning up. The result / status / level callbacks
+    // WILL fire if/when it actually comes up. Give the engine a
+    // short grace window during which any callback proves
+    // liveness.
     if (!_hasRacyListenReturn) {
       _livenessProbe = null;
       _lastError = VoiceError.unknown;
