@@ -111,9 +111,10 @@ class _ChatInputState extends State<ChatInput> {
   Timer? _voiceLevelDecayTimer;
   // Cached text of the previous partial transcript — used to detect
   // "the engine produced new content" so we can pulse the level
-  // meter when no real amplitude data is available (e.g. on Windows,
-  // where `speech_to_text`'s `onSoundLevelChange` is known to be
-  // unreliable).
+  // meter. `stts` does not expose RMS / sound-level data on any
+  // platform (its Android side intentionally overrides
+  // `onRmsChanged` as a no-op), so the synthetic-bump path is the
+  // *only* meter source — not just a fallback.
   String _lastRecognizedPartial = '';
   // True only once the engine confirms it is actually listening
   // (status == 'listening'). Used to distinguish a real recording
@@ -228,10 +229,10 @@ class _ChatInputState extends State<ChatInput> {
   //      where long-press voice input is always available.
   //   2. We *first* run the explicit `requestPermission()` flow
   //      (via `permission_handler`) so the OS shows a reliable
-  //      microphone dialog on Android — `speech_to_text`'s
-  //      built-in prompt is unreliable on MIUI / EMUI / ColorOS and
-  //      can fail silently. A `denied` / `permanentlyDenied` result
-  //      short-circuits with a precise snackbar.
+  //      microphone dialog on Android — `stts.hasPermission()` only
+  //      returns a bool and has no notion of "permanently denied",
+  //      so we use `permission_handler` for the proper
+  //      `granted` / `denied` / `permanentlyDenied` distinction.
   //   3. We snapshot the input box's current text + cursor offset
   //      so the live transcript can be inserted at the right
   //      place without destroying the user's existing draft.
@@ -255,22 +256,22 @@ class _ChatInputState extends State<ChatInput> {
   }
 
   /// Map the app's canonicalized locale (`AppLocalizations.localeName`,
-  /// e.g. `'en'`, `'zh'`) to a `speech_to_text` localeId that the
-  /// underlying recognizer (WinRT on Windows, `SpeechRecognizer` on
-  /// Android, `SFSpeechRecognizer` on iOS) will accept. Returning
-  /// `null` lets the engine pick its default — which on Windows is the
-  /// system locale and is frequently wrong for our users, so the
-  /// caller should still try to pass an explicit value. We only fall
-  /// back to `null` for app locales we don't know about, so an
-  /// unrecognized locale doesn't accidentally regress to "system
-  /// default" if the user's app language is one we've explicitly
-  /// mapped.
+  /// e.g. `'en'`, `'zh'`) to a BCP-47 tag that the `stts` plugin
+  /// passes through to the underlying recognizer (WinRT on Windows,
+  /// `SpeechRecognizer` on Android, `SFSpeechRecognizer` on iOS).
+  /// Returning `null` lets the engine pick its default — which on
+  /// Windows is the system locale and is frequently wrong for our
+  /// users, so the caller should still try to pass an explicit
+  /// value. We only fall back to `null` for app locales we don't
+  /// know about, so an unrecognized locale doesn't accidentally
+  /// regress to "system default" if the user's app language is one
+  /// we've explicitly mapped.
   static String? _localeIdForSpeech(String appLocale) {
     switch (appLocale) {
       case 'zh':
-        return 'zh_CN';
+        return 'zh-CN';
       case 'en':
-        return 'en_US';
+        return 'en-US';
       default:
         return null;
     }
@@ -431,12 +432,11 @@ class _ChatInputState extends State<ChatInput> {
     _voiceAbortInFlight = false;
     final l10n = AppLocalizations.of(context);
 
-    // 1. Permission first. `requestPermission` is the explicit,
+    //   1. Permission first. `requestPermission` is the explicit,
     // reliable path — it pops the OS dialog if the user hasn't
     // been asked yet, or returns the existing state on a re-try.
-    // This is what was missing on Android: the `speech_to_text`
-    // plugin's implicit prompt is unreliable, and users saw a
-    // generic "couldn't start" hint instead of a real dialog.
+    // This gives us a precise `permanentlyDenied` answer that
+    // `stts.hasPermission()` alone cannot.
     final perm = await widget.voiceService.requestPermission();
     if (_voiceAbortInFlight) return;
     switch (perm) {
@@ -555,9 +555,10 @@ class _ChatInputState extends State<ChatInput> {
     if (updated) {
       _lastRecognizedPartial = result.text;
       // Pulse the volume meter on every genuinely new partial —
-      // some platforms (notably Windows) never emit
-      // `onSoundLevelChange`, so without this the user would see
-      // a frozen meter while speaking.
+      // `stts` does not surface RMS / sound-level data on any
+      // platform (its Android side intentionally overrides
+      // `onRmsChanged` as a no-op), so the synthetic-bump path is
+      // the only meter source, not just a fallback.
       if (result.text.isNotEmpty) _bumpSyntheticLevel();
     }
     // Mirror the live transcript into the input box at the
@@ -627,12 +628,14 @@ class _ChatInputState extends State<ChatInput> {
     setState(() => _voiceLevel = clamped);
   }
 
-  /// Drive the volume meter from new partial transcripts when the
-  /// underlying engine doesn't deliver `onSoundLevelChange` updates
-  /// (the WinRT [speech_to_text] backend on Windows is one such
-  /// case). Each new partial bumps the level to a randomised value
-  /// in `0.55..0.95` and a decaying timer walks it back down so
-  /// the visual feels organic even with no amplitude data.
+  /// Drive the volume meter from new partial transcripts. `stts`
+  /// does not surface RMS / sound-level data on any platform
+  /// (Android side intentionally overrides `onRmsChanged` as a
+  /// no-op; iOS / macOS / Windows don't expose amplitude at all),
+  /// so this synthetic-bump path is the only meter source. Each
+  /// new partial bumps the level to a randomised value in
+  /// `0.55..0.95` and a decaying timer walks it back down so the
+  /// visual feels organic even with no amplitude data.
   void _bumpSyntheticLevel() {
     final pulse = 0.55 + math.Random().nextDouble() * 0.40;
     final next = math.max(_voiceLevel, pulse);
@@ -678,9 +681,10 @@ class _ChatInputState extends State<ChatInput> {
     }
   }
 
-  // `speech_to_text` owns its own listen timeout / pause timeout, so we
-  // don't need a manual countdown here — the engine reports
-  // `notListening`/`done` via [onStatus] when it ends on its own.
+  // `stts` owns its own silence timeout — the platform recognizer
+  // auto-ends after a short pause and fires `notListening`/`done`
+  // via [onStatus] when it does. We don't need a manual countdown
+  // here.
 
   Widget _buildToolbar(BuildContext context) {
     final l10n = AppLocalizations.of(context);

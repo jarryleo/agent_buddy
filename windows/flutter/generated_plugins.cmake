@@ -7,7 +7,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   local_notifier
   permission_handler_windows
   screen_retriever_windows
-  speech_to_text_windows
+  stts
   url_launcher_windows
   window_manager
 )

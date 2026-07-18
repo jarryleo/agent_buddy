@@ -1,49 +1,102 @@
 import 'dart:async';
 
-import 'package:permission_handler/permission_handler.dart' as ph;
-import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
+import 'package:flutter/services.dart' show PlatformException;
+import 'package:permission_handler/permission_handler.dart' as ph;
+import 'package:stts/stts.dart';
 
 import 'calendar_service.dart' show PlatformPermissionStatus;
 import 'voice_service.dart';
 
-/// Production [VoiceService] backed by the `speech_to_text` plugin,
-/// which performs on-device speech recognition on every Flutter
-/// platform and owns its own permission prompts internally.
+/// Production [VoiceService] backed by the `stts` plugin, which
+/// wraps the platform-native recognizer
+/// (`android.speech.SpeechRecognizer` on Android,
+/// `SFSpeechRecognizer` on iOS / macOS, SAPI on Windows, and the
+/// browser's `SpeechRecognition` API on web). The wrapper adds three
+/// things on top of the bare plugin:
+///
+///   1. A reliable, `permission_handler`-backed permission prompt
+///      that can distinguish "user declined once" from "user has
+///      permanently denied and we should send them to system
+///      settings" — `stts.hasPermission()` only returns a boolean.
+///   2. A liveness probe: `stts.start()` returns `Future<void>` and
+///      succeeds immediately even if the OS recognizer is still
+///      spinning up. We wait up to 1.5s for the corresponding
+///      `SttState.start` event (Android: `onReadyForSpeech`, iOS:
+///      `audioEngine.start()`, Windows: SAPI callback). Any error
+///      that fires inside the grace window is treated as a real
+///      failure; otherwise we trust the engine.
+///   3. Synthetic lifecycle events. `stts` only exposes two
+///      states (`start` / `stop`); the previous `speech_to_text`
+///      contract surfaced `listening` / `notListening` / `done` and
+///      the chat-input UI is wired to those exact strings. We
+///      translate at the boundary so the rest of the app doesn't
+///      notice the swap.
 class VoiceServiceImpl implements VoiceService {
-  final stt.SpeechToText _engine;
+  /// Optional engine injection for tests. Defaults to a fresh [Stt].
+  final Stt _engine;
 
-  VoiceServiceImpl({stt.SpeechToText? engine})
-    : _engine = engine ?? stt.SpeechToText();
+  VoiceServiceImpl({Stt? engine}) : _engine = engine ?? Stt();
 
-  bool _initialized = false;
+  /// Set by [_startListening] when the platform is known to support
+  /// speech recognition. Independent of the user's mic permission —
+  /// see [_requestPermissionOrError] for the auth-gated check.
+  bool _supported = false;
+  bool _supportChecked = false;
   VoiceError _lastError = VoiceError.none;
 
   /// The most recent [VoiceService.startListening.onStatus] callback
-  /// the UI passed in. `speech_to_text` registers `onStatus` **once,
-  /// globally** in [stt.SpeechToText.initialize]; per-call updates
-  /// have to be threaded through this field so the new value
-  /// supersedes the previous one for status forwarding.
+  /// the UI passed in. `stts` delivers state via a single, engine-
+  /// scoped stream; per-call updates are threaded through this field
+  /// so the new value supersedes the previous one for forwarding.
   VoiceStatusCallback? _userStatusCallback;
 
-  /// One-shot liveness probe used by [startListening] to decide
-  /// whether a `listen()` call that reported `false` was actually a
-  /// false alarm. Set right before `_engine.listen(...)` is awaited;
-  /// cleared after the call returns (and on success/timeout/error).
+  /// One-shot liveness probe used by [_startListening] to decide
+  /// whether the recognizer actually came up. Set right before
+  /// `_engine.start(...)` is awaited; cleared after the call
+  /// returns (and on success/timeout/error).
   ///
-  /// The Windows backend (`speech_to_text` > WinRT
-  /// `SpeechRecognizer`) has a well-known race where `listen()`
-  /// returns `false` while the OS recognizer is still spinning up.
-  /// The recognizer eventually fires the same result / status /
-  /// level callbacks it would have fired had `listen()` returned
-  /// `true`. We use this [Completer] to give the engine a short
-  /// grace window during which any callback proves the session is
-  /// alive; if nothing fires we treat it as a real failure.
+  /// On every platform `stts.start()` returns immediately while the
+  /// OS recognizer is still spinning up (Android's `SpeechRecognizer`
+  /// is dispatched to the main looper via `handler.post`, Windows'
+  /// SAPI recognizer has a cold-start, iOS's `audioEngine.start()`
+  /// has to bring up the audio session). We give the recognizer a
+  /// short grace window during which any `SttState.start` event
+  /// proves the session is alive; if nothing fires we treat it as
+  /// a real failure.
   Completer<bool>? _livenessProbe;
 
+  /// Stream subscriptions for the active session. Held so
+  /// [stopListening] / [cancelListening] can tear them down cleanly
+  /// and trailing partials / status events from a previous session
+  /// don't leak into the next one.
+  StreamSubscription<SttState>? _stateSub;
+  StreamSubscription<SttRecognition>? _resultSub;
+
+  /// True once the engine reports it's listening. Reset on
+  /// `SttState.stop`. The chat-input UI uses this to distinguish a
+  /// real recording session from a long-press whose pointer was
+  /// released before the recognizer came up.
+  bool _listening = false;
+
+  /// How long we wait for a liveness callback before deciding the
+  /// session really did fail to start. 1.5s covers the typical
+  /// cold-start of:
+  ///   * Android `SpeechRecognizer` (which has to bind to the
+  ///     platform speech service, post `startListening` to the
+  ///     main looper, and then deliver `onReadyForSpeech` back
+  ///     through the event channel).
+  ///   * iOS `SFSpeechRecognizer` (which has to bring up the audio
+  ///     session via `AVAudioSession.setActive`).
+  ///   * Windows SAPI (which has to load its inproc COM object on
+  ///     first use).
+  /// without making the user wait noticeably for an
+  /// honest-failure snackbar.
+  static const Duration _livenessGrace = Duration(milliseconds: 1500);
+
   /// Whether the underlying platform actually gates the speech
-  /// engine on the microphone permission. iOS / Android do; web
+  /// engine on the microphone permission. Android / iOS do; web
   /// and desktop either don't gate on a runtime permission or use
   /// their own browser-level flow.
   bool get _platformUsesPermission =>
@@ -51,82 +104,60 @@ class VoiceServiceImpl implements VoiceService {
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
 
-  /// Whether the engine's `listen()` return value is racy enough to
-  /// merit the grace-window logic in [startListening].
-  ///
-  /// On Android `SpeechRecognizer` the recognizer's `startListening`
-  /// is dispatched to the main looper via `handler.post { ... }`,
-  /// while the plugin's Kotlin side already returned `true` /
-  /// `false` synchronously to Dart. The recognizer then fires
-  /// `onReadyForSpeech` / `onBeginningOfSpeech` / the first partial
-  /// asynchronously; if those callbacks race against a `cancel()`
-  /// from a previous failed session, the plugin can hand back a
-  /// transient `false` even though the new session is alive. We
-  /// also see the same race on the desktop targets (WinRT
-  /// `SpeechRecognizer` on Windows, `AVSpeechRecognizer` on macOS,
-  /// vosk on Linux). iOS / web are excluded because their
-  /// `listen()` contracts are synchronous and authoritative.
-  bool get _hasRacyListenReturn =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.windows ||
-          defaultTargetPlatform == TargetPlatform.macOS ||
-          defaultTargetPlatform == TargetPlatform.linux);
-
-  /// How long we wait for a liveness callback before deciding the
-  /// session really did fail to start. 1.5s covers the typical
-  /// cold-start of:
-  ///   * WinRT `SpeechRecognizer` on Windows
-  ///   * Android `SpeechRecognizer` (which has to bind to the
-  ///     platform speech service, post `startListening` to the
-  ///     main looper, and then deliver `onReadyForSpeech` /
-  ///     `onBeginningOfSpeech` back through the method channel)
-  /// without making the user wait noticeably for an
-  /// honest-failure snackbar.
-  static const Duration _livenessGrace = Duration(milliseconds: 1500);
-
-  Future<bool> _ensureInitialized() async {
-    if (_initialized) return _engine.isAvailable;
+  Future<bool> _ensureSupported() async {
+    if (_supportChecked) return _supported;
     try {
-      _initialized = await _engine.initialize(
-        onError: _onError,
-        onStatus: _onEngineStatus,
-        debugLogging: false,
-        finalTimeout: const Duration(seconds: 30),
-      );
-    } catch (e) {
-      // The Android plugin raises a `PlatformException` from
-      // `SpeechRecognizer.isRecognitionAvailable == false` (e.g.
-      // emulators without Google Speech Services, AOSP-only ROMs).
-      // Surface that as a precise "unavailable" so the UI can
-      // route the user to a precise message instead of an
-      // unhandled async error.
-      _lastError = VoiceError.unavailable;
-      _initialized = false;
-      return false;
+      _supported = await _engine.isSupported();
+    } catch (_) {
+      // The plugin throws (rather than returning `false`) on some
+      // platforms when the underlying service is unreachable. Treat
+      // any exception as "not supported".
+      _supported = false;
     }
-    return _engine.isAvailable;
+    _supportChecked = true;
+    return _supported;
   }
 
-  /// The status callback registered with the speech engine in
-  /// [_ensureInitialized]. `speech_to_text` only exposes a single,
-  /// engine-scoped `onStatus` — we forward it to whatever the most
-  /// recent [startListening] caller asked for. The status string
-  /// also counts as proof of liveness: if it arrives during the
-  /// grace window after a `false` return from `listen()`, the
-  /// session is alive.
-  void _onEngineStatus(String status) {
-    _noteLiveness();
-    final cb = _userStatusCallback;
-    if (cb != null) cb(status);
+  /// The status callback registered with the engine's state stream.
+  /// We translate `stts`'s two-state enum into the `speech_to_text`-
+  /// style strings the UI was wired against — the chat input listens
+  /// for `'listening'` / `'notListening'` / `'done'` exactly.
+  void _onEngineState(SttState state) {
+    switch (state) {
+      case SttState.start:
+        _listening = true;
+        _noteLiveness();
+        _emitStatus('listening');
+      case SttState.stop:
+        _listening = false;
+        _emitStatus('notListening');
+    }
   }
 
-  /// Called from the speech engine on error. We both remember the
-  /// reason (so the UI can choose a precise message) and resolve
-  /// any in-flight liveness probe as a failure.
-  void _onError(dynamic error) {
-    _lastError = _errorToVoiceError(error);
+  /// Called from the engine's event channel on error. We both
+  /// remember the reason (so the UI can choose a precise message)
+  /// and resolve any in-flight liveness probe as a failure.
+  ///
+  /// The shape of the error follows stts's convention: it is a
+  /// `PlatformException` whose `code` is the integer SpeechRecognizer
+  /// error code (Android) / SFSpeechRecognizer error string
+  /// (iOS / macOS) / HRESULT (Windows). On Android the integer
+  /// maps to the `SpeechRecognizer.ERROR_*` constants; we map those
+  /// back to a human-readable tag (`permission`, `recognizer_busy`,
+  /// …) via [_classifyError].
+  void _onEngineError(Object error) {
+    _lastError = _classifyError(error);
     _noteLiveness(asFailure: true);
+    // Errors that aren't `permission` / `unavailable` still mean
+    // the session is over on stts's side. Surface a generic
+    // 'notListening' status so the chat-input UI clears its
+    // listening state if the user is still holding the button.
+    if (_lastError != VoiceError.permissionDenied &&
+        _lastError != VoiceError.permanentlyDenied &&
+        _lastError != VoiceError.unavailable) {
+      _listening = false;
+      _emitStatus('notListening');
+    }
   }
 
   void _noteLiveness({bool asFailure = false}) {
@@ -136,26 +167,99 @@ class VoiceServiceImpl implements VoiceService {
     _livenessProbe = null;
   }
 
-  static VoiceError _errorToVoiceError(dynamic error) {
-    final code = (error?.errorMsg?.toString() ?? '').toLowerCase();
-    if (code.contains('permission')) {
-      return (error?.permanent ?? false)
-          ? VoiceError.permanentlyDenied
-          : VoiceError.permissionDenied;
+  static VoiceError _classifyError(Object error) {
+    // stts surfaces Android `SpeechRecognizer` errors as
+    // `PlatformException(code: "<int>", message: "<tag>", details: null)`
+    // — see android/.../SttStateStreamHandler.kt. The integer code is
+    // the `SpeechRecognizer.ERROR_*` constant; the message is one of
+    // the human-readable tags we see in the source:
+    //   network_timeout, network, audio_error, server, client,
+    //   speech_timeout, no_match, recognizer_busy, permission,
+    //   too_many_requests, server_disconnected, language_not_supported,
+    //   language_unavailable, cannot_check_support,
+    //   cannot_listen_to_download_events, unknown.
+    //
+    // On iOS / macOS / Windows errors are surfaced as the native
+    // error code as a string ("recognition_failed", "engine_busy",
+    // etc.). We pattern-match on both the code and the message so a
+    // new error string won't silently slip through as "unknown".
+    final code =
+        (error is PlatformException
+                ? error.code
+                : (error as dynamic)?.code?.toString())
+            ?.toString()
+            .toLowerCase() ??
+        '';
+    final message =
+        (error is PlatformException
+                ? error.message
+                : (error as dynamic)?.message?.toString())
+            ?.toString()
+            .toLowerCase() ??
+        '';
+    final bag = '$code $message';
+    if (bag.contains('permission') || bag.contains('9')) {
+      // stts can't tell us "permanently" vs "once"; the
+      // caller (requestPermission) is responsible for distinguishing
+      // the two via permission_handler before we get here. Default
+      // to the "still recoverable" bucket.
+      return VoiceError.permissionDenied;
     }
-    if (code.contains('not available') ||
-        code.contains('unavailable') ||
-        code.contains('recognizer')) {
+    if (bag.contains('recognizer_busy') ||
+        bag.contains('recognizer') ||
+        bag.contains('unavailable') ||
+        bag.contains('language') ||
+        bag.contains('cannot')) {
       return VoiceError.unavailable;
     }
     return VoiceError.unknown;
   }
 
+  static PlatformPermissionStatus _mapPermissionStatus(ph.PermissionStatus s) {
+    if (s.isGranted || s.isLimited) return PlatformPermissionStatus.granted;
+    if (s.isPermanentlyDenied)
+      return PlatformPermissionStatus.permanentlyDenied;
+    if (s.isRestricted) return PlatformPermissionStatus.permanentlyDenied;
+    return PlatformPermissionStatus.denied;
+  }
+
+  void _emitStatus(String status) {
+    final cb = _userStatusCallback;
+    if (cb != null) cb(status);
+  }
+
+  /// Wire up the state / result streams just before we call
+  /// [_engine.start]. The stream listeners:
+  ///   * forward `start` / `stop` events to [VoiceStatusCallback]
+  ///     ('listening' / 'notListening' / 'done');
+  ///   * forward partial + final results to [VoiceResultCallback];
+  ///   * classify errors and resolve the [_livenessProbe] on failure.
+  ///
+  /// The subscriptions are stored on the instance so [stopListening] /
+  /// [cancelListening] can tear them down — otherwise trailing
+  /// partials from a previous session would leak into the next one.
+  void _attachStreams({
+    required VoiceResultCallback onResult,
+    required VoiceStatusCallback? onStatus,
+  }) {
+    // Reset prior session subscriptions before installing fresh ones.
+    _stateSub?.cancel();
+    _resultSub?.cancel();
+    _userStatusCallback = onStatus;
+    _stateSub = _engine.onStateChanged.listen(
+      _onEngineState,
+      onError: _onEngineError,
+    );
+    _resultSub = _engine.onResultChanged.listen((rec) {
+      onResult(VoiceResult(text: rec.text, finalResult: rec.isFinal));
+    }, onError: _onEngineError);
+  }
+
   @override
   Future<PlatformPermissionStatus> ensurePermission() async {
     if (!_platformUsesPermission) {
-      final available = await _ensureInitialized();
-      if (!available) return PlatformPermissionStatus.notSupported;
+      final supported = await _ensureSupported();
+      if (!supported) return PlatformPermissionStatus.notSupported;
       return PlatformPermissionStatus.granted;
     }
     // Cheap sync status read — no UI side effects.
@@ -170,8 +274,8 @@ class VoiceServiceImpl implements VoiceService {
       // enough; the OS / browser handles its own mic UX. Initialize
       // eagerly so any failure surfaces here instead of as a
       // surprise in startListening.
-      final available = await _ensureInitialized();
-      if (!available) return PlatformPermissionStatus.notSupported;
+      final supported = await _ensureSupported();
+      if (!supported) return PlatformPermissionStatus.notSupported;
       return PlatformPermissionStatus.granted;
     }
     // First, if the user has *permanently* denied, don't pop the
@@ -188,19 +292,11 @@ class VoiceServiceImpl implements VoiceService {
     return _mapPermissionStatus(next);
   }
 
-  static PlatformPermissionStatus _mapPermissionStatus(ph.PermissionStatus s) {
-    if (s.isGranted || s.isLimited) return PlatformPermissionStatus.granted;
-    if (s.isPermanentlyDenied)
-      return PlatformPermissionStatus.permanentlyDenied;
-    if (s.isRestricted) return PlatformPermissionStatus.permanentlyDenied;
-    return PlatformPermissionStatus.denied;
-  }
+  @override
+  Future<bool> get isAvailable async => _ensureSupported();
 
   @override
-  Future<bool> get isAvailable async => _ensureInitialized();
-
-  @override
-  bool get isListening => _engine.isListening;
+  bool get isListening => _listening;
 
   @override
   VoiceError get lastError => _lastError;
@@ -209,174 +305,111 @@ class VoiceServiceImpl implements VoiceService {
   Future<bool> startListening({
     required VoiceResultCallback onResult,
     VoiceStatusCallback? onStatus,
-    VoiceLevelCallback? onLevel,
     Duration listenFor = const Duration(seconds: 30),
     Duration pauseFor = const Duration(seconds: 5),
     String? localeId,
+    VoiceLevelCallback? onLevel,
   }) async {
-    final available = await _ensureInitialized();
-    if (!available) {
+    final supported = await _ensureSupported();
+    if (!supported) {
       _lastError = VoiceError.unavailable;
       return false;
     }
     _lastError = VoiceError.none;
 
-    // Stash the caller's status callback so the engine-global
-    // `_onEngineStatus` can forward to it. Without this wiring the
-    // UI never saw status updates and stayed stuck in
-    // "session-not-actually-started" forever — that's the bug that
-    // caused Windows users to see the "couldn't start" snackbar
-    // even when recognition was actively working in the background.
-    _userStatusCallback = onStatus;
-
-    // Defensively clear any stale "listening" flag on the engine
-    // before kicking off a new session.
-    //
-    // The Android `SpeechToText` plugin returns `false` from
-    // `listen()` whenever its internal `listening` flag is still
-    // `true` — which happens after:
-    //   * a hot-reload during development (the Dart instance is
-    //     recreated but the Kotlin plugin survives with
-    //     `listening = true` from the previous session);
-    //   * a previous recognizer that errored out without firing
-    //     `onError` (rare on real devices, common on AOSP emulators
-    //     without a working speech service — the mic indicator
-    //     shows because `SpeechRecognizer.startListening()` is
-    //     actively buffering audio, but no callbacks ever fire);
-    //   * a quick re-press before the previous `stop()` /
-    //     `cancel()` round-trip has reached the platform side.
-    //
-    // Cancel any in-flight session first so the new `listen()`
-    // always gets a clean slate. `cancel()` is a no-op when the
-    // recognizer isn't actually listening, so this is cheap on
-    // the happy path.
-    if (_engine.isListening) {
+    // Apply the locale *before* starting so the platform recognizer
+    // picks the right model. `stts.setLanguage` is a no-op for
+    // locales the recognizer doesn't support — it doesn't error.
+    if (localeId != null && localeId.isNotEmpty) {
       try {
-        await _engine.cancel();
+        await _engine.setLanguage(localeId);
       } catch (_) {
-        // Worst case the cancel fails; `listen()` will still be
-        // attempted and the grace-window below decides whether
-        // to trust any callbacks that fire.
+        // Best-effort; fall through to whatever the recognizer's
+        // default is.
       }
     }
 
+    _attachStreams(onResult: onResult, onStatus: onStatus);
+
     final probe = _livenessProbe = Completer<bool>();
 
-    bool? started;
     try {
-      started = await _engine.listen(
-        onResult: (result) {
-          _noteLiveness();
-          onResult(
-            VoiceResult(
-              text: result.recognizedWords,
-              finalResult: result.finalResult,
-            ),
-          );
-        },
-        onSoundLevelChange: onLevel == null
-            ? null
-            : (levelDb) {
-                _noteLiveness();
-                // `speech_to_text` reports sound level in dB (≈ -80..0).
-                // Normalize into a 0..1 meter for the waveform.
-                const double minDb = -80.0;
-                final clamped = levelDb.clamp(minDb, 0.0);
-                onLevel((clamped - minDb) / -minDb);
-              },
-        listenOptions: stt.SpeechListenOptions(
-          listenFor: listenFor,
-          pauseFor: pauseFor,
-          partialResults: true,
-          // Don't tear down the session on a transient engine error
-          // (e.g. WinRT's `error_speech_timeout` on a brief pause,
-          // `error_no_match` on a soft utterance). Errors are still
-          // reported via the `_onError` path so the UI can update
-          // [lastError], but the recognizer keeps listening — which
-          // is what we want for chat input where the user is
-          // long-pressing the button.
-          cancelOnError: false,
-          // `dictation` is tuned for sentences / paragraphs; the
-          // previous `confirmation` mode was optimised for short
-          // command phrases and clipped the user mid-sentence on
-          // WinRT (the engine's `pauseFor` countdown was tuned
-          // aggressively for confirmation utterances). Dictation
-          // mode gives the same WinRT backend a much more natural
-          // model for chat input.
-          listenMode: stt.ListenMode.dictation,
-          localeId: localeId,
+      // `stts.start()` is fire-and-forget — it returns immediately
+      // while the OS recognizer is still spinning up. The
+      // `_onEngineState` callback we registered above will resolve
+      // the liveness probe once `SttState.start` fires (Android:
+      // `onReadyForSpeech`, iOS: `audioEngine.start()`, Windows:
+      // SAPI callback).
+      await _engine.start(
+        const SttRecognitionOptions(
+          // Offline-first; falls back to online on platforms that
+          // don't support on-device recognition.
+          offline: true,
+          // Better punctuation / formatting where the platform
+          // supports it (Android 13+, iOS 16+, macOS 13+).
+          punctuation: true,
+          ios: SttRecognitionIosOptions(
+            taskHint: SttRecognitionDarwinTaskHint.dictation,
+          ),
         ),
       );
     } catch (e) {
       _lastError = VoiceError.unknown;
       _livenessProbe = null;
+      _teardownStreams();
       return false;
     }
 
-    // listen() accepted. Engine is definitively up — clear the
-    // probe (we don't need to wait further) and report success.
-    if (started == true) {
-      if (!probe.isCompleted) probe.complete(true);
-      _livenessProbe = null;
-      return true;
-    }
+    // Wait up to [_livenessGrace] for the recognizer to report
+    // it's actually listening. Any error that fires inside the
+    // grace window is treated as a real failure.
+    final liveness = await probe.future.timeout(
+      _livenessGrace,
+      onTimeout: () => false,
+    );
 
-    // An explicit engine error fired inside `listen()` or its
-    // callback chain. Surface it directly — the engine is
-    // authoritative, no grace window.
     if (_lastError != VoiceError.none) {
+      _teardownStreams();
       return false;
     }
+    if (liveness) return true;
 
-    // listen() returned `false` without throwing or erroring. On
-    // platforms where the underlying speech backend is known to
-    // race — WinRT `SpeechRecognizer` on Windows,
-    // `AVSpeechRecognizer` on macOS, vosk on Linux, and Android's
-    // `SpeechRecognizer` (whose `startListening` is dispatched via
-    // `handler.post` and can race against a stale `listening`
-    // flag from a previous session) — the engine frequently
-    // returns a transient `false` even though the recognizer is
-    // still spinning up. The result / status / level callbacks
-    // WILL fire if/when it actually comes up. Give the engine a
-    // short grace window during which any callback proves
-    // liveness.
-    if (!_hasRacyListenReturn) {
-      _livenessProbe = null;
-      _lastError = VoiceError.unknown;
-      return false;
-    }
-
-    try {
-      final gotCallback = await probe.future.timeout(
-        _livenessGrace,
-        onTimeout: () => false,
-      );
-      if (_lastError != VoiceError.none) return false;
-      if (gotCallback) return true;
-      // Grace window expired with no callback. Before declaring
-      // failure, double-check the engine's own state — in rare
-      // cases the recognizer comes up but no callback fires (e.g.
-      // an empty session). If the engine says it's listening,
-      // trust it.
-      try {
-        if (_engine.isListening) return true;
-      } catch (_) {}
-      _lastError = VoiceError.unknown;
-      return false;
-    } finally {
-      _livenessProbe = null;
-    }
+    // Grace window expired with no callback. Trust the engine's
+    // own state — in rare cases the recognizer comes up but the
+    // state event is lost (e.g. an empty session). If the engine
+    // says it's listening, trust it.
+    if (_listening) return true;
+    _lastError = VoiceError.unknown;
+    _teardownStreams();
+    return false;
   }
 
   @override
   Future<void> stopListening() async {
     _userStatusCallback = null;
-    if (_engine.isListening) await _engine.stop();
+    try {
+      await _engine.stop();
+    } catch (_) {
+      // Best-effort — even if the native side rejects the stop,
+      // we've torn down our stream subscriptions below.
+    }
+    _listening = false;
+    _teardownStreams();
   }
 
   @override
   Future<void> cancelListening() async {
-    _userStatusCallback = null;
-    if (_engine.isListening) await _engine.cancel();
+    // `stts` has no separate cancel primitive — `stop()` discards
+    // the partial transcript, which is exactly what "cancel" means
+    // from the caller's point of view.
+    await stopListening();
+  }
+
+  void _teardownStreams() {
+    _stateSub?.cancel();
+    _stateSub = null;
+    _resultSub?.cancel();
+    _resultSub = null;
+    _livenessProbe = null;
   }
 }

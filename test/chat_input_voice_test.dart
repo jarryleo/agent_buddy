@@ -735,7 +735,7 @@ void main() {
       );
     }
 
-    testWidgets('zh locale forwards localeId=zh_CN to the engine', (
+    testWidgets('zh locale forwards localeId=zh-CN to the engine', (
       tester,
     ) async {
       final voice = FakeVoiceService();
@@ -755,14 +755,15 @@ void main() {
 
       expect(
         voice.lastLocaleId,
-        'zh_CN',
+        'zh-CN',
         reason:
-            'a Chinese app locale must select the Chinese STT model so WinRT '
-            'does not fall back to the system (often English) locale',
+            'a Chinese app locale must select the Chinese STT model (BCP-47 '
+            '`zh-CN` is what `stts` passes through to the native recognizer) '
+            'so WinRT does not fall back to the system (often English) locale',
       );
     });
 
-    testWidgets('en locale forwards localeId=en_US to the engine', (
+    testWidgets('en locale forwards localeId=en-US to the engine', (
       tester,
     ) async {
       final voice = FakeVoiceService();
@@ -780,7 +781,7 @@ void main() {
       await _longPress(tester, mic);
       await tester.pumpAndSettle();
 
-      expect(voice.lastLocaleId, 'en_US');
+      expect(voice.lastLocaleId, 'en-US');
     });
 
     testWidgets(
@@ -826,8 +827,7 @@ void main() {
         expect(
           fsbCount(tester),
           greaterThan(0),
-          reason:
-              'volume bar must stay mounted after engine ends mid-press',
+          reason: 'volume bar must stay mounted after engine ends mid-press',
         );
         expect(
           gradientColors(tester),
@@ -859,42 +859,40 @@ void main() {
       },
     );
 
-    testWidgets(
-      'engine firing done mid-press does NOT flip the UI to idle',
-      (tester) async {
-        final voice = FakeVoiceService();
-        await pumpWithLocale(tester, voice, (_, _, _) {});
+    testWidgets('engine firing done mid-press does NOT flip the UI to idle', (
+      tester,
+    ) async {
+      final voice = FakeVoiceService();
+      await pumpWithLocale(tester, voice, (_, _, _) {});
 
-        final mic = find.descendant(
-          of: find.byType(ChatInput),
-          matching: find.byIcon(Icons.mic_none_rounded),
-        );
-        final center = tester.getCenter(mic);
-        final gesture = await tester.startGesture(center);
-        await tester.pump(const Duration(milliseconds: 600));
-        voice.emitStatus('listening');
-        voice.emitResult('hi there', finalResult: true);
-        await tester.pump();
+      final mic = find.descendant(
+        of: find.byType(ChatInput),
+        matching: find.byIcon(Icons.mic_none_rounded),
+      );
+      final center = tester.getCenter(mic);
+      final gesture = await tester.startGesture(center);
+      await tester.pump(const Duration(milliseconds: 600));
+      voice.emitStatus('listening');
+      voice.emitResult('hi there', finalResult: true);
+      await tester.pump();
 
-        // Engine fires `done` after the final result.
-        voice.emitStatus('done');
-        await tester.pump();
+      // Engine fires `done` after the final result.
+      voice.emitStatus('done');
+      await tester.pump();
 
-        expect(
-          fsbCount(tester),
-          greaterThan(0),
-          reason:
-              'volume bar stays mounted after engine fires done mid-press',
-        );
+      expect(
+        fsbCount(tester),
+        greaterThan(0),
+        reason: 'volume bar stays mounted after engine fires done mid-press',
+      );
 
-        // Release — properly tears down.
-        await gesture.up();
-        await tester.pumpAndSettle();
+      // Release — properly tears down.
+      await gesture.up();
+      await tester.pumpAndSettle();
 
-        expect(voice.stopListeningCalls, 1);
-        expect(fsbCount(tester), 0);
-      },
-    );
+      expect(voice.stopListeningCalls, 1);
+      expect(fsbCount(tester), 0);
+    });
 
     testWidgets(
       'release after engine auto-ended (no results) still cleans up UI',

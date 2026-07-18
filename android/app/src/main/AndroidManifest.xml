@@ -4,7 +4,10 @@
     <uses-permission android:name="android.permission.WRITE_CALENDAR"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-    <!-- Voice input: on-device speech recognition via speech_to_text. -->
+    <!-- Voice input: stts wraps `android.speech.SpeechRecognizer`,
+         which requires `RECORD_AUDIO` for live mic capture. The
+         plugin does NOT declare this permission in its own
+         AndroidManifest, so we list it here. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <!-- flutter_local_notifications: posting notifications on Android 13+,
          and (best-effort) keeping the process alive while one or more

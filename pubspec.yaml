@@ -40,16 +40,21 @@ dependencies:
   hive_ce_flutter: ^2.3.4
   package_info_plus: ^9.0.1
   window_manager: ^0.5.0
-  speech_to_text: ^7.4.0
-  speech_to_text_platform_interface: ^2.4.0
-  # Explicit, well-tested cross-platform permission flow. The
-  # `speech_to_text` plugin handles its own permission prompt on
-  # paper, but in practice the OS dialog is unreliable on some
-  # Android skins (MIUI / EMUI / ColorOS) and the plugin can fail
-  # silently. `permission_handler` is the de-facto standard
-  # permission helper and gives us a reliable `microphone` request
-  # with a `permanentlyDenied` distinction so the UI can point the
-  # user at system settings.
+  # Speech-to-text + text-to-speech on every Flutter target. The
+  # `stts` plugin (`llfbandit/stts`) wraps the platform-native
+  # recognizer (`SpeechRecognizer` on Android, `SFSpeechRecognizer`
+  # on iOS / macOS, SAPI on Windows, the browser's `SpeechRecognition`
+  # on web) without a Dart-side recognizer of its own. We pin
+  # `^1.2.6` — versions ≥ 1.3.0 require Dart ≥ 3.12 / Flutter ≥
+  # 3.44, which is newer than our `sdk: ^3.11.1` floor.
+  stts: ^1.2.6
+  # Explicit, well-tested cross-platform permission flow. `stts`
+  # exposes `hasPermission()` but only as a boolean — it has no way
+  # to distinguish "user just declined this prompt" from "user has
+  # permanently denied and we should send them to system settings".
+  # `permission_handler` gives us the `microphone.status` /
+  # `.request()` API with a `permanentlyDenied` state so the UI can
+  # offer the right next step.
   permission_handler: ^11.3.1
 
 

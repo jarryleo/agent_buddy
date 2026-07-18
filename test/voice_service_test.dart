@@ -83,13 +83,13 @@ void main() {
   group('VoiceService abstraction', () {
     test('stub reports notSupported + not available', () async {
       final svc = VoiceServiceStub();
-      expect(await svc.ensurePermission(), PlatformPermissionStatus.notSupported);
+      expect(
+        await svc.ensurePermission(),
+        PlatformPermissionStatus.notSupported,
+      );
       expect(await svc.isAvailable, isFalse);
       expect(svc.isListening, isFalse);
-      expect(
-        await svc.startListening(onResult: (_) {}),
-        isFalse,
-      );
+      expect(await svc.startListening(onResult: (_) {}), isFalse);
     });
 
     test('factory returns the production implementation', () {
@@ -158,11 +158,8 @@ void main() {
 
     test('localeId is forwarded to the engine', () async {
       final svc = FakeVoiceService();
-      await svc.startListening(
-        onResult: (_) {},
-        localeId: 'zh_CN',
-      );
-      expect(svc.lastLocaleId, 'zh_CN');
+      await svc.startListening(onResult: (_) {}, localeId: 'zh-CN');
+      expect(svc.lastLocaleId, 'zh-CN');
     });
 
     test('localeId is null by default (system-locale fallback)', () async {
