@@ -10,6 +10,7 @@ import '../l10n/app_localizations.dart';
 import '../models/file_attachment.dart';
 import '../models/message.dart';
 import '../providers/chat_provider.dart';
+import '../services/tts_service.dart';
 import '../theme/app_theme.dart';
 import 'image_preview.dart';
 import 'download_card.dart';
@@ -36,7 +37,7 @@ class MessageBubble extends StatefulWidget {
 
   /// Produces one `ValueKey`-friendly string per `ToolCall` in
   /// [calls], disambiguating duplicates by appending `#<n>` to
-  /// the 2nd, 3rd, … occurrence of the same id. The first
+  /// the 2nd, 3rd, �?occurrence of the same id. The first
   /// occurrence keeps the bare `tool_<id>` form so a single
   /// non-colliding call still matches the key the rest of the
   /// codebase (retry / `resolveAskUser`) looks up by.
@@ -76,17 +77,161 @@ class _MessageBubbleState extends State<MessageBubble> {
   String _lastThinking = '';
   int _lastExpandedLines = _thinkingCollapsedLines;
 
+  /// Cached snapshot of [TtsService.speakingMessageId] for this
+  /// bubble's id. Updated by [_onTtsSpeakingChanged]. Compared
+  /// during [build] to decide whether to render the speaker
+  /// button in its `volume_up` (other message is speaking),
+  /// `stop` (this message is speaking), or `play_arrow`
+  /// (paused) state.
+  bool _ttsIsThisMessage = false;
+  bool _ttsIsPaused = false;
+
+  /// Cached snapshot of [TtsService.isSupportedNotifier.value].
+  /// Drives the speak button's visibility (see [_buildTtsSpeaker]).
+  /// Starts `false`; flips to the engine's answer once the
+  /// post-frame callback in [initState] reads the service, *and*
+  /// whenever the service's notifier fires (probe lands, hot-
+  /// reload, etc.). The cache exists so [build] can read a sync
+  /// bool instead of doing a Provider lookup on every paint.
+  bool _ttsIsSupported = false;
+
   @override
   void initState() {
     super.initState();
     _thinkingScroll.addListener(_onThinkingScroll);
+    // We can't `context.read<TtsService>()` in initState (the
+    // BuildContext isn't ready for inherited-widget lookups yet),
+    // so we defer the first read + listener attach to a
+    // post-frame callback. By that point the build is done and
+    // context is valid. The subscription is one-way: the service
+    // owns the truth, we only listen.
+    //
+    // `_lookupTts` returns `null` if no `Provider<TtsService>` is
+    // in the tree — that happens only in unit tests that pre-date
+    // the TTS feature. Production always supplies the Provider
+    // via `main.dart`, so this branch is purely a safety net.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final tts = _lookupTts(context);
+      if (tts == null) return;
+      _syncTtsState(tts);
+      // Seed the supported snapshot from the live notifier
+      // value, then trigger a rebuild if it differs from the
+      // initial `false`. This is what makes the speaker button
+      // pop into view the moment the post-frame callback runs
+      // (instead of staying hidden until the user triggers
+      // a state change later).
+      final supported = tts.isSupported;
+      if (supported != _ttsIsSupported) {
+        setState(() {
+          _ttsIsSupported = supported;
+        });
+      }
+      tts.speakingMessageId.addListener(_onTtsSpeakingChanged);
+      tts.isPausedNotifier.addListener(_onTtsPausedChanged);
+      tts.isSupportedNotifier.addListener(_onTtsSupportedChanged);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant MessageBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The service is shared across bubbles (singleton via
+    // Provider). Our snapshot already reflects the current state,
+    // but if the message identity changed (e.g. via hot-reload)
+    // we want to re-evaluate against the new id before the next
+    // build.
+    if (oldWidget.message.id != widget.message.id && mounted) {
+      final tts = _lookupTts(context);
+      if (tts != null) _syncTtsState(tts);
+    }
   }
 
   @override
   void dispose() {
     _thinkingScroll.removeListener(_onThinkingScroll);
     _thinkingScroll.dispose();
+    // Detach the listeners we registered in initState's
+    // post-frame callback. The listener removal only needs the
+    // *service* — read it once defensively. `_lookupTts` returns
+    // `null` when the provider tree is already gone (test
+    // teardown, app shutdown), in which case there's nothing to
+    // detach.
+    final tts = _lookupTts(context);
+    if (tts != null) {
+      tts.speakingMessageId.removeListener(_onTtsSpeakingChanged);
+      tts.isPausedNotifier.removeListener(_onTtsPausedChanged);
+      tts.isSupportedNotifier.removeListener(_onTtsSupportedChanged);
+    }
     super.dispose();
+  }
+
+  /// Optional lookup of the [TtsService] �?returns `null` when no
+  /// `Provider<TtsService>` is in scope. The production app always
+  /// supplies the Provider via `main.dart`, but pre-existing
+  /// bubble unit tests pre-date the feature, and we'd rather they
+  /// keep rendering than crash on `context.read`. Returning `null`
+  /// means the bubble's TTS affordance stays hidden.
+  static TtsService? _lookupTts(BuildContext context) {
+    try {
+      return Provider.of<TtsService>(context, listen: false);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Pull the current speaking-id + paused flag from the service
+  /// and refresh our cached snapshot. Called on first attach and
+  /// after `didUpdateWidget`.
+  void _syncTtsState(TtsService tts) {
+    _ttsIsThisMessage = tts.speakingMessageId.value == widget.message.id;
+    _ttsIsPaused = _ttsIsThisMessage && tts.isPausedNotifier.value;
+  }
+
+  void _onTtsSpeakingChanged() {
+    if (!mounted) return;
+    final tts = _lookupTts(context);
+    if (tts == null) return;
+    final newValue = tts.speakingMessageId.value == widget.message.id;
+    if (newValue != _ttsIsThisMessage) {
+      setState(() {
+        _ttsIsThisMessage = newValue;
+      });
+    }
+  }
+
+  void _onTtsPausedChanged() {
+    if (!mounted) return;
+    // Pausing only matters to the bubble that's currently
+    // speaking. Other bubbles (idle or waiting their turn) ignore
+    // the pause flag — it has no visual effect on them.
+    if (!_ttsIsThisMessage) return;
+    final tts = _lookupTts(context);
+    if (tts == null) return;
+    final newValue = tts.isPausedNotifier.value;
+    if (newValue != _ttsIsPaused) {
+      setState(() {
+        _ttsIsPaused = newValue;
+      });
+    }
+  }
+
+  /// Fired when the engine probe lands and the `isSupported`
+  /// flag flips. Triggers a rebuild so the speaker button can
+  /// pop into view (or hide itself on a platform without TTS).
+  /// Without this listener the bubble would stay in its
+  /// pre-probe state forever and the user would never see the
+  /// speaker icon.
+  void _onTtsSupportedChanged() {
+    if (!mounted) return;
+    final tts = _lookupTts(context);
+    if (tts == null) return;
+    final newValue = tts.isSupported;
+    if (newValue != _ttsIsSupported) {
+      setState(() {
+        _ttsIsSupported = newValue;
+      });
+    }
   }
 
   void _onThinkingScroll() {
@@ -153,7 +298,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     // RepaintBoundary isolates each message's layer so a streaming
     // re-render of the latest assistant message doesn't trigger a
     // repaint of the entire chat list (which is exactly what
-    // ListView.builder already does for free — but the explicit
+    // ListView.builder already does for free �?but the explicit
     // RepaintBoundary also stops a Paint pass from re-rasterizing
     // sibling messages when the streaming layer grows).
     return RepaintBoundary(child: body);
@@ -241,13 +386,13 @@ class _MessageBubbleState extends State<MessageBubble> {
   Widget _buildUserImages(BuildContext context, List<String> paths) {
     final maxWidth = MediaQuery.of(context).size.width * 0.65;
     final isMulti = paths.length > 1;
-    // Larger thumbnails than the legacy 160 / 88dp default — uploaded photos
+    // Larger thumbnails than the legacy 160 / 88dp default �?uploaded photos
     // are usually the user's main subject and benefit from being readable at
     // a glance.
     final thumbSize = isMulti ? 300.0 : 600.0;
     final crossAxisCount = isMulti ? (paths.length >= 3 ? 2 : paths.length) : 1;
     // Actual on-screen cell side after the grid's crossAxisSpacing. The
-    // Image widget's `width` / `height` is only a hint here — the grid
+    // Image widget's `width` / `height` is only a hint here �?the grid
     // derives the cell from `childAspectRatio: 1`, so on single-image rows
     // the rendered thumbnail is the full bubble width, not thumbSize.
     final cellSide = (maxWidth - 4 * (crossAxisCount - 1)) / crossAxisCount;
@@ -255,7 +400,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     // × dpr. The previous cacheSize = thumbSize * dpr was *smaller* than
     // the actual display footprint on single-image rows
     // (cell ~260dp > thumbSize 160dp), so Flutter had to up-sample the
-    // cache to the screen — that's the source of the visibly pixelated
+    // cache to the screen �?that's the source of the visibly pixelated
     // cover-cropped thumbnail. ResizeImage caps at the source file's
     // native dimensions, so requesting more pixels than the file holds
     // is a harmless no-op (no up-sampling at decode time).
@@ -407,7 +552,7 @@ class _MessageBubbleState extends State<MessageBubble> {
           // right edge. The [IntrinsicWidth] is scoped to JUST
           // this pair (not the whole column) so the thinking
           // and tool-call blocks above don't stretch the bubble
-          // to their width — during streaming that's the
+          // to their width �?during streaming that's the
           // difference between a tightly-wrapped bubble and a
           // hollow-looking one with the answer hugging the
           // left edge.
@@ -420,34 +565,68 @@ class _MessageBubbleState extends State<MessageBubble> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (m.content.isNotEmpty || m.streaming)
-                  Container(
-                    margin: EdgeInsets.only(
-                      top: (hasThinking || hasTools) ? 6 : 0,
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: context.bubbleAssistant,
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(4),
-                        topRight: Radius.circular(16),
-                        bottomLeft: Radius.circular(16),
-                        bottomRight: Radius.circular(16),
-                      ),
-                      border: Border.all(color: context.appBorder),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _StreamingMarkdown(
-                          data: m.content,
-                          streaming: m.streaming,
+                  // The bubble + the TTS button share a Stack so the
+                  // button can sit at the bubble's bottom-right
+                  // without affecting the content's layout �?the
+                  // markdown gets the full bubble width, and the
+                  // button overlays the bottom-right ~6px without
+                  // pushing the text up.
+                  //
+                  // [Stack.clipBehavior.none] is the default but we
+                  // spell it out so the button can render slightly
+                  // outside the bubble's rounded corners (its
+                  // [Positioned] rect is fine but a soft drop-shadow
+                  // shouldn't be clipped to the bubble).
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        margin: EdgeInsets.only(
+                          top: (hasThinking || hasTools) ? 6 : 0,
                         ),
-                        if (m.streaming) const _TypingIndicator(),
-                      ],
-                    ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: context.bubbleAssistant,
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(4),
+                            topRight: Radius.circular(16),
+                            bottomLeft: Radius.circular(16),
+                            bottomRight: Radius.circular(16),
+                          ),
+                          border: Border.all(color: context.appBorder),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _StreamingMarkdown(
+                              data: m.content,
+                              streaming: m.streaming,
+                            ),
+                            if (m.streaming) const _TypingIndicator(),
+                          ],
+                        ),
+                      ),
+                      // Speaker button �?only when there's
+                      // something to speak. Positioned at the
+                      // bubble's bottom-right corner with 2px of
+                      // breathing room. The button paints OVER the
+                      // markdown; on long messages it overlaps the
+                      // last line slightly. That overlap is the
+                      // intended affordance �?the button visually
+                      // "owns" that corner of the bubble, and the
+                      // markdown's last line rarely matters in
+                      // practice (the tail of an assistant reply
+                      // is typically whitespace or a list bullet).
+                      if (m.content.isNotEmpty)
+                        Positioned(
+                          right: 2,
+                          bottom: 2,
+                          child: _buildTtsSpeaker(context),
+                        ),
+                    ],
                   ),
                 // Footer: rendered BELOW the bubble, on the page
                 // background (not inside the bubble's background).
@@ -601,12 +780,12 @@ class _MessageBubbleState extends State<MessageBubble> {
   /// while the cloud provider path is waiting on the next
   /// attempt of the exponential-backoff schedule. Reads the live
   /// `m.nextRetryAt` on every rebuild so the countdown label
-  /// updates second-by-second — driven by the 1-second ticker
+  /// updates second-by-second �?driven by the 1-second ticker
   /// inside [ChatProvider] (which calls `notifyListeners` while
   /// any message has a pending retry).
   ///
   /// Visually: a thin warning-tinted row with a refresh icon
-  /// and the localized "网络抖动,第 N 次重试,X 秒后重连" label
+  /// and the localized "网络抖动,�?N 次重�?X 秒后重连" label
   /// (or the English equivalent). Sits OUTSIDE the streaming
   /// bubble so the spinner / typewriter that lives inside the
   /// bubble never has to compete with the countdown label.
@@ -620,7 +799,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
       decoration: BoxDecoration(
-        // A muted warning tone — distinct from both the
+        // A muted warning tone �?distinct from both the
         // bubble's assistant bg and the tool-call bg so the
         // user can read it at a glance but it doesn't look
         // like a hard error.
@@ -734,6 +913,198 @@ class _MessageBubbleState extends State<MessageBubble> {
   ///   * time-to-first-token (clock icon + "0.50s"),
   ///   * decode speed ("50t/s"),
   ///   * total token count for this turn (Σ icon + "1312token",
+  /// The "read aloud" speaker button overlaid at the bottom-right
+  /// of the assistant bubble. Three visual states, all driven by
+  /// the cached [TtsService] notifiers:
+  ///
+  ///   * **Idle** (no message is being spoken): a muted
+  ///     `volume_up` icon �?clicking it starts speaking this
+  ///     bubble's content.
+  ///   * **This bubble is speaking** (`_ttsIsThisMessage && !_ttsIsPaused`):
+  ///     a filled `stop` icon with a subtle pulsing aura �?clicking
+  ///     it stops the engine.
+  ///   * **This bubble is paused** (`_ttsIsThisMessage && _ttsIsPaused`):
+  ///     a `play_arrow` icon �?clicking it resumes (the same
+  ///     `speak()` call becomes a toggle when the id matches).
+  ///
+  /// When `TtsService.isSupported` is `false` (Linux desktop,
+  /// no-TTS-installed Android, browsers without `SpeechSynthesis`),
+  /// the button is hidden entirely �?no point teasing an
+  /// affordance that won't go anywhere.
+  Widget _buildTtsSpeaker(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    // The cached `_ttsIsSupported` snapshot is the source of
+    // truth for visibility. We don't read the service directly
+    // here because `_lookupTts` would throw when called inside
+    // `build` (the `BuildContext` is fine, but the `try/catch`
+    // pattern we'd need to make it optional adds noise on the
+    // hot path). The notifier listener registered in [initState]
+    // keeps the snapshot up-to-date.
+    if (!_ttsIsSupported) return const SizedBox.shrink();
+
+    final IconData icon;
+    final Color color;
+    final String tooltip;
+    if (_ttsIsThisMessage && !_ttsIsPaused) {
+      icon = Icons.stop_rounded;
+      // Same primary tint as the click-to-stop pulsing mic on the
+      // chat input �?keeps the visual rhythm consistent across
+      // the two recording-related affordances.
+      color = AppTheme.primary;
+      tooltip = l10n.chatTtsStop;
+    } else if (_ttsIsThisMessage && _ttsIsPaused) {
+      icon = Icons.play_arrow_rounded;
+      color = AppTheme.primary;
+      tooltip = l10n.chatTtsStop;
+    } else {
+      icon = Icons.volume_up_rounded;
+      color = context.textSecondary;
+      tooltip = l10n.chatTtsSpeak;
+    }
+
+    return Semantics(
+      button: true,
+      label: tooltip,
+      // Tooltip child of the gesture surface �?we can't use the
+      // [Tooltip] widget directly because that installs its own
+      // [LongPressGestureRecognizer], which has been the source
+      // of gesture-arena fights with the parent [Listener] in
+      // the chat input. A 50% opaque pill background gives a
+      // visual focus affordance without a [Tooltip] wrapper.
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _onTtsSpeakerTapped(context),
+        child: Container(
+          width: 24,
+          height: 24,
+          margin: EdgeInsets.all(2.0),
+          decoration: BoxDecoration(
+            color: context.bubbleAssistant.withValues(alpha: 0.5),
+            shape: BoxShape.circle,
+            border: Border.all(color: context.appBorder, width: 0.5),
+          ),
+          alignment: Alignment.center,
+          child: Icon(icon, size: 15, color: color),
+        ),
+      ),
+    );
+  }
+
+  /// Click handler. Three cases:
+  ///
+  ///   * **Idle** �?start speaking this bubble. The engine
+  ///     starts on the bubble's raw `content`; `stts` handles
+  ///     whatever string we hand it (markdown + newlines + code
+  ///     fences are read as-is �?the user gets the literal text,
+  ///     not the rendered markdown).
+  ///   * **This bubble is speaking** �?stop.
+  ///   * **This bubble is paused** �?resume (which the
+  ///     `TtsService.speak(id, �?` API turns into a resume via
+  ///     the toggle path; here we just delegate via [pause] /
+  ///     [resume] for clarity).
+  ///
+  /// The `localeId` mirrors the chat-input voice-input
+  /// selection: we read [AppLocalizations.localeName] (e.g. `'zh'`
+  /// / `'en'`) and map it to a BCP-47 tag so the engine picks a
+  /// voice that matches the user's app language. Without this the
+  /// Windows SAPI default falls back to the system locale �?which
+  /// is frequently wrong for our bilingual users.
+  Future<void> _onTtsSpeakerTapped(BuildContext context) async {
+    final tts = _lookupTts(context);
+    if (tts == null) return;
+    final l10n = AppLocalizations.of(context);
+    final m = widget.message;
+    if (_ttsIsThisMessage && !_ttsIsPaused) {
+      await tts.stop();
+      return;
+    }
+    if (_ttsIsThisMessage && _ttsIsPaused) {
+      await tts.resume();
+      return;
+    }
+    // Strip markdown formatting hints so the engine doesn't read
+    // out raw `#`, `` ` ``, etc. The line-aware chunking matters
+    // less for STT �?`stts.start()` accepts the whole string in
+    // one go �?but trimmed / collapsed whitespace makes the
+    // speech pause-map more natural on platforms that pause at
+    // sentence boundaries.
+    final cleaned = _stripMarkdownForSpeech(m.content);
+    if (cleaned.trim().isEmpty) return;
+    await tts.speak(
+      m.id,
+      cleaned,
+      localeId: _localeIdForTtsSpeech(l10n.localeName),
+    );
+  }
+
+  /// Map the app's canonicalized locale
+  /// (`AppLocalizations.localeName`, e.g. `'en'`, `'zh'`) to a
+  /// BCP-47 tag that `stts.Tts.setLanguage` passes through to the
+  /// underlying voice engine (Android `TextToSpeech`,
+  /// `AVSpeechSynthesizer` on iOS / macOS, SAPI on Windows,
+  /// `SpeechSynthesis` on web). Returning `null` lets the engine
+  /// keep its current voice.
+  static String? _localeIdForTtsSpeech(String appLocale) {
+    switch (appLocale) {
+      case 'zh':
+        return 'zh-CN';
+      case 'en':
+        return 'en-US';
+      default:
+        return null;
+    }
+  }
+
+  /// Strip a minimum set of markdown / code-fence markers so the
+  /// TTS engine reads the message naturally instead of spelling
+  /// out `hash` / `backtick` for every inline code fragment. We
+  /// intentionally do NOT touch fenced code blocks �?those are
+  /// usually fine to read verbatim since users often ask the
+  /// model to *write* code, and a TTS of the code body is more
+  /// useful than silence.
+  static String _stripMarkdownForSpeech(String input) {
+    var s = input;
+    // Drop fenced code block delimiters (```lang and ```), keep
+    // the inner lines.
+    s = s.replaceAll(RegExp(r'```\w*\n?'), '');
+    s = s.replaceAll(RegExp(r'```\n?'), '');
+    // Inline code: `foo` �?foo. `replaceAllMapped` is needed so
+    // the captured group (`$1`-style substitution) actually
+    // expands �?`replaceAll(..., String)` treats `$1` as a
+    // literal token.
+    s = s.replaceAllMapped(RegExp(r'`([^`]+)`'), (m) => m.group(1) ?? '');
+    // Heading hashes at line start.
+    s = s.replaceAll(RegExp(r'^#{1,6}\s+', multiLine: true), '');
+    // List bullets at line start: -, *, +, 1., 2., �?
+    s = s.replaceAll(RegExp(r'^\s*(?:[-*+]|\d+\.)\s+', multiLine: true), '');
+    // Bold (must come before italic so the `**` is consumed first,
+    // leaving single-`*` for italic).
+    s = s.replaceAllMapped(RegExp(r'\*\*([^*]+)\*\*'), (m) => m.group(1) ?? '');
+    // Single-`*` italic, anchored so it doesn't eat the `*` in
+    // a `1 * 2` arithmetic expression.
+    s = s.replaceAllMapped(
+      RegExp(r'(?<!\*)\*([^*\n]+)\*(?!\*)'),
+      (m) => m.group(1) ?? '',
+    );
+    // Collapse runs of 3+ blank lines.
+    s = s.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+    return s;
+  }
+
+  /// Builds the right-aligned chip group (TTFT, decode-speed,
+  /// total-token count) for the bubble's footer. Each chip is
+  /// mapped to its l10n-aware format string via `AppLocalizations`
+  /// (so "0.5s" vs "0.5�? etc. land naturally). The chip
+  /// contents are derived from [MessageMetrics]:
+  ///
+  ///   * **TTFT** �?`Icons.schedule_outlined` + "<n>s" (or
+  ///     "<m>m<ss>s" for �?60s), from `metrics.ttft`.
+  ///   * **Decode speed** �?"<n>t/s" (tokens per second), from
+  ///     `metrics.decodeTokensPerSecond`.
+  ///   * **Total tokens** �?Σ + "<n> token", from
+  ///     `metrics.inputTokens + metrics.outputTokens` (always
+  ///     emitted as one number, e.g.
+  ///     `Σ 1312 token`
   ///     where 1312 = input + output).
   ///
   /// Each chip is silently omitted when the underlying metric
@@ -775,7 +1146,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     // to distinguish it from the per-second throughput
     // immediately to its left. When the model emitted zero
     // tokens (errors before first chunk, pure-tool-call turn
-    // with no text, …) we skip the chip entirely.
+    // with no text, �? we skip the chip entirely.
     final total = metrics.inputTokens + metrics.outputTokens;
     if (total > 0) {
       chips.addAll([
@@ -799,7 +1170,7 @@ class _MessageBubbleState extends State<MessageBubble> {
   static String _formatSeconds(Duration d) {
     if (d.inSeconds < 60) {
       // Always show two decimals so the user can read "0.50s"
-      // vs "0.05s" at a glance — the small TTFT case is the
+      // vs "0.05s" at a glance �?the small TTFT case is the
       // most informative one for cache-hit comparisons.
       return '${(d.inMicroseconds / 1000000).toStringAsFixed(2)}s';
     }
@@ -842,7 +1213,7 @@ class _MessageBubbleState extends State<MessageBubble> {
 }
 
 /// Renders a collapsed group of consecutive tool-role messages.
-/// Shows a summary badge ("调用了 N 个工具") that expands to reveal
+/// Shows a summary badge ("调用�?N 个工�?) that expands to reveal
 /// each individual tool call card.
 class _GroupedToolCalls extends StatefulWidget {
   const _GroupedToolCalls({
@@ -1322,7 +1693,7 @@ class _StreamingMarkdownState extends State<_StreamingMarkdown>
   Timer? _throttle;
   // Eagerly initialized in [initState] rather than as a `late final`
   // field. The late-initializer form would only run on first access
-  // — and if the widget is disposed before any tick fires (e.g. the
+  // �?and if the widget is disposed before any tick fires (e.g. the
   // assistant message stops streaming immediately, so
   // [_animateTo] is never called, and the message bubble is then
   // unmounted by a session switch), the first access lands in
@@ -1429,7 +1800,7 @@ class _StreamingMarkdownState extends State<_StreamingMarkdown>
     // The streaming typewriter advances `_visibleLength` only
     // every ~33ms (driven by the AnimationController). Wrapping
     // the markdown in `AnimatedSize` would re-run a layout
-    // animation on every advance — that animation drives a
+    // animation on every advance �?that animation drives a
     // global relayout of the parent ListView, which is one of
     // the main causes of scroll jank during streaming. We drop
     // the AnimatedSize entirely: each tick the parent gets a

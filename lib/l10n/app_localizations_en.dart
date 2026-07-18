@@ -951,6 +951,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get imageLoadFailed => 'Failed to load image';
 
   @override
+  String get chatTtsSpeak => 'Read aloud';
+
+  @override
+  String get chatTtsStop => 'Stop reading';
+
+  @override
+  String get chatTtsUnavailable =>
+      'Text-to-speech is not supported on this device.';
+
+  @override
   String get toolCallArguments => 'Arguments';
 
   @override

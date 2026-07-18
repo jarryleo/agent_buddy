@@ -430,6 +430,10 @@
   "codeCopied": "Copied",
   "imageLoadFailed": "Failed to load image",
 
+  "chatTtsSpeak": "Read aloud",
+  "chatTtsStop": "Stop reading",
+  "chatTtsUnavailable": "Text-to-speech is not supported on this device.",
+
   "toolCallArguments": "Arguments",
   "toolCallResult": "Result",
   "toolCallStatusPending": "Pending",

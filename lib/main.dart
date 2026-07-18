@@ -18,6 +18,7 @@ import 'providers/chat_provider.dart';
 import 'providers/memory_provider.dart';
 import 'providers/settings_provider.dart';
 import 'services/api_service.dart';
+import 'services/tts_service.dart';
 import 'services/builtin_model_download_service.dart';
 import 'services/chat_session_repository.dart';
 import 'services/download_service.dart';
@@ -68,6 +69,20 @@ Future<void> main() async {
   // called on first show(); TimerService just holds an in-memory
   // queue.
   await NotificationService.instance.initialize();
+  // Eagerly probe the TTS engine so the per-bubble speaker button
+  // knows whether to show before its first render. Without this,
+  // [TtsService.isSupported] starts as `false` and the bubble has
+  // no other trigger to flip it — the user would see no speaker UI
+  // even on platforms where the engine is fully wired up
+  // (e.g. Windows SAPI, macOS AVSpeechSynthesizer). The probe is
+  // fast on every supported platform (≤ 100 ms) so the startup
+  // cost is negligible.
+  //
+  // Built first and registered via `Provider.value` below so the
+  // widget tree sees the same instance the eager probe warmed up
+  // — a plain `Provider(create: ...)` would create a *second*
+  // instance whose probe hasn't run yet, re-introducing the bug.
+  final ttsService = TtsService()..initialize();
   final timerService = TimerService();
   final googleSheets = GoogleSheetsService(storage: storage)..load();
   // Long-lived built-in model download service. Lives for the
@@ -83,6 +98,7 @@ Future<void> main() async {
       tasksBox: tasksBox,
       memoriesBox: memoriesBox,
       memoryRepo: memoryRepo,
+      ttsService: ttsService,
       timerService: timerService,
       googleSheets: googleSheets,
       builtinDownloadService: builtinDownloadService,
@@ -127,6 +143,7 @@ class AgentBuddyApp extends StatelessWidget {
     required this.tasksBox,
     required this.memoriesBox,
     required this.memoryRepo,
+    required this.ttsService,
     required this.timerService,
     required this.googleSheets,
     required this.builtinDownloadService,
@@ -136,6 +153,7 @@ class AgentBuddyApp extends StatelessWidget {
   final Box<Task> tasksBox;
   final Box<Memory> memoriesBox;
   final MemoryRepository memoryRepo;
+  final TtsService ttsService;
   final TimerService timerService;
   final GoogleSheetsService googleSheets;
   final BuiltinModelDownloadService builtinDownloadService;
@@ -159,6 +177,7 @@ class AgentBuddyApp extends StatelessWidget {
         ),
         Provider<DownloadService>(create: (_) => DownloadService()),
         Provider<VoiceService>(create: (_) => createVoiceService()),
+        Provider<TtsService>.value(value: ttsService),
         ChangeNotifierProvider<MemoryProvider>(
           create: (_) => MemoryProvider(memoryRepo),
         ),

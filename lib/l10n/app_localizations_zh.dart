@@ -911,6 +911,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get imageLoadFailed => '图片加载失败';
 
   @override
+  String get chatTtsSpeak => '朗读';
+
+  @override
+  String get chatTtsStop => '停止朗读';
+
+  @override
+  String get chatTtsUnavailable => '当前设备不支持文字转语音。';
+
+  @override
   String get toolCallArguments => '参数';
 
   @override

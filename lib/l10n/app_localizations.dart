@@ -1770,6 +1770,24 @@ abstract class AppLocalizations {
   /// **'Failed to load image'**
   String get imageLoadFailed;
 
+  /// No description provided for @chatTtsSpeak.
+  ///
+  /// In en, this message translates to:
+  /// **'Read aloud'**
+  String get chatTtsSpeak;
+
+  /// No description provided for @chatTtsStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop reading'**
+  String get chatTtsStop;
+
+  /// No description provided for @chatTtsUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Text-to-speech is not supported on this device.'**
+  String get chatTtsUnavailable;
+
   /// No description provided for @toolCallArguments.
   ///
   /// In en, this message translates to:
