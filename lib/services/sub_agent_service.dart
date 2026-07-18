@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
@@ -29,12 +28,7 @@ enum SubAgentStatus {
   cancelled,
 }
 
-/// A single delegation task. Carries the input the main agent
-/// passed in, the running status, the (eventual) final report, the
-/// intermediate tool calls the sub-agent emitted (so the chat
-/// bubble can show "fetch_web → https://…" / "search → TODO" while
-/// it works, mirroring the main agent's `ToolCall` card UX), and a
-/// few metadata fields surfaced in the JSON envelope.
+/// A single delegation task.
 @immutable
 class SubAgentTask {
   const SubAgentTask({
@@ -68,10 +62,6 @@ class SubAgentTask {
   /// when [status] is [SubAgentStatus.failed].
   final String? error;
 
-  /// Subset of the sub-agent's tool calls the UI surfaces in the
-  /// chat bubble's `ToolCall` card. We capture one row per (name,
-  /// args, result) so the user can see what the sub-agent did while
-  /// the main turn stayed silent.
   final List<SubAgentToolCall> toolCalls;
 
   SubAgentTask copyWith({
@@ -101,21 +91,16 @@ class SubAgentTask {
     'id': id,
     'task': task,
     'want': want,
-    'context': context,
     'status': status.name,
     'createdAt': createdAt.toIso8601String(),
     if (finishedAt != null) 'finishedAt': finishedAt!.toIso8601String(),
-    if (report != null) 'report': report,
-    if (error != null) 'error': error,
-    'rounds': rounds,
-    'tool_calls': toolCalls.map((c) => c.toJson()).toList(),
+    if (status == SubAgentStatus.completed &&
+        report != null &&
+        report!.trim().isNotEmpty)
+      'report': report,
   };
 }
 
-/// One sub-agent tool call — local to a [SubAgentTask] and kept
-/// inside its parent record (so the main agent's chat history
-/// doesn't see any of this, but the chat bubble's ToolCall card
-/// can still render the sub-agent's intermediate work).
 @immutable
 class SubAgentToolCall {
   const SubAgentToolCall({
@@ -248,10 +233,7 @@ typedef SubAgentStreamFactory =
 ///
 /// The sub-agent's intermediate tool calls and intermediate
 /// text are NEVER appended to the main session's message list.
-/// The chat bubble surfaces them in a sub-agent `ToolCall` card
-/// (so the user can see what the sub-agent did) but the main
-/// agent only ever sees the final compressed report as a tool
-/// result.
+/// The main agent and chat bubble only receive the report text.
 ///
 /// One instance is held by the chat provider for the app
 /// lifetime. State is in-memory only — sub-agents don't survive
@@ -259,6 +241,9 @@ typedef SubAgentStreamFactory =
 /// `notification` pattern; the model is told this constraint in
 /// the system prompt).
 class SubAgentService extends ChangeNotifier {
+  static const String noUsefulResult = '子 Agent 未获得有效信息。';
+  static const String cancelledResult = '子 Agent 任务已取消。';
+
   SubAgentService({
     required ApiService apiService,
     required LocalLlmService localLlmService,
@@ -312,9 +297,7 @@ class SubAgentService extends ChangeNotifier {
   }
 
   /// All tasks known to the service, keyed by id. Tasks remain in
-  /// memory for the app's lifetime so a follow-up `list` /
-  /// `get` from the main model can still inspect a finished
-  /// sub-agent's intermediate work. Newest-first.
+  /// memory for the app's lifetime. Newest-first.
   final Map<String, SubAgentTask> _tasks = <String, SubAgentTask>{};
 
   /// Per-task cancel completers. The main agent's
@@ -427,6 +410,10 @@ class SubAgentService extends ChangeNotifier {
         '- Lead with the answer / conclusion. Follow with supporting facts, '
         'source URLs, and any caveats.\n'
         '- Prefer bullet points over long prose. Cite sources inline (URL).\n'
+        '- Include only information that helps satisfy `want`. Never include '
+        'tool-call logs, failed attempts, stack traces, or raw error messages. '
+        'If a limitation changes the conclusion, state it briefly without '
+        'implementation details.\n'
         '- Target length: as short as possible while still complete. Hard cap '
         'on the report is enforced by the runner; if you exceed it, your '
         'report will be truncated.\n'
@@ -442,11 +429,7 @@ class SubAgentService extends ChangeNotifier {
         'say so.';
   }
 
-  /// Runs a sub-agent task. Blocks until the sub-agent finishes
-  /// (or [SubAgentService.cancel] is called for the task's id) and
-  /// returns the final compressed report as a JSON string. The
-  /// JSON shape matches the other tools' envelopes so the main
-  /// agent can `json.loads`-parse it without special handling.
+  /// Runs a sub-agent task and returns only its final report.
   ///
   ///   * [config] — which transport (cloud vs local) to use.
   ///   * [toolService] — the shared `ToolService` whose boxes +
@@ -507,13 +490,8 @@ class SubAgentService extends ChangeNotifier {
         messages: messages,
         tools: tools,
         orchestrator: orchestrator,
-        onToolCall: (raw) => _dispatchSubAgentToolCall(
-          id: id,
-          raw: raw,
-          toolService: toolService,
-          localToolCalls: localToolCalls,
-          onProgress: onProgress,
-        ),
+        onToolCall: (raw) =>
+            _dispatchSubAgentToolCall(raw: raw, toolService: toolService),
       );
 
       sub = stream.listen(
@@ -521,13 +499,16 @@ class SubAgentService extends ChangeNotifier {
           switch (event.type) {
             case 'toolStart':
               final callId = event.toolId ?? 'sub-${_uuid.v4()}';
-              final tc = SubAgentToolCall(
-                id: callId,
-                name: event.toolName ?? '',
-                arguments: event.toolArguments ?? '',
-                status: SubAgentToolStatus.running,
-              );
-              localToolCalls.add(tc);
+              if (!localToolCalls.any((c) => c.id == callId)) {
+                localToolCalls.add(
+                  SubAgentToolCall(
+                    id: callId,
+                    name: event.toolName ?? '',
+                    arguments: event.toolArguments ?? '',
+                    status: SubAgentToolStatus.running,
+                  ),
+                );
+              }
               _updateAndEmit(
                 id,
                 _tasks[id]!.copyWith(toolCalls: List.of(localToolCalls)),
@@ -628,7 +609,7 @@ class SubAgentService extends ChangeNotifier {
           onProgress,
           SubAgentProgressPhase.cancelled,
         );
-        return _taskEnvelope(id, status: 'cancelled', rounds: rounds);
+        return cancelledResult;
       }
 
       if (failed) {
@@ -644,12 +625,7 @@ class SubAgentService extends ChangeNotifier {
           onProgress,
           SubAgentProgressPhase.failed,
         );
-        return _taskEnvelope(
-          id,
-          status: 'failed',
-          error: error,
-          rounds: rounds,
-        );
+        return noUsefulResult;
       }
 
       if (report.trim().isEmpty) {
@@ -667,12 +643,7 @@ class SubAgentService extends ChangeNotifier {
           onProgress,
           SubAgentProgressPhase.failed,
         );
-        return _taskEnvelope(
-          id,
-          status: 'failed',
-          error: 'empty report',
-          rounds: rounds,
-        );
+        return noUsefulResult;
       }
 
       // Cap the report so a runaway sub-agent can't blow the main
@@ -692,13 +663,7 @@ class SubAgentService extends ChangeNotifier {
         onProgress,
         SubAgentProgressPhase.report,
       );
-      return _taskEnvelope(
-        id,
-        status: 'completed',
-        report: capped,
-        rounds: rounds,
-        truncated: capped.length < report.length,
-      );
+      return capped;
     } catch (e) {
       _updateAndEmit(
         id,
@@ -712,7 +677,7 @@ class SubAgentService extends ChangeNotifier {
         onProgress,
         SubAgentProgressPhase.failed,
       );
-      return _taskEnvelope(id, status: 'failed', error: '$e', rounds: rounds);
+      return noUsefulResult;
     } finally {
       _running.remove(id);
       await sub?.cancel();
@@ -762,11 +727,8 @@ class SubAgentService extends ChangeNotifier {
   /// reach this dispatcher are the read-only / info-gathering
   /// ones — no UI interaction is possible.
   Future<String> _dispatchSubAgentToolCall({
-    required String id,
     required Map<String, dynamic> raw,
     required ToolService toolService,
-    required List<SubAgentToolCall> localToolCalls,
-    required SubAgentProgressListener? onProgress,
   }) async {
     final name = raw['name'] as String? ?? '';
     final argsRaw = raw['arguments'];
@@ -785,28 +747,6 @@ class SubAgentService extends ChangeNotifier {
     if (!tool.isSupportedOnCurrentPlatform) {
       throw StateError(
         'sub-agent tool "$name" is not supported on this platform',
-      );
-    }
-    // Mirror the tool call into the task record BEFORE dispatching
-    // so the bubble can show the spinner while the tool is in
-    // flight. (The `toolStart` StreamEvent will arrive too, but
-    // it's emitted by the orchestrator AFTER the executor
-    // resolves — too late to flip the bubble into running state.)
-    final callId = (raw['id'] as String?) ?? 'sub-${_uuid.v4()}';
-    if (!localToolCalls.any((c) => c.id == callId)) {
-      localToolCalls.add(
-        SubAgentToolCall(
-          id: callId,
-          name: name,
-          arguments: jsonEncode(args),
-          status: SubAgentToolStatus.running,
-        ),
-      );
-      _updateAndEmit(
-        id,
-        _tasks[id]!.copyWith(toolCalls: List.of(localToolCalls)),
-        onProgress,
-        SubAgentProgressPhase.toolCall,
       );
     }
     return tool.execute(args, toolService);
@@ -854,27 +794,6 @@ class SubAgentService extends ChangeNotifier {
   ) {
     notifyListeners();
     onProgress?.call(SubAgentProgress(task: task, phase: phase));
-  }
-
-  String _taskEnvelope(
-    String id, {
-    required String status,
-    String? report,
-    String? error,
-    int rounds = 0,
-    bool truncated = false,
-  }) {
-    final t = _tasks[id];
-    return jsonEncode({
-      'action': 'delegate',
-      'id': id,
-      'status': status,
-      if (report != null) 'report': report, // ignore: use_null_aware_elements
-      if (error != null) 'error': error, // ignore: use_null_aware_elements
-      'rounds': rounds,
-      if (truncated) 'truncated': true,
-      'tool_calls': t?.toolCalls.map((c) => c.toJson()).toList() ?? const [],
-    });
   }
 
   static String _truncate(String s, int maxChars) {

@@ -1,4 +1,6 @@
+import 'package:agent_buddy/models/message.dart';
 import 'package:agent_buddy/providers/chat_provider.dart';
+import 'package:agent_buddy/services/api_service.dart';
 import 'package:agent_buddy/services/sub_agent_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -48,10 +50,7 @@ void main() {
       expect(snapshot, isNot(contains('…')));
     });
 
-    test('running without a report shows a clean progress line', () {
-      // Before any content has streamed in, we still want to
-      // show progress — but a single clean line, not the messy
-      // tool-call arrow list from the old behaviour.
+    test('running without a report exposes no internal activity', () {
       final task = SubAgentTask(
         id: 'sa-1',
         task: 'X',
@@ -75,57 +74,46 @@ void main() {
         ],
       );
       final snapshot = ChatProvider.formatSubAgentSnapshot(task);
-      expect(snapshot, contains('子 agent 调研中'));
-      // And the per-tool arrows must NOT leak through.
-      expect(snapshot, isNot(contains('✓ fetch_web')));
-      expect(snapshot, isNot(contains('… search')));
-      expect(snapshot, isNot(contains('✗')));
+      expect(snapshot, isEmpty);
+      expect(snapshot, isNot(contains('fetch_web')));
+      expect(snapshot, isNot(contains('search')));
+      expect(snapshot, isNot(contains('HTTP')));
     });
 
-    test(
-      'running with no tool calls and no report shows the preparing line',
-      () {
-        final task = SubAgentTask(
-          id: 'sa-1',
-          task: 'X',
-          want: 'Y',
-          context: '',
-          status: SubAgentStatus.running,
-          createdAt: DateTime(2026, 1, 1),
-        );
-        final snapshot = ChatProvider.formatSubAgentSnapshot(task);
-        expect(snapshot, contains('准备'));
-      },
-    );
+    test('running with no tool calls and no report is empty', () {
+      final task = SubAgentTask(
+        id: 'sa-1',
+        task: 'X',
+        want: 'Y',
+        context: '',
+        status: SubAgentStatus.running,
+        createdAt: DateTime(2026, 1, 1),
+      );
+      final snapshot = ChatProvider.formatSubAgentSnapshot(task);
+      expect(snapshot, isEmpty);
+    });
 
-    test(
-      'running with an empty report string falls back to the progress line',
-      () {
-        // Edge case: the service may have emitted a `content`
-        // progress event with an empty string (e.g. the model
-        // opened with a newline). The snapshot must treat that as
-        // "no report yet" and show the progress line.
-        final task = SubAgentTask(
-          id: 'sa-1',
-          task: 'X',
-          want: 'Y',
-          context: '',
-          status: SubAgentStatus.running,
-          createdAt: DateTime(2026, 1, 1),
-          report: '',
-          toolCalls: const [
-            SubAgentToolCall(
-              id: 'tc-1',
-              name: 'current_time',
-              arguments: '{}',
-              status: SubAgentToolStatus.success,
-            ),
-          ],
-        );
-        final snapshot = ChatProvider.formatSubAgentSnapshot(task);
-        expect(snapshot, contains('调研中'));
-      },
-    );
+    test('running with an empty report string is empty', () {
+      final task = SubAgentTask(
+        id: 'sa-1',
+        task: 'X',
+        want: 'Y',
+        context: '',
+        status: SubAgentStatus.running,
+        createdAt: DateTime(2026, 1, 1),
+        report: '',
+        toolCalls: const [
+          SubAgentToolCall(
+            id: 'tc-1',
+            name: 'current_time',
+            arguments: '{}',
+            status: SubAgentToolStatus.success,
+          ),
+        ],
+      );
+      final snapshot = ChatProvider.formatSubAgentSnapshot(task);
+      expect(snapshot, isEmpty);
+    });
 
     test('completed returns the final report', () {
       final task = SubAgentTask(
@@ -152,10 +140,13 @@ void main() {
         status: SubAgentStatus.completed,
         createdAt: DateTime(2026, 1, 1),
       );
-      expect(ChatProvider.formatSubAgentSnapshot(task), '(empty report)');
+      expect(
+        ChatProvider.formatSubAgentSnapshot(task),
+        SubAgentService.noUsefulResult,
+      );
     });
 
-    test('failed prefixes the error message', () {
+    test('failed hides the internal error message', () {
       final task = SubAgentTask(
         id: 'sa-1',
         task: 'X',
@@ -165,7 +156,10 @@ void main() {
         createdAt: DateTime(2026, 1, 1),
         error: 'HTTP 500',
       );
-      expect(ChatProvider.formatSubAgentSnapshot(task), 'Error: HTTP 500');
+      final snapshot = ChatProvider.formatSubAgentSnapshot(task);
+      expect(snapshot, SubAgentService.noUsefulResult);
+      expect(snapshot, isNot(contains('HTTP 500')));
+      expect(snapshot, isNot(startsWith('Error:')));
     });
 
     test('cancelled shows the cancelled marker', () {
@@ -177,7 +171,43 @@ void main() {
         status: SubAgentStatus.cancelled,
         createdAt: DateTime(2026, 1, 1),
       );
-      expect(ChatProvider.formatSubAgentSnapshot(task), 'Error: cancelled');
+      expect(
+        ChatProvider.formatSubAgentSnapshot(task),
+        SubAgentService.cancelledResult,
+      );
+    });
+  });
+
+  group('ChatProvider.applyToolDoneEvent', () {
+    test('keeps the sanitized terminal subagent snapshot', () {
+      final finishedAt = DateTime(2026, 1, 1);
+      final toolCall = ToolCall(
+        id: 'sub-1',
+        name: 'subagent',
+        arguments: '{}',
+        status: ToolCallStatus.failed,
+        result: SubAgentService.noUsefulResult,
+      );
+      final event = StreamEvent.toolDone(
+        id: 'sub-1',
+        name: 'subagent',
+        result: '{"tool_calls":[{"error":"HTTP 500"}]}',
+        success: true,
+        error: 'HTTP 500',
+      );
+
+      final merged = ChatProvider.applyToolDoneEvent(
+        toolCall,
+        event,
+        finishedAt,
+      );
+
+      expect(merged.status, ToolCallStatus.failed);
+      expect(merged.result, SubAgentService.noUsefulResult);
+      expect(merged.result, isNot(contains('tool_calls')));
+      expect(merged.result, isNot(contains('HTTP 500')));
+      expect(merged.error, isNull);
+      expect(merged.finishedAt, finishedAt);
     });
   });
 }

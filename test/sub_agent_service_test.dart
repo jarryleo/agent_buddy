@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:agent_buddy/models/message.dart';
 import 'package:agent_buddy/services/api_service.dart';
@@ -50,11 +49,6 @@ class _FakeSubAgentTransport {
   /// the orchestrator, onToolCall, etc. are wired correctly).
   Map<String, dynamic>? lastCall;
 
-  /// Per-test override of the canned tool result returned by
-  /// the orchestrator's executor. Tests can tweak this if they
-  /// need the sub-agent to react to a specific tool output.
-  String toolResult = 'fake tool result';
-
   Stream<StreamEvent> build({
     required SubAgentConfig config,
     required List<String> systemPrompts,
@@ -81,8 +75,12 @@ class _FakeSubAgentTransport {
             roundIndex++;
           },
           initialHistory: const <ChatRequestMessage>[],
-          executor: (call) async {
-            return toolResult;
+          executor: (call) {
+            return onToolCall({
+              'id': call.id,
+              'name': call.name,
+              'arguments': call.arguments,
+            });
           },
           onTurnCommitted: (_) {},
         )
@@ -168,6 +166,35 @@ void main() {
         'run_command',
       });
     });
+
+    test('failed task JSON hides internal activity and partial output', () {
+      final task = SubAgentTask(
+        id: 'sa-1',
+        task: 'X',
+        want: 'Y',
+        context: 'private',
+        status: SubAgentStatus.failed,
+        createdAt: DateTime(2026, 1, 1),
+        report: 'unverified partial output',
+        error: 'HTTP 500',
+        toolCalls: const [
+          SubAgentToolCall(
+            id: 'call-1',
+            name: 'fetch_web',
+            arguments: '{"url":"private"}',
+            status: SubAgentToolStatus.failed,
+            error: 'HTTP 500',
+          ),
+        ],
+      );
+
+      final json = task.toJson();
+      expect(json, isNot(contains('context')));
+      expect(json, isNot(contains('report')));
+      expect(json, isNot(contains('error')));
+      expect(json, isNot(contains('tool_calls')));
+      expect(json, isNot(contains('rounds')));
+    });
   });
 
   group('SubAgentService.buildSystemPrompt', () {
@@ -188,6 +215,8 @@ void main() {
       expect(prompt, contains('concise'));
       expect(prompt, contains('ask_user'));
       expect(prompt, contains('Do not call the subagent tool recursively'));
+      expect(prompt, contains('Never include tool-call logs'));
+      expect(prompt, contains('raw error messages'));
     });
   });
 
@@ -249,17 +278,14 @@ void main() {
 
     test('composes a user message with task / want / context', () async {
       // Default single-round script (no tool calls) is fine.
-      final envelope = await svc.run(
+      final report = await svc.run(
         config: const SubAgentConfig(useLocal: false),
         toolService: _StubToolService(),
         task: 'find X',
         want: 'one sentence',
         context: 'A and B',
       );
-      expect(
-        (jsonDecode(envelope) as Map<String, dynamic>)['status'],
-        'completed',
-      );
+      expect(report, 'default report');
       // The user message the runner passes to the transport
       // should include the task / want / context blocks.
       final msgs = transport.lastCall!['messages'] as List<ChatRequestMessage>;
@@ -320,28 +346,19 @@ void main() {
           ),
         ],
       ];
-      final envelope = await svc.run(
+      final report = await svc.run(
         config: const SubAgentConfig(useLocal: false),
         toolService: _StubToolService(),
         task: 'compute X',
         want: 'one number',
       );
-      final decoded = jsonDecode(envelope) as Map<String, dynamic>;
-      expect(decoded['status'], 'completed');
-      expect(decoded['report'], 'TL;DR: 42.\n\nSource: https://example.com');
-      expect(decoded['id'], startsWith('sa-'));
-      // `rounds` is best-effort: the orchestrator's
-      // `turnDone` sentinels are not surfaced as `done`
-      // events, so the counter only ticks for the final
-      // terminal event. We just verify the field is
-      // present + non-negative here.
-      expect(decoded['rounds'], greaterThanOrEqualTo(0));
+      expect(report, 'TL;DR: 42.\n\nSource: https://example.com');
+      expect(report, isNot(contains('tool_calls')));
+      expect(report, isNot(contains('rounds')));
 
-      // Task is persisted + visible via getById.
-      final id = decoded['id'] as String;
-      final t = svc.getById(id)!;
+      final t = svc.tasks.first;
       expect(t.status, SubAgentStatus.completed);
-      expect(t.report, decoded['report']);
+      expect(t.report, report);
 
       // The transport received a non-empty tools list (the
       // curated schema).
@@ -365,15 +382,16 @@ void main() {
           ),
         ],
       ];
-      final envelope = await svc.run(
+      final result = await svc.run(
         config: const SubAgentConfig(useLocal: false),
         toolService: _StubToolService(),
         task: 'silent',
         want: 'something',
       );
-      final decoded = jsonDecode(envelope) as Map<String, dynamic>;
-      expect(decoded['status'], 'failed');
-      expect(decoded['error'], contains('empty report'));
+      expect(result, SubAgentService.noUsefulResult);
+      expect(result, isNot(contains('empty report')));
+      expect(svc.tasks.first.status, SubAgentStatus.failed);
+      expect(svc.tasks.first.error, contains('empty report'));
     });
 
     test('error event flips to failed and surfaces the message', () async {
@@ -400,15 +418,16 @@ void main() {
             )
             .map(_toStreamEventForTest);
       });
-      final envelope = await svc.run(
+      final result = await svc.run(
         config: const SubAgentConfig(useLocal: false),
         toolService: _StubToolService(),
         task: 'X',
         want: 'Y',
       );
-      final decoded = jsonDecode(envelope) as Map<String, dynamic>;
-      expect(decoded['status'], 'failed');
-      expect(decoded['error'], contains('HTTP 500'));
+      expect(result, SubAgentService.noUsefulResult);
+      expect(result, isNot(contains('HTTP 500')));
+      expect(svc.tasks.first.status, SubAgentStatus.failed);
+      expect(svc.tasks.first.error, contains('HTTP 500'));
     });
 
     test('cancel during run terminates with cancelled status', () async {
@@ -442,14 +461,14 @@ void main() {
             )
             .map(_toStreamEventForTest);
       });
-      final envelope = await svc.run(
+      final result = await svc.run(
         config: const SubAgentConfig(useLocal: false),
         toolService: _StubToolService(),
         task: 'X',
         want: 'Y',
       );
-      final decoded = jsonDecode(envelope) as Map<String, dynamic>;
-      expect(decoded['status'], 'cancelled');
+      expect(result, SubAgentService.cancelledResult);
+      expect(result, isNot(contains('Generation stopped')));
     });
 
     test('SubAgentService.cancel() during a run flips the task', () async {
@@ -486,19 +505,18 @@ void main() {
       // (the test "cancel during run" above exercises the
       // cancellation code path; this one makes sure the
       // non-cancelled run still works).
-      final envelope = await svc.run(
+      final result = await svc.run(
         config: const SubAgentConfig(useLocal: false),
         toolService: _StubToolService(),
         task: 'X',
         want: 'Y',
       );
-      final decoded = jsonDecode(envelope) as Map<String, dynamic>;
-      expect(decoded['status'], 'completed');
+      expect(result, 'a happy report');
     });
 
     test('toolStart / toolDone mirror into the task state', () async {
       transport.scriptedRounds = [
-        // Round 1: model asks for fetch_web.
+        // Round 1: model asks for current_time.
         [
           const OrchestratorEvent.turnDone(
             TurnResult(
@@ -506,9 +524,9 @@ void main() {
               toolCalls: [
                 ParsedToolCall(
                   id: 'call_1',
-                  name: 'fetch_web',
-                  argumentsRaw: '{"url":"https://example.com"}',
-                  arguments: <String, dynamic>{'url': 'https://example.com'},
+                  name: 'current_time',
+                  argumentsRaw: '{}',
+                  arguments: <String, dynamic>{},
                 ),
               ],
               emittedAnyContent: true,
@@ -527,18 +545,17 @@ void main() {
           ),
         ],
       ];
-      final envelope = await svc.run(
+      final result = await svc.run(
         config: const SubAgentConfig(useLocal: false),
         toolService: _StubToolService(),
         task: 'X',
         want: 'Y',
       );
-      final decoded = jsonDecode(envelope) as Map<String, dynamic>;
-      expect(decoded['status'], 'completed');
-      final tcs = (decoded['tool_calls'] as List).cast<Map<String, dynamic>>();
+      expect(result, 'done');
+      final tcs = svc.tasks.first.toolCalls;
       expect(tcs, hasLength(1));
-      expect(tcs.first['name'], 'fetch_web');
-      expect(tcs.first['status'], 'success');
+      expect(tcs.first.name, 'current_time');
+      expect(tcs.first.status, SubAgentToolStatus.success);
     });
 
     test('progress callback fires for each phase', () async {
@@ -586,7 +603,15 @@ void main() {
       // terminal phase is `report`.
       expect(phases.first, SubAgentProgressPhase.started);
       expect(phases, contains(SubAgentProgressPhase.toolCall));
+      expect(
+        phases.where((p) => p == SubAgentProgressPhase.toolCall),
+        hasLength(1),
+      );
       expect(phases, contains(SubAgentProgressPhase.toolResult));
+      expect(
+        phases.where((p) => p == SubAgentProgressPhase.toolResult),
+        hasLength(1),
+      );
       expect(phases, contains(SubAgentProgressPhase.content));
       expect(phases.last, SubAgentProgressPhase.report);
     });
@@ -717,17 +742,13 @@ void main() {
     });
 
     test('getById returns the matching task', () async {
-      final env =
-          jsonDecode(
-                await svc.run(
-                  config: const SubAgentConfig(useLocal: false),
-                  toolService: _StubToolService(),
-                  task: 'find me',
-                  want: 'a result',
-                ),
-              )
-              as Map<String, dynamic>;
-      final id = env['id'] as String;
+      await svc.run(
+        config: const SubAgentConfig(useLocal: false),
+        toolService: _StubToolService(),
+        task: 'find me',
+        want: 'a result',
+      );
+      final id = svc.tasks.first.id;
       final t = svc.getById(id);
       expect(t, isNotNull);
       expect(t!.task, 'find me');

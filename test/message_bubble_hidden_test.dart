@@ -8,7 +8,12 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  Future<void> pumpBubble(WidgetTester tester, ChatMessage message) async {
+  Future<void> pumpBubble(
+    WidgetTester tester,
+    ChatMessage message, {
+    List<ChatMessage>? groupedToolMessages,
+    Locale? locale,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         localizationsDelegates: const [
@@ -18,8 +23,13 @@ void main() {
           GlobalWidgetsLocalizations.delegate,
         ],
         supportedLocales: const [Locale('en'), Locale('zh')],
+        locale: locale,
         home: Scaffold(
-          body: MessageBubble(message: message, onCopy: (_) {}),
+          body: MessageBubble(
+            message: message,
+            onCopy: (_) {},
+            groupedToolMessages: groupedToolMessages,
+          ),
         ),
       ),
     );
@@ -76,6 +86,51 @@ void main() {
       expect(image.fit, BoxFit.cover);
       expect(image.image, isA<ResizeImage>());
       expect((image.image as ResizeImage).policy, ResizeImagePolicy.fit);
+    });
+  });
+
+  group('MessageBubble subagent card', () {
+    testWidgets('shows only the report and can collapse again', (tester) async {
+      final message = ChatMessage(
+        id: 'tool-message',
+        role: MessageRole.tool,
+        toolCalls: [
+          ToolCall(
+            id: 'sub-1',
+            name: 'subagent',
+            arguments:
+                '{"task":"private context","tool_calls":[{"error":"HTTP 500"}]}',
+            status: ToolCallStatus.running,
+            result: '有效结论正在生成',
+            error: 'HTTP 500',
+          ),
+        ],
+      );
+
+      await pumpBubble(
+        tester,
+        message,
+        groupedToolMessages: [message],
+        locale: const Locale('zh'),
+      );
+      await tester.tap(find.text('调用了 1 个工具'));
+      await tester.pump();
+
+      expect(find.text('子 Agent'), findsOneWidget);
+      expect(find.text('有效结论正在生成'), findsNothing);
+
+      await tester.tap(find.text('子 Agent'));
+      await tester.pump();
+
+      expect(find.text('有效结论正在生成'), findsOneWidget);
+      expect(find.textContaining('private context'), findsNothing);
+      expect(find.textContaining('HTTP 500'), findsNothing);
+      expect(find.text('参数'), findsNothing);
+
+      await tester.tap(find.text('子 Agent'));
+      await tester.pump();
+
+      expect(find.text('有效结论正在生成'), findsNothing);
     });
   });
 }

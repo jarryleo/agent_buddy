@@ -910,10 +910,8 @@ class ChatProvider extends ChangeNotifier {
   /// Backs the `subagent` tool. Resolves the per-turn transport
   /// (cloud vs local) from the active provider settings, then
   /// delegates to `SubAgentTool.runDelegate` which routes through
-  /// the shared `SubAgentService`. The sub-agent's progress is
-  /// mirrored into the `ToolCall` card in the chat bubble so the
-  /// user can see what the sub-agent did while the main turn
-  /// stayed silent.
+  /// the shared `SubAgentService`. Useful report content is mirrored
+  /// into the `ToolCall` card while the sub-agent runs.
   Future<String> _onSubAgentCall(
     BuildContext context,
     Map<String, dynamic> toolCall,
@@ -988,7 +986,6 @@ class ChatProvider extends ChangeNotifier {
                   if (tc.id == toolId)
                     tc.copyWith(
                       result: formatSubAgentSnapshot(p.task),
-                      error: p.task.error,
                       status: switch (p.task.status) {
                         SubAgentStatus.running => ToolCallStatus.running,
                         SubAgentStatus.completed => ToolCallStatus.success,
@@ -1028,55 +1025,47 @@ class ChatProvider extends ChangeNotifier {
     return result;
   }
 
-  /// Renders the sub-agent task into a short human-readable
-  /// string the chat bubble can show in the result panel.
-  ///
-  /// The snapshot always prefers the sub-agent's REPORT (the
-  /// actual answer the sub-agent is composing for the main agent)
-  /// over the messy list of intermediate tool calls — those are
-  /// scratch work the main agent doesn't need to see, and showing
-  /// them in the bubble was confusing the user.
-  ///
-  ///   * **Running with report content** → stream the partial
-  ///     report verbatim. This is what the sub-agent is saying to
-  ///     the main agent; the bubble shows it in real time.
-  ///   * **Running without any report yet** → a single clean
-  ///     progress line ("子 agent 调研中…") instead of a
-  ///     tool-call arrow list.
-  ///   * **Completed** → the final (capped) report.
-  ///   * **Failed / cancelled** → the error / cancelled message
-  ///     prefixed with `Error:` so it renders in the same code
-  ///     block as a normal tool error.
-  ///
-  /// The format is plain monospace text so the bubble's existing
-  /// code block renders it without any extra styling.
-  ///
-  /// Exposed as a `@visibleForTesting` static so the snapshot
-  /// rules can be unit-tested without standing up the full
-  /// provider / stream pipeline.
   @visibleForTesting
   static String formatSubAgentSnapshot(SubAgentTask task) {
     switch (task.status) {
       case SubAgentStatus.running:
         final partial = task.report;
-        if (partial != null && partial.isNotEmpty) {
+        if (partial != null && partial.trim().isNotEmpty) {
           return partial;
         }
-        if (task.toolCalls.isEmpty) {
-          return '子 agent 正在准备…';
-        }
-        final done = task.toolCalls
-            .where((c) => c.status != SubAgentToolStatus.running)
-            .length;
-        final total = task.toolCalls.length;
-        return '子 agent 调研中… (已完成 $done / $total 个工具调用)';
+        return '';
       case SubAgentStatus.completed:
-        return task.report ?? '(empty report)';
+        final report = task.report;
+        if (report == null || report.trim().isEmpty) {
+          return SubAgentService.noUsefulResult;
+        }
+        return report;
       case SubAgentStatus.failed:
-        return 'Error: ${task.error ?? 'unknown error'}';
+        return SubAgentService.noUsefulResult;
       case SubAgentStatus.cancelled:
-        return 'Error: cancelled';
+        return SubAgentService.cancelledResult;
     }
+  }
+
+  @visibleForTesting
+  static ToolCall applyToolDoneEvent(
+    ToolCall toolCall,
+    StreamEvent event,
+    DateTime finishedAt,
+  ) {
+    final preserveSubAgentSnapshot =
+        toolCall.name == 'subagent' && toolCall.isDone;
+    return toolCall.copyWith(
+      status: preserveSubAgentSnapshot
+          ? toolCall.status
+          : (event.toolSuccess ?? false)
+          ? ToolCallStatus.success
+          : ToolCallStatus.failed,
+      result: preserveSubAgentSnapshot ? toolCall.result : event.toolResult,
+      error: preserveSubAgentSnapshot ? toolCall.error : event.toolError,
+      awaitingUserAction: false,
+      finishedAt: finishedAt,
+    );
   }
 
   /// Throttled `notifyListeners` — mirrors the streaming layer's
@@ -2024,19 +2013,7 @@ class ChatProvider extends ChangeNotifier {
                     toolCalls: [
                       for (final tc in mm.toolCalls)
                         if (tc.id == toolId)
-                          tc.copyWith(
-                            status: (event.toolSuccess ?? false)
-                                ? ToolCallStatus.success
-                                : ToolCallStatus.failed,
-                            result: event.toolResult,
-                            error: event.toolError,
-                            // The tool is done — drop the
-                            // "waiting for user" hint either way
-                            // (success or failure both terminate
-                            // the wait).
-                            awaitingUserAction: false,
-                            finishedAt: now,
-                          )
+                          applyToolDoneEvent(tc, event, now)
                         else
                           tc,
                     ],

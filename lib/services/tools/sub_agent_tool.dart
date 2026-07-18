@@ -220,10 +220,8 @@ class SubAgentTool extends ToolBase {
   /// Called by `ChatProvider._onToolCall` for the `delegate`
   /// action. The chat provider resolves the per-turn transport
   /// config (cloud vs local) from the user's settings and passes
-  /// it in here. The [onProgress] callback lets the chat provider
-  /// mirror the sub-agent's progress into the `ToolCall` card so
-  /// the user can see "fetch_web → https://…" while the main
-  /// turn stays silent.
+  /// it in here. The [onProgress] callback mirrors only useful
+  /// report content into the chat bubble.
   Future<String> runDelegate({
     required ToolService services,
     required SubAgentConfig config,

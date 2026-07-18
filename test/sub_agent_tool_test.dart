@@ -141,16 +141,19 @@ void main() {
       final tasks = (env['tasks'] as List).cast<Map<String, dynamic>>();
       // Newest-first: the last-inserted task comes first.
       expect(tasks.first['task'], 'c');
+      expect(tasks.first, isNot(contains('tool_calls')));
+      expect(tasks.first, isNot(contains('error')));
+      expect(tasks.first, isNot(contains('context')));
     });
 
     test('get returns the task by id', () async {
-      final raw = await svc.run(
+      await svc.run(
         config: const SubAgentConfig(useLocal: false),
         toolService: toolService,
         task: 'find me',
         want: 'a result',
       );
-      final id = (jsonDecode(raw) as Map<String, dynamic>)['id'] as String;
+      final id = svc.tasks.first.id;
       final env =
           jsonDecode(
                 await tool.execute({'action': 'get', 'id': id}, toolService),
@@ -160,6 +163,8 @@ void main() {
       final t = env['task'] as Map<String, dynamic>;
       expect(t['task'], 'find me');
       expect(t['status'], 'completed');
+      expect(t, isNot(contains('tool_calls')));
+      expect(t, isNot(contains('error')));
     });
 
     test('get returns found:false for an unknown id', () async {
@@ -212,13 +217,13 @@ void main() {
             )
             .map(_toStreamEvent);
       });
-      final raw = await svc.run(
+      await svc.run(
         config: const SubAgentConfig(useLocal: false),
         toolService: toolService,
         task: 'long',
         want: 'w',
       );
-      final id = (jsonDecode(raw) as Map<String, dynamic>)['id'] as String;
+      final id = svc.tasks.first.id;
       final t = svc.getById(id)!;
       expect(t.status, SubAgentStatus.cancelled);
     });

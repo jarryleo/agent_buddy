@@ -1413,6 +1413,7 @@ class _ToolCallCardState extends State<_ToolCallCard> {
   @override
   Widget build(BuildContext context) {
     final tc = widget.toolCall;
+    final isSubAgent = tc.name == 'subagent';
     final l10n = AppLocalizations.of(context);
     final color = _statusColor(tc.status);
     final icon = _statusIcon(tc.status);
@@ -1454,7 +1455,7 @@ class _ToolCallCardState extends State<_ToolCallCard> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      tc.name,
+                      isSubAgent ? '子 Agent' : tc.name,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -1537,7 +1538,9 @@ class _ToolCallCardState extends State<_ToolCallCard> {
                 ],
               ),
             ),
-          if (_expanded || tc.downloads.isNotEmpty)
+          if (isSubAgent && _expanded && (tc.result ?? '').trim().isNotEmpty)
+            _buildSubAgentResult(context, tc)
+          else if (!isSubAgent && (_expanded || tc.downloads.isNotEmpty))
             _buildDetails(context, tc, l10n),
         ],
       ),
@@ -1550,6 +1553,44 @@ class _ToolCallCardState extends State<_ToolCallCard> {
   /// bubbles grow without bound for long tool results (a 30KB page
   /// fetch would push everything else off-screen).
   static const double _detailsMaxHeight = 320;
+
+  Widget _buildSubAgentResult(BuildContext context, ToolCall tc) {
+    final result = tc.result!.trim();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Divider(height: 1, color: context.appBorder),
+          const SizedBox(height: 6),
+          Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(maxHeight: _detailsMaxHeight),
+            decoration: BoxDecoration(
+              color: tc.isFailed ? context.errorBg : context.codeBlockBg,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                color: tc.isFailed
+                    ? context.errorBorder
+                    : context.codeBlockBorder,
+              ),
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(6),
+              child: Text(
+                result,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: tc.isFailed ? context.errorText : context.textPrimary,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildDetails(
     BuildContext context,
