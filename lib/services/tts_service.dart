@@ -31,6 +31,11 @@ class TtsService {
 
   TtsService({Tts? engine}) : _engine = engine ?? Tts();
 
+  static const TtsOptions _ttsOptions = TtsOptions(
+    preSilence: Duration.zero,
+    postSilence: Duration.zero,
+  );
+
   /// Backing store for [isSupported] / [isSupportedNotifier].
   bool _supported = false;
 
@@ -132,11 +137,30 @@ class TtsService {
           isPausedNotifier.value = true;
         }
       case TtsState.stop:
-        if (isPausedNotifier.value) isPausedNotifier.value = false;
-        if (speakingMessageId.value != null) {
-          speakingMessageId.value = null;
-        }
+        _clearSpeakingState();
     }
+  }
+
+  void _clearSpeakingState() {
+    if (isPausedNotifier.value) isPausedNotifier.value = false;
+    if (speakingMessageId.value != null) {
+      speakingMessageId.value = null;
+    }
+  }
+
+  static String _prepareText(String text) {
+    if (defaultTargetPlatform != TargetPlatform.windows) return text;
+    var prepared = text
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&apos;');
+    prepared = prepared.replaceAll(
+      RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]'),
+      '',
+    );
+    return prepared;
   }
 
   /// Speak [text] aloud, attributing it to the bubble with id
@@ -182,15 +206,19 @@ class TtsService {
       }
     }
 
+    final preparedText = _prepareText(text);
+    if (preparedText.trim().isEmpty) return;
+    speakingMessageId.value = messageId;
+    if (isPausedNotifier.value) isPausedNotifier.value = false;
+
     try {
-      await _engine.start(text, options: const TtsOptions());
-      speakingMessageId.value = messageId;
+      final options = defaultTargetPlatform == TargetPlatform.windows
+          ? _ttsOptions
+          : const TtsOptions();
+      await _engine.start(preparedText, options: options);
     } catch (_) {
-      // Engine rejected (e.g. no installed voice). Clear the
-      // speaking id so the bubble flips back to idle; the next
-      // tap will try again from a clean slate.
-      if (speakingMessageId.value != messageId) {
-        speakingMessageId.value = null;
+      if (speakingMessageId.value == messageId) {
+        _clearSpeakingState();
       }
     }
   }
@@ -236,15 +264,8 @@ class TtsService {
   Future<void> _stopEngine() async {
     try {
       await _engine.stop();
-    } catch (_) {
-      // The most reliable way to stop across platforms is to also
-      // clear our own flags immediately — the engine's next
-      // `TtsState.stop` event will be a no-op.
-      if (speakingMessageId.value != null) {
-        speakingMessageId.value = null;
-      }
-      if (isPausedNotifier.value) isPausedNotifier.value = false;
-    }
+    } catch (_) {}
+    _clearSpeakingState();
   }
 
   /// Tear-down. Cancels the state subscription and disposes the

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:agent_buddy/services/tts_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:stts/stts.dart';
@@ -25,7 +26,9 @@ class _FakeTtsPlatform extends TtsPlatformInterface {
   int setLanguageInvocations = 0;
   String? lastLanguage;
   String? lastText;
+  TtsOptions? lastOptions;
   bool startThrows = false;
+  bool emitStopOnStop = true;
 
   final StreamController<TtsState> _stateCtrl =
       StreamController<TtsState>.broadcast();
@@ -43,6 +46,7 @@ class _FakeTtsPlatform extends TtsPlatformInterface {
   }) async {
     startInvocations++;
     lastText = text;
+    lastOptions = options;
     if (startThrows) {
       throw PlatformException(code: 'synth_failed', message: 'boom');
     }
@@ -51,11 +55,9 @@ class _FakeTtsPlatform extends TtsPlatformInterface {
   @override
   Future<void> stop() async {
     stopInvocations++;
-    // Real platforms fire `TtsState.stop` after `stop()` resolves;
-    // emit it here so the wrapper clears its `speakingMessageId`
-    // notification synchronously. Without this the test would
-    // have to manually pump events after every `stop()`.
-    _stateCtrl.add(TtsState.stop);
+    if (emitStopOnStop) {
+      _stateCtrl.add(TtsState.stop);
+    }
   }
 
   @override
@@ -157,10 +159,31 @@ void main() {
       await svc.speak('m1', 'hello world', localeId: 'zh-CN');
       expect(platform.startInvocations, 1);
       expect(platform.lastText, 'hello world');
+      if (defaultTargetPlatform == TargetPlatform.windows) {
+        expect(platform.lastOptions?.preSilence, Duration.zero);
+        expect(platform.lastOptions?.postSilence, Duration.zero);
+      } else {
+        expect(platform.lastOptions?.preSilence, isNull);
+        expect(platform.lastOptions?.postSilence, isNull);
+      }
       expect(platform.setLanguageInvocations, 1);
       expect(platform.lastLanguage, 'zh-CN');
       expect(svc.speakingMessageId.value, 'm1');
       expect(svc.isPausedNotifier.value, isFalse);
+    });
+
+    test('Windows speech text is escaped for the native XML parser', () async {
+      final previous = debugDefaultTargetPlatformOverride;
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() {
+        debugDefaultTargetPlatformOverride = previous;
+      });
+      final svc = buildService();
+      await svc.speak('m1', 'Tom & Jerry <code> "quoted" \'raw\'');
+      expect(
+        platform.lastText,
+        'Tom &amp; Jerry &lt;code&gt; &quot;quoted&quot; &apos;raw&apos;',
+      );
     });
 
     test(
@@ -223,6 +246,15 @@ void main() {
       await svc.speak('m1', 'hi');
       await svc.stop();
       expect(platform.stopInvocations, 1);
+    });
+
+    test('stop() clears state even without an engine stop event', () async {
+      final svc = buildService();
+      await svc.speak('m1', 'hi');
+      platform.emitStopOnStop = false;
+      await svc.stop();
+      expect(svc.speakingMessageId.value, isNull);
+      expect(svc.isPausedNotifier.value, isFalse);
     });
 
     test(

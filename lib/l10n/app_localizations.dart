@@ -1653,7 +1653,7 @@ abstract class AppLocalizations {
   /// No description provided for @chatVoiceUnavailable.
   ///
   /// In en, this message translates to:
-  /// **'Voice input is unavailable on this device.'**
+  /// **'No system speech recognition service was found. Enable one in system settings or install a speech service, then try again.'**
   String get chatVoiceUnavailable;
 
   /// No description provided for @chatVoiceListenFailed.

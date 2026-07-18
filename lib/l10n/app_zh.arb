@@ -285,7 +285,7 @@
   "chatVoiceDragToCancel": "松手取消",
   "chatVoicePermissionDenied": "麦克风权限被拒绝,请在系统设置中授予后使用语音输入。",
   "chatVoicePermanentlyDenied": "麦克风权限已被永久拒绝,请打开系统设置启用语音输入。",
-  "chatVoiceUnavailable": "当前设备不支持语音输入。",
+  "chatVoiceUnavailable": "未检测到系统语音识别服务,请在系统设置中启用语音识别或安装语音服务后重试。",
   "chatVoiceListenFailed": "无法启动语音输入,请重试。",
   "chatVoiceTooShort": "没有检测到语音,请重试。",
   "fileRemoveTooltip": "移除文件",

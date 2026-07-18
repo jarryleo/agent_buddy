@@ -836,7 +836,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatVoicePermanentlyDenied => '麦克风权限已被永久拒绝,请打开系统设置启用语音输入。';
 
   @override
-  String get chatVoiceUnavailable => '当前设备不支持语音输入。';
+  String get chatVoiceUnavailable => '未检测到系统语音识别服务,请在系统设置中启用语音识别或安装语音服务后重试。';
 
   @override
   String get chatVoiceListenFailed => '无法启动语音输入,请重试。';

@@ -875,7 +875,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chatVoiceUnavailable =>
-      'Voice input is unavailable on this device.';
+      'No system speech recognition service was found. Enable one in system settings or install a speech service, then try again.';
 
   @override
   String get chatVoiceListenFailed =>
