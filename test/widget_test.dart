@@ -31,7 +31,7 @@ void main() {
               onSend: (text, images, files) => onSend(text),
               enabled: true,
               imageService: ImageService(),
-              fileAttachmentService: const FileAttachmentService(),
+              fileAttachmentService: FileAttachmentService(),
               voiceService: createVoiceServiceStub(),
             ),
           ),
@@ -141,7 +141,7 @@ void main() {
                   enabled: enabled,
                   sending: sending,
                   imageService: ImageService(),
-                  fileAttachmentService: const FileAttachmentService(),
+                  fileAttachmentService: FileAttachmentService(),
                   voiceService: createVoiceServiceStub(),
                 );
               },

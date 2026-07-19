@@ -7,9 +7,19 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/file_attachment.dart';
+import 'tools/tool_base.dart' show isDesktopForRuntime;
 
 class FileAttachmentService {
-  const FileAttachmentService();
+  /// [docsDirResolver] returns the application documents
+  /// directory on platforms where the service still copies
+  /// attachments into the app sandbox (Android / iOS). Defaults
+  /// to `getApplicationDocumentsDirectory`. Exposed for unit
+  /// tests so they can point at a `Directory.systemTemp` tempdir
+  /// without having to install a `PathProviderPlatform` mock.
+  FileAttachmentService({Future<Directory> Function()? docsDirResolver})
+    : _docsDirResolver = docsDirResolver ?? getApplicationDocumentsDirectory;
+
+  final Future<Directory> Function() _docsDirResolver;
 
   static const int maxFileBytes = 20 * 1024 * 1024;
   static const int maxTextBytes = 1024 * 1024;
@@ -29,15 +39,17 @@ class FileAttachmentService {
   }
 
   Future<List<ChatFileAttachment>> importPaths(Iterable<String> paths) async {
+    final list = paths.toList(growable: false);
+    if (list.isEmpty) return const [];
     final attachments = <ChatFileAttachment>[];
     var index = 0;
-    for (final path in paths) {
+    for (final path in list) {
       final file = File(path);
       if (!await file.exists()) continue;
       final size = await file.length();
       _checkSize(size, p.basename(path));
       attachments.add(
-        await _copyNativeFile(
+        await _attach(
           sourcePath: path,
           name: p.basename(path),
           size: size,
@@ -121,7 +133,7 @@ class FileAttachmentService {
     if (sourcePath == null || sourcePath.isEmpty) {
       throw FileAttachmentException('file path is unavailable: ${file.name}');
     }
-    return _copyNativeFile(
+    return _attach(
       sourcePath: sourcePath,
       name: file.name,
       size: file.size,
@@ -129,13 +141,35 @@ class FileAttachmentService {
     );
   }
 
-  Future<ChatFileAttachment> _copyNativeFile({
+  /// Returns a [ChatFileAttachment] pointing at the source file.
+  ///
+  /// On desktop (Windows / macOS / Linux) the file is **not**
+  /// copied — the user-selected absolute path is forwarded to
+  /// the model verbatim, so `file` tool calls (read / edit /
+  /// write) operate on the user's actual file. The chat input
+  /// carries no side-channel copy; subsequent re-sends of the
+  /// same session re-read from the same path.
+  ///
+  /// On mobile (Android / iOS) the file is copied into
+  /// `<docsDir>/chat_files/<µs>_<index>__<safeName>` because
+  /// the picker hands back a transient URI that disappears as
+  /// soon as the user navigates away, and the app cannot reach
+  /// files outside its own sandbox via absolute paths.
+  Future<ChatFileAttachment> _attach({
     required String sourcePath,
     required String name,
     required int size,
     required int index,
   }) async {
-    final baseDir = await getApplicationDocumentsDirectory();
+    if (isDesktopForRuntime()) {
+      return ChatFileAttachment(
+        name: name,
+        path: sourcePath,
+        size: size,
+        mimeType: _mimeType(name),
+      );
+    }
+    final baseDir = await _docsDirResolver();
     final filesDir = Directory(p.join(baseDir.path, 'chat_files'));
     if (!await filesDir.exists()) {
       await filesDir.create(recursive: true);

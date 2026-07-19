@@ -134,6 +134,9 @@ class BuiltinSkills {
   - 用户取消选择器不算错误,会返回 {ok:false,cancelled:true},改用工作目录即可。
   - **Android 工作目录权限自动续期**:写入工作目录如果失败(用户在系统设置里清掉了应用的存储),系统会自动弹出 SAF 重新授权对话框,用户授权后写入会自动重试;如果用户取消授权,会返回 {ok:false,cancelled:true} 软失败,这时让用户通过聊天工具栏重新选一次工作目录,不要让用户自己去系统设置找授权入口。
   - delete / rename / list_dir 只对 working:// 起作用;picker 路径只支持 read/write/edit/release(系统授权是按 URI 的)。
+  - **聊天附件自带本地路径**:用户在聊天框里粘贴/选择的文件,会随消息一起以 `<attached_file name="..." type="..." path="...">`(文本)或同名 path 注释(二进制)发给你。
+    - **桌面端(Windows / macOS / Linux):path 就是用户原文件的绝对路径**(不会偷偷复制一份)。**直接拿去调 `file` 工具(读/编辑/写)就改用户磁盘上的文件**,别再 create 副本。
+    - **手机端(Android / iOS):path 是 app 沙盒里的副本路径**(沙盒外的原文件拿不到,必须复制),`file` 工具的 `read`/`edit`/`write` 不接受这种绝对路径 — 这时改用 `file.pick` 让用户从系统选择器重选一次,得到 `picker://<id>` 后再操作,或先 `file.write` 把内容落到工作目录再读/编辑。
 
 - search(搜索):用正则批量搜整个工作目录或一批文件,**比 file read 一遍省 token**。
   - **首选用法**:搜符号 / 字符串 / 函数名 — `search(pattern: "ToolException", include_glob: "*.dart")` 一秒扫整个 lib/。

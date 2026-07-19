@@ -87,7 +87,7 @@ void main() {
       LocalLlmService(),
       settings,
       DownloadService(),
-      const FileAttachmentService(),
+      FileAttachmentService(),
     );
     return chat;
   }

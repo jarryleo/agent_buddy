@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:uuid/uuid.dart';
 
+import '../models/file_attachment.dart';
 import '../models/local_provider.dart';
 import '../models/message.dart';
 import 'api_service.dart';
@@ -668,6 +669,10 @@ class LocalLlmService extends ChangeNotifier {
     return const <LlamaContentPart>[];
   }
 
+  @visibleForTesting
+  List<LlamaContentPart> buildContentPartsForTest(ChatRequestMessage message) =>
+      _buildContentParts(message);
+
   List<LlamaContentPart> _buildContentParts(ChatRequestMessage message) {
     final text = StringBuffer(message.content);
     final fileImages = <String>[];
@@ -675,7 +680,7 @@ class LocalLlmService extends ChangeNotifier {
       if (file.textContent != null) {
         if (text.isNotEmpty) text.write('\n\n');
         text
-          ..writeln('<attached_file name="${file.name}">')
+          ..writeln(_textFileEnvelope(file))
           ..writeln(file.textContent)
           ..write('</attached_file>');
       } else if (file.mimeType.startsWith('image/') && file.path.isNotEmpty) {
@@ -692,6 +697,17 @@ class LocalLlmService extends ChangeNotifier {
       for (final path in message.imagePaths) LlamaImageContent(path: path),
       for (final path in fileImages) LlamaImageContent(path: path),
     ];
+  }
+
+  String _textFileEnvelope(PreparedFileAttachment file) {
+    final buf = StringBuffer()
+      ..write('<attached_file name="${file.name}"')
+      ..write(' type="${file.mimeType}"');
+    if (file.path.isNotEmpty) {
+      buf.write(' path="${file.path}"');
+    }
+    buf.write('>');
+    return buf.toString();
   }
 
   List<Map<String, dynamic>> _lastToolCalls(

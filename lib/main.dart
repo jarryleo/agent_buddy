@@ -173,7 +173,7 @@ class AgentBuddyApp extends StatelessWidget {
         ),
         Provider<ImageService>(create: (_) => ImageService()),
         Provider<FileAttachmentService>(
-          create: (_) => const FileAttachmentService(),
+          create: (_) => FileAttachmentService(),
         ),
         Provider<DownloadService>(create: (_) => DownloadService()),
         Provider<VoiceService>(create: (_) => createVoiceService()),

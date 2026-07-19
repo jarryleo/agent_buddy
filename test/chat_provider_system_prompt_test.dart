@@ -16,11 +16,15 @@ void main() {
 
         // Hard size cap. ~600 chars ≈ 200 tokens for a Chinese
         // tokenizer, leaving the rest of a 4K context for the
-        // user's messages. If a future edit accidentally re-inlines
-        // any per-tool docs, this test will fire.
+        // user's messages. The cap was bumped from 800 to 1100
+        // when the chat-attachment-path hint was added — the new
+        // line is one short rule, not a per-tool doc dump, so
+        // ~1KB is still well under the 4K-context budget. If a
+        // future edit accidentally re-inlines any per-tool docs,
+        // this test will fire.
         expect(
           prompt.length,
-          lessThan(800),
+          lessThan(1100),
           reason:
               'base system prompt must stay small; per-tool docs belong in the '
               '`tool_usage` skill, not inline',

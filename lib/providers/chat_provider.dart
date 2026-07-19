@@ -109,14 +109,6 @@ String buildBaseSystemPrompt({
       '- 工具调用失败返回的是软错误时(比如 cancelled / not_found / permission_denied),'
       '根据 message 给用户讲清楚,然后给个替代方案,不要直接放弃。\n'
       '\n'
-      '## 子 agent(subagent)——大量用\n'
-      '任何与主对话上下文无关的独立调研/搜集/搜索任务都优先调 subagent(action: "delegate"),'
-      '别让主对话自己 fetch_web 一串。'
-      '判断标准:**结果不依赖本次对话前文 + 主对话不需要看到中间过程 → 用 subagent**。\n'
-      '参数要写清楚:task(具体任务)、want(你希望拿回的报告形状,越具体越好)、'
-      'context(只放主对话里相关的关键事实,不要把整段对话都塞进去)。'
-      '主对话只拿到最终报告,中间过程都跑在子 agent 的上下文里,**能省下大量 token**。\n'
-      '哪怕只调一个 fetch_web,只要不依赖前文,就用 subagent。'
       '完整用法和并发模式见 load_skill(skill_name: "工具使用提示")。'
       '$workingDirectoryHint$mcpHint';
 }

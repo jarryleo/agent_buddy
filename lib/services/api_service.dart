@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/file_attachment.dart';
@@ -831,6 +832,19 @@ class ApiService {
     );
   }
 
+  @visibleForTesting
+  List<Map<String, dynamic>> buildOpenAIMessagesForTest(
+    List<ChatRequestMessage> messages,
+    List<String>? systemPrompts,
+  ) =>
+      _buildOpenAIMessages(messages, systemPrompts);
+
+  @visibleForTesting
+  List<Map<String, dynamic>> buildAnthropicMessagesForTest(
+    List<ChatRequestMessage> messages,
+  ) =>
+      _buildAnthropicMessages(messages);
+
   List<Map<String, dynamic>> _buildOpenAIMessages(
     List<ChatRequestMessage> messages,
     List<String>? systemPrompts,
@@ -855,6 +869,7 @@ class ApiService {
               if (file.textContent != null) {
                 parts.add({'type': 'text', 'text': _textFileContent(file)});
               } else if (file.base64Data != null) {
+                parts.add({'type': 'text', 'text': _binaryFileHeader(file)});
                 parts.add({
                   'type': 'file',
                   'file': {'filename': file.name, 'file_data': file.dataUrl},
@@ -923,6 +938,7 @@ class ApiService {
                 parts.add({'type': 'text', 'text': _textFileContent(file)});
               } else if (file.base64Data != null &&
                   file.mimeType.startsWith('image/')) {
+                parts.add({'type': 'text', 'text': _binaryFileHeader(file)});
                 parts.add({
                   'type': 'image',
                   'source': {
@@ -932,6 +948,7 @@ class ApiService {
                   },
                 });
               } else if (file.base64Data != null) {
+                parts.add({'type': 'text', 'text': _binaryFileHeader(file)});
                 parts.add({
                   'type': 'document',
                   'source': {
@@ -1038,12 +1055,43 @@ class ApiService {
     }
   }
 
+  @visibleForTesting
+  String textFileContentForTest(PreparedFileAttachment file) =>
+      _textFileContent(file);
+
+  @visibleForTesting
+  String binaryFileHeaderForTest(PreparedFileAttachment file) =>
+      _binaryFileHeader(file);
+
   String _textFileContent(PreparedFileAttachment file) {
-    final safeName = file.name.replaceAll('"', '&quot;');
-    return '<attached_file name="$safeName" type="${file.mimeType}">\n'
+    final attrs = _attachedFileAttrs(file);
+    return '<attached_file $attrs>\n'
         '${file.textContent ?? ''}\n'
         '</attached_file>';
   }
+
+  /// Self-closing metadata header emitted as a separate text part
+  /// right before a binary file payload. Keeps the `name` / `type` /
+  /// `path` triple in the same `<attached_file …>` envelope shape as
+  /// [_textFileContent] so the model can read the local path for the
+  /// `file` tool without parsing the file part.
+  String _binaryFileHeader(PreparedFileAttachment file) {
+    final attrs = _attachedFileAttrs(file);
+    return '<attached_file $attrs />';
+  }
+
+  String _attachedFileAttrs(PreparedFileAttachment file) {
+    final attrs = StringBuffer()
+      ..write('name="${_xmlAttr(file.name)}"')
+      ..write(' type="${_xmlAttr(file.mimeType)}"');
+    if (file.path.isNotEmpty) {
+      attrs.write(' path="${_xmlAttr(file.path)}"');
+    }
+    return attrs.toString();
+  }
+
+  String _xmlAttr(String value) =>
+      value.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
 
   String _mediaTypeFromDataUrl(String dataUrl) {
     final commaIdx = dataUrl.indexOf(',');
