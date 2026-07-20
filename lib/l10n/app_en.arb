@@ -102,6 +102,13 @@
       "error": { "type": "String" }
     }
   },
+  "providerSupportedFileTypes": "Supported file types",
+  "providerSupportedFileTypesHelper": "Picked files in these categories are sent inline to the model. Other files are forwarded as path-only references so the model can read them via the file tool.",
+  "providerFileTypeText": "Text",
+  "providerFileTypeImage": "Image",
+  "providerFileTypeAudio": "Audio",
+  "providerFileTypeVideo": "Video",
+  "providerFileTypeDocument": "Document",
   "providerModelCount": "{count} models",
   "@providerModelCount": {
     "placeholders": {
@@ -395,6 +402,12 @@
       "error": { "type": "String" }
     }
   },
+  "chatMentionPopupTitle": "Files in working directory",
+  "chatMentionPopupHint": "Type to filter; ↑/↓ to pick; Enter to attach the first match.",
+  "chatMentionPopupEmpty": "No matching files in the working directory.",
+  "chatMentionPopupNoWorkingDir": "Pick a working directory in the chat toolbar to use @ mentions.",
+  "chatMentionAttachedAsImage": "Image",
+  "chatMentionAttachedAsFile": "File",
 
   "messageThinking": "Thinking",
   "messageErrorPrefix": "Error: {error}",

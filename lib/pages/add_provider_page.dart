@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/file_type.dart';
 import '../models/provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/api_service.dart';
@@ -28,6 +29,12 @@ class _AddProviderPageState extends State<AddProviderPage> {
   List<String> _models = [];
   String? _selectedModel;
 
+  /// The file categories the model accepts as inline base64.
+  /// Defaults to [kDefaultSupportedFileTypes] (image only) for
+  /// brand-new providers; existing rows round-trip their
+  /// persisted set so the user doesn't lose what they had.
+  late Set<AgentFileType> _supportedFileTypes;
+
   @override
   void initState() {
     super.initState();
@@ -43,6 +50,9 @@ class _AddProviderPageState extends State<AddProviderPage> {
     );
     _models = List.from(p?.models ?? const []);
     _selectedModel = p?.selectedModel;
+    _supportedFileTypes = p == null
+        ? {...kDefaultSupportedFileTypes}
+        : {...p.effectiveSupportedFileTypes};
   }
 
   @override
@@ -142,6 +152,13 @@ class _AddProviderPageState extends State<AddProviderPage> {
     final apiKey = _apiKey.text.trim();
     final chatPath = _chatPath.text.trim();
     final existing = widget.existing;
+    // Persist the explicit (possibly empty) set so the user can
+    // intentionally disable every category. Only the legacy
+    // "never persisted" rows keep the image-only default — we
+    // round-trip that by writing the explicit set here.
+    final supportedSnapshot = Set<AgentFileType>.unmodifiable(
+      _supportedFileTypes,
+    );
     if (existing == null) {
       final provider = await widget.settings.addProvider(
         name: name,
@@ -151,7 +168,11 @@ class _AddProviderPageState extends State<AddProviderPage> {
         chatPath: chatPath,
       );
       await widget.settings.updateProvider(
-        provider.copyWith(models: _models, selectedModel: _selectedModel),
+        provider.copyWith(
+          models: _models,
+          selectedModel: _selectedModel,
+          supportedFileTypes: supportedSnapshot,
+        ),
       );
     } else {
       final updated = existing.copyWith(
@@ -162,6 +183,7 @@ class _AddProviderPageState extends State<AddProviderPage> {
         chatPath: chatPath,
         models: _models,
         selectedModel: _selectedModel,
+        supportedFileTypes: supportedSnapshot,
       );
       await widget.settings.updateProvider(updated);
     }
@@ -256,6 +278,13 @@ class _AddProviderPageState extends State<AddProviderPage> {
                   ? l10n.providerChatPathRequired
                   : null,
             ),
+            const SizedBox(height: 18),
+            _SupportedFileTypesEditor(
+              value: _supportedFileTypes,
+              onChanged: (next) => setState(() {
+                _supportedFileTypes = next;
+              }),
+            ),
             SizedBox(height: 16),
             Row(
               children: [
@@ -340,6 +369,203 @@ class _Label extends StatelessWidget {
           fontSize: 12,
           fontWeight: FontWeight.w600,
           color: context.textSecondary,
+        ),
+      ),
+    );
+  }
+}
+
+/// Multi-select editor for [ModelProvider.supportedFileTypes].
+///
+/// Renders one chip per [AgentFileType] (text/image/audio/video/
+/// document). Tapping a chip toggles it. The chip's color shifts
+/// to the brand primary when active so the user can tell at a
+/// glance which categories the model accepts inline. Helper text
+/// explains the inline-vs-path-only tradeoff so the choice isn't
+/// mysterious.
+class _SupportedFileTypesEditor extends StatelessWidget {
+  const _SupportedFileTypesEditor({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final Set<AgentFileType> value;
+  final ValueChanged<Set<AgentFileType>> onChanged;
+
+  String _labelFor(BuildContext context, AgentFileType t) {
+    final l10n = AppLocalizations.of(context);
+    switch (t) {
+      case AgentFileType.text:
+        return l10n.providerFileTypeText;
+      case AgentFileType.image:
+        return l10n.providerFileTypeImage;
+      case AgentFileType.audio:
+        return l10n.providerFileTypeAudio;
+      case AgentFileType.video:
+        return l10n.providerFileTypeVideo;
+      case AgentFileType.document:
+        return l10n.providerFileTypeDocument;
+    }
+  }
+
+  IconData _iconFor(AgentFileType t) {
+    switch (t) {
+      case AgentFileType.text:
+        return Icons.text_snippet_outlined;
+      case AgentFileType.image:
+        return Icons.image_outlined;
+      case AgentFileType.audio:
+        return Icons.audiotrack_outlined;
+      case AgentFileType.video:
+        return Icons.movie_outlined;
+      case AgentFileType.document:
+        return Icons.description_outlined;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _Label(text: l10n.providerSupportedFileTypes),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final t in AgentFileType.values)
+              _FileTypeChip(
+                label: _labelFor(context, t),
+                icon: _iconFor(t),
+                active: value.contains(t),
+                // The `text` chip is pinned on. The wire layer
+                // never inlines text bodies (it always emits a
+                // `<attached_file path="…" />` reference), so the
+                // toggle is purely cosmetic — surfacing it as a
+                // disabled chip prevents the user from disabling
+                // a category that has no behavioral effect, and
+                // signals "yes, text files are handled" without
+                // claiming more than the implementation actually
+                // does.
+                alwaysOn: t == AgentFileType.text,
+                onTap: t == AgentFileType.text
+                    ? null
+                    : () {
+                        final next = {...value};
+                        if (!next.add(t)) next.remove(t);
+                        onChanged(next);
+                      },
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Padding(
+          padding: const EdgeInsets.only(left: 2),
+          child: Text(
+            l10n.providerSupportedFileTypesHelper,
+            style: TextStyle(
+              fontSize: 11,
+              color: context.textSecondary,
+              height: 1.4,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FileTypeChip extends StatelessWidget {
+  const _FileTypeChip({
+    required this.label,
+    required this.icon,
+    required this.active,
+    required this.onTap,
+    this.alwaysOn = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool active;
+  final VoidCallback? onTap;
+
+  /// When true, the chip renders in the disabled/greyed style
+  /// and ignores taps regardless of [onTap]. Used for the
+  /// always-on `text` chip so the user can see it without being
+  /// able to toggle it. The visual treatment (muted palette +
+  /// dashed border + lock-style icon) matches what the rest of
+  /// the app uses for "non-interactive but visible" controls.
+  final bool alwaysOn;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bg;
+    final Color border;
+    final Color fg;
+    final double borderWidth;
+    final FontWeight fontWeight;
+    final IconData trailingIcon;
+    if (alwaysOn) {
+      // Disabled / greyed-out treatment: muted background, dashed
+      // border, lock icon trailing the label so the user can tell
+      // at a glance that this category is pinned and not
+      // user-controllable.
+      bg = context.surface;
+      border = context.appBorder;
+      fg = context.textSecondary.withValues(alpha: 0.7);
+      borderWidth = 0.6;
+      fontWeight = FontWeight.w500;
+      trailingIcon = Icons.lock_outline;
+    } else if (active) {
+      bg = AppTheme.primary.withValues(alpha: 0.10);
+      border = AppTheme.primary;
+      fg = AppTheme.primary;
+      borderWidth = 1.0;
+      fontWeight = FontWeight.w600;
+      trailingIcon = Icons.check_circle;
+    } else {
+      bg = context.surface;
+      border = context.appBorder;
+      fg = context.textSecondary;
+      borderWidth = 0.6;
+      fontWeight = FontWeight.w500;
+      trailingIcon = Icons.circle_outlined;
+    }
+    return Tooltip(
+      message: alwaysOn
+          ? 'Always on — text files are always sent as path references.'
+          : label,
+      child: Material(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: border, width: borderWidth),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 14, color: fg),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: fg,
+                    fontWeight: fontWeight,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(trailingIcon, size: 14, color: fg),
+              ],
+            ),
+          ),
         ),
       ),
     );

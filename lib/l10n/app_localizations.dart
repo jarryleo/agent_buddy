@@ -530,6 +530,48 @@ abstract class AppLocalizations {
   /// **'Fetch failed: {error}'**
   String providerFetchFailed(String error);
 
+  /// No description provided for @providerSupportedFileTypes.
+  ///
+  /// In en, this message translates to:
+  /// **'Supported file types'**
+  String get providerSupportedFileTypes;
+
+  /// No description provided for @providerSupportedFileTypesHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'Picked files in these categories are sent inline to the model. Other files are forwarded as path-only references so the model can read them via the file tool.'**
+  String get providerSupportedFileTypesHelper;
+
+  /// No description provided for @providerFileTypeText.
+  ///
+  /// In en, this message translates to:
+  /// **'Text'**
+  String get providerFileTypeText;
+
+  /// No description provided for @providerFileTypeImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Image'**
+  String get providerFileTypeImage;
+
+  /// No description provided for @providerFileTypeAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio'**
+  String get providerFileTypeAudio;
+
+  /// No description provided for @providerFileTypeVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'Video'**
+  String get providerFileTypeVideo;
+
+  /// No description provided for @providerFileTypeDocument.
+  ///
+  /// In en, this message translates to:
+  /// **'Document'**
+  String get providerFileTypeDocument;
+
   /// No description provided for @providerModelCount.
   ///
   /// In en, this message translates to:
@@ -1721,6 +1763,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Failed to attach image: {error}'**
   String imageErrorFailedToAttach(String error);
+
+  /// No description provided for @chatMentionPopupTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Files in working directory'**
+  String get chatMentionPopupTitle;
+
+  /// No description provided for @chatMentionPopupHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Type to filter; ↑/↓ to pick; Enter to attach the first match.'**
+  String get chatMentionPopupHint;
+
+  /// No description provided for @chatMentionPopupEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching files in the working directory.'**
+  String get chatMentionPopupEmpty;
+
+  /// No description provided for @chatMentionPopupNoWorkingDir.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a working directory in the chat toolbar to use @ mentions.'**
+  String get chatMentionPopupNoWorkingDir;
+
+  /// No description provided for @chatMentionAttachedAsImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Image'**
+  String get chatMentionAttachedAsImage;
+
+  /// No description provided for @chatMentionAttachedAsFile.
+  ///
+  /// In en, this message translates to:
+  /// **'File'**
+  String get chatMentionAttachedAsFile;
 
   /// No description provided for @messageThinking.
   ///

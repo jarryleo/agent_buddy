@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:agent_buddy/models/file_attachment.dart';
+import 'package:agent_buddy/models/file_type.dart';
 import 'package:agent_buddy/models/message.dart';
 import 'package:agent_buddy/models/provider.dart';
 import 'package:agent_buddy/services/api_service.dart';
@@ -10,55 +11,28 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:llamadart/llamadart.dart';
 
+/// Wire-format assertions for the `<attached_file … />` envelope
+/// helpers and the user-message part layout. Pins:
+///
+///   * **Binary file headers** carry the local `path` so the model
+///     can `file read` the same bytes the user picked. Skipped
+///     when the file has no on-disk path (web fallback).
+///   * **XML escaping** keeps attribute parsing safe when the
+///     filename or path contains `&` or `"` (legal on Windows).
+///   * **Text files are NEVER inlined** — the wire always emits a
+///     self-closing path-only header, regardless of the
+///     configured supported-types set.
+///   * **Non-text files** follow the inline gate: the wire
+///     emits a `file_data` / `document` / `image` part when the
+///     category is in the supported set, otherwise just the
+///     path header.
 void main() {
   group('chat attachment path is forwarded to the model', () {
-    test('OpenAI text envelope carries the local path', () {
-      final api = ApiService();
-      const file = PreparedFileAttachment(
-        name: 'notes.txt',
-        path: r'C:\Users\me\chat_files\1700_0__notes.txt',
-        size: 5,
-        mimeType: 'text/plain',
-        textContent: 'hello',
-      );
-
-      final text = api.textFileContentForTest(file);
-
-      expect(
-        text,
-        contains(
-          '<attached_file name="notes.txt" type="text/plain" '
-          r'path="C:\Users\me\chat_files\1700_0__notes.txt">',
-        ),
-      );
-      expect(text, contains('hello'));
-      expect(text, endsWith('</attached_file>'));
-    });
-
-    test('Anthropic text envelope carries the local path', () {
-      // The Anthropic path uses the same envelope helper as
-      // OpenAI; this test pins down that the path attribute is
-      // emitted there too so we don't accidentally diverge.
-      final api = ApiService();
-      const file = PreparedFileAttachment(
-        name: 'notes.txt',
-        path: r'C:\Users\me\chat_files\1700_0__notes.txt',
-        size: 5,
-        mimeType: 'text/plain',
-        textContent: 'hello',
-      );
-
-      final text = api.textFileContentForTest(file);
-
-      expect(text, contains('path='));
-      expect(text, contains(r'C:\Users\me\chat_files\1700_0__notes.txt'));
-    });
-
     test('binary file header carries the local path', () {
       final api = ApiService();
       const file = PreparedFileAttachment(
         name: 'report.pdf',
-        path: r'C:\Users\me\chat_files\1700_1__report.pdf',
+        path: r'C:\Users\me\chat_files\1700_0__report.pdf',
         size: 12345,
         mimeType: 'application/pdf',
         base64Data: 'AAAA',
@@ -69,7 +43,7 @@ void main() {
       expect(
         header,
         '<attached_file name="report.pdf" type="application/pdf" '
-        r'path="C:\Users\me\chat_files\1700_1__report.pdf" />',
+        r'path="C:\Users\me\chat_files\1700_0__report.pdf" />',
       );
     });
 
@@ -85,10 +59,6 @@ void main() {
         mimeType: 'text/plain',
         textContent: 'hello',
       );
-
-      final text = api.textFileContentForTest(file);
-      expect(text, contains('name="notes.txt"'));
-      expect(text, isNot(contains('path=')));
 
       final header = api.binaryFileHeaderForTest(file);
       expect(header, contains('name="notes.txt"'));
@@ -109,12 +79,19 @@ void main() {
         textContent: 'x',
       );
 
-      final text = api.textFileContentForTest(file);
-      expect(text, contains('name="a&quot;b&amp;c.txt"'));
-      expect(text, contains(r'path="C:\foo &amp; &quot;bar&quot;\chat_files\x.txt"'));
+      final header = api.binaryFileHeaderForTest(file);
+      expect(header, contains('name="a&quot;b&amp;c.txt"'));
+      expect(
+        header,
+        contains(r'path="C:\foo &amp; &quot;bar&quot;\chat_files\x.txt"'),
+      );
     });
 
-    test('OpenAI wire payload: text file part includes the path', () {
+    test('OpenAI wire payload: text file is path-only (no inline body)', () {
+      // Text files always go path-only regardless of the
+      // configured supported-types set. The model gets the
+      // header so it can pull the file via the file tool, but
+      // the decoded body is never inlined.
       final api = ApiService();
       const messages = [
         ChatRequestMessage(
@@ -140,23 +117,73 @@ void main() {
           .whereType<Map>()
           .where((p) => p['type'] == 'text')
           .toList();
-      // The user message is also emitted as a text part before
-      // the file parts, so we look across all text parts for the
-      // attached_file envelope.
+      // Self-closing path header is present.
       expect(
         textParts.any(
           (p) =>
-              p['text'].toString().contains('<attached_file') &&
               p['text'].toString().contains(
-                r'path="C:\app\chat_files\1700_0__notes.txt"',
-              ),
+                '<attached_file name="notes.txt"',
+              ) &&
+              p['text'].toString().endsWith('/>'),
         ),
         isTrue,
-        reason: 'text file envelope must carry the local path',
+        reason: 'text files must emit the path-only self-closing header',
       );
-      // And the user's actual message text must be preserved.
+      // Inline text body ('hello') is NOT present.
+      expect(
+        textParts.any((p) => p['text'].toString().contains('hello')),
+        isFalse,
+      );
+      // And the user's actual message text is preserved.
       expect(
         textParts.any((p) => p['text'].toString() == 'Summarize this'),
+        isTrue,
+      );
+    });
+
+    test('OpenAI wire payload: text file path-only holds even when text is '
+        'explicitly enabled', () {
+      final api = ApiService();
+      const messages = [
+        ChatRequestMessage(
+          role: MessageRole.user,
+          content: 'Read this',
+          fileAttachments: [
+            PreparedFileAttachment(
+              name: 'notes.txt',
+              path: r'C:\app\chat_files\1700_1__notes.txt',
+              size: 5,
+              mimeType: 'text/plain',
+              textContent: 'hello world',
+            ),
+          ],
+        ),
+      ];
+      // Explicitly enable text — the wire must STILL emit
+      // path-only. The settings UI marks `text` as always-on
+      // (cosmetic) precisely because the wire behaviour doesn't
+      // change with the toggle.
+      final wire = api.buildOpenAIMessagesForTest(messages, null, {
+        AgentFileType.text,
+        AgentFileType.image,
+        AgentFileType.document,
+      });
+      final userMessage = wire.singleWhere((m) => m['role'] == 'user') as Map;
+      final content = userMessage['content'] as List;
+      final textParts = content
+          .whereType<Map>()
+          .where((p) => p['type'] == 'text')
+          .toList();
+      expect(
+        textParts.any((p) => p['text'].toString().contains('hello world')),
+        isFalse,
+      );
+      expect(
+        textParts.any(
+          (p) => p['text'].toString().contains(
+            r'path="C:\app\chat_files\1700_1__notes.txt"',
+          ),
+        ),
         isTrue,
       );
     });
@@ -245,6 +272,50 @@ void main() {
       },
     );
 
+    test('Anthropic wire payload: text file is path-only (no inline body)', () {
+      final api = ApiService();
+      const messages = [
+        ChatRequestMessage(
+          role: MessageRole.user,
+          content: 'Read this',
+          fileAttachments: [
+            PreparedFileAttachment(
+              name: 'notes.txt',
+              path: r'C:\app\chat_files\1700_2__notes.txt',
+              size: 5,
+              mimeType: 'text/plain',
+              textContent: 'hello world',
+            ),
+          ],
+        ),
+      ];
+
+      final wire = api.buildAnthropicMessagesForTest(messages, {
+        AgentFileType.text,
+        AgentFileType.image,
+        AgentFileType.document,
+      });
+
+      final userMessage = wire.singleWhere((m) => m['role'] == 'user') as Map;
+      final content = userMessage['content'] as List;
+      final textParts = content
+          .whereType<Map>()
+          .where((p) => p['type'] == 'text')
+          .toList();
+      expect(
+        textParts.any((p) => p['text'].toString().contains('hello world')),
+        isFalse,
+      );
+      expect(
+        textParts.any(
+          (p) => p['text'].toString().contains(
+            r'path="C:\app\chat_files\1700_2__notes.txt"',
+          ),
+        ),
+        isTrue,
+      );
+    });
+
     test('Anthropic wire payload: binary document part has a path header', () {
       final api = ApiService();
       const messages = [
@@ -332,41 +403,7 @@ void main() {
       expect(imageParts, hasLength(1));
     });
 
-    test(
-      'local LLM text envelope carries the local path for the model',
-      () {
-        final svc = LocalLlmService();
-        const message = ChatRequestMessage(
-          role: MessageRole.user,
-          content: 'Read this',
-          fileAttachments: [
-            PreparedFileAttachment(
-              name: 'notes.txt',
-              path: r'C:\app\chat_files\1700_0__notes.txt',
-              size: 5,
-              mimeType: 'text/plain',
-              textContent: 'hello',
-            ),
-          ],
-        );
-
-        final parts = svc.buildContentPartsForTest(message);
-        final textParts = parts.whereType<LlamaTextContent>().toList();
-        expect(textParts, hasLength(1));
-        final text = textParts.single.text;
-        expect(
-          text,
-          contains(
-            '<attached_file name="notes.txt" type="text/plain" '
-            r'path="C:\app\chat_files\1700_0__notes.txt">',
-          ),
-        );
-        expect(text, contains('hello'));
-      },
-    );
-
-    test('local LLM text envelope omits path when there is no on-disk path',
-        () {
+    test('local LLM: text file is always path-only (no inline envelope)', () {
       final svc = LocalLlmService();
       const message = ChatRequestMessage(
         role: MessageRole.user,
@@ -374,7 +411,7 @@ void main() {
         fileAttachments: [
           PreparedFileAttachment(
             name: 'notes.txt',
-            path: '',
+            path: r'C:\app\chat_files\1700_0__notes.txt',
             size: 5,
             mimeType: 'text/plain',
             textContent: 'hello',
@@ -385,11 +422,55 @@ void main() {
       final parts = svc.buildContentPartsForTest(message);
       final textParts = parts.whereType<LlamaTextContent>().toList();
       expect(textParts, hasLength(1));
+      final text = textParts.single.text;
+      // Local engine uses the `[Attached file: ...]` placeholder
+      // for path-only references. The previous inline envelope
+      // shape is gone — text bodies never enter the prompt.
+      expect(
+        text,
+        contains(
+          '[Attached file: notes.txt, type=text/plain, '
+          r'path=C:\app\chat_files\1700_0__notes.txt]',
+        ),
+      );
+      // The decoded body MUST NOT be inlined.
+      expect(text, isNot(contains('hello')));
+    });
+
+    test('local LLM: text-file path-only is unaffected by inlineFileTypes', () {
+      final svc = LocalLlmService();
+      const message = ChatRequestMessage(
+        role: MessageRole.user,
+        content: 'Read this',
+        fileAttachments: [
+          PreparedFileAttachment(
+            name: 'notes.txt',
+            path: r'C:\app\chat_files\1700_3__notes.txt',
+            size: 5,
+            mimeType: 'text/plain',
+            textContent: 'hello world',
+          ),
+        ],
+      );
+
+      // Even with `text` in the inline set, the local wire still
+      // emits path-only for text files — the rule is uniform
+      // across cloud and local.
+      final parts = svc.buildContentPartsForTest(message, {
+        AgentFileType.text,
+        AgentFileType.image,
+        AgentFileType.document,
+      });
+      final textParts = parts.whereType<LlamaTextContent>().toList();
+      expect(textParts, hasLength(1));
+      expect(textParts.single.text, isNot(contains('hello world')));
       expect(
         textParts.single.text,
-        contains('<attached_file name="notes.txt" type="text/plain">'),
+        contains(
+          '[Attached file: notes.txt, type=text/plain, '
+          r'path=C:\app\chat_files\1700_3__notes.txt]',
+        ),
       );
-      expect(textParts.single.text, isNot(contains('path=')));
     });
 
     test('local LLM binary placeholder still carries the path', () {

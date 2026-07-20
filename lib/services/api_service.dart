@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/file_attachment.dart';
+import '../models/file_type.dart';
 import '../models/message.dart';
 import '../models/provider.dart';
 import 'tool_orchestrator.dart';
@@ -217,6 +218,14 @@ class ApiService {
   /// is wrapped in a [ToolOrchestrator] that drives the multi-round
   /// tool-calling loop (with a hard cap on rounds). The final
   /// [StreamEvent.done] is yielded after the conversation is complete.
+  ///
+  /// [inlineFileTypes] is the file categories the model accepts
+  /// inline (as base64 file_data / image parts). Files whose
+  /// category isn't in this set are forwarded as path-only
+  /// references so the model can pull them via the file tool.
+  /// `null` falls back to "inline everything" — the legacy wire
+  /// format used by every test in this repo and by every cloud
+  /// provider that pre-dates the supported-types UI.
   Stream<StreamEvent> streamChat({
     required ModelProvider provider,
     required String model,
@@ -226,6 +235,7 @@ class ApiService {
     bool enableThinking = false,
     Future<String> Function(Map<String, dynamic> toolCall)? onToolCall,
     ToolOrchestrator? orchestrator,
+    Set<AgentFileType>? inlineFileTypes,
   }) async* {
     // Without an executor there's no point in the orchestrator — the
     // model can't actually call any tools, so we just do a single
@@ -238,6 +248,7 @@ class ApiService {
         systemPrompts: systemPrompts,
         tools: tools,
         enableThinking: enableThinking,
+        inlineFileTypes: inlineFileTypes,
       );
       return;
     }
@@ -262,6 +273,7 @@ class ApiService {
             systemPrompts: systemPrompts,
             tools: tools,
             enableThinking: enableThinking,
+            inlineFileTypes: inlineFileTypes,
           );
         case ProviderProtocol.anthropic:
           return _runAnthropicTurn(
@@ -271,6 +283,7 @@ class ApiService {
             systemPrompts: systemPrompts,
             tools: tools,
             enableThinking: enableThinking,
+            inlineFileTypes: inlineFileTypes,
           );
       }
     }
@@ -336,6 +349,7 @@ class ApiService {
     List<String>? systemPrompts,
     List<Map<String, dynamic>>? tools,
     required bool enableThinking,
+    Set<AgentFileType>? inlineFileTypes,
   }) async* {
     switch (provider.protocol) {
       case ProviderProtocol.openai:
@@ -346,6 +360,7 @@ class ApiService {
           systemPrompts: systemPrompts,
           tools: tools,
           enableThinking: enableThinking,
+          inlineFileTypes: inlineFileTypes,
         );
         break;
       case ProviderProtocol.anthropic:
@@ -356,6 +371,7 @@ class ApiService {
           systemPrompts: systemPrompts,
           tools: tools,
           enableThinking: enableThinking,
+          inlineFileTypes: inlineFileTypes,
         );
         break;
     }
@@ -368,6 +384,7 @@ class ApiService {
     List<String>? systemPrompts,
     List<Map<String, dynamic>>? tools,
     required bool enableThinking,
+    Set<AgentFileType>? inlineFileTypes,
   }) async* {
     // Backward-compat wrapper: run a single turn, ignore any tool
     // calls the model emits, just stream the text. (No orchestrator
@@ -380,6 +397,7 @@ class ApiService {
       systemPrompts: systemPrompts,
       tools: tools,
       enableThinking: enableThinking,
+      inlineFileTypes: inlineFileTypes,
     )) {
       if (ev.kind == OrchestratorEventKind.turnDone) {
         finalResult = ev.turnResult;
@@ -410,11 +428,12 @@ class ApiService {
     required List<String>? systemPrompts,
     required List<Map<String, dynamic>>? tools,
     required bool enableThinking,
+    Set<AgentFileType>? inlineFileTypes,
   }) async* {
     final payload = <String, dynamic>{
       'model': model,
       'stream': true,
-      'messages': _buildOpenAIMessages(history, systemPrompts),
+      'messages': _buildOpenAIMessages(history, systemPrompts, inlineFileTypes),
     };
     _applyOpenAIThinking(payload, model, enableThinking);
     if (tools != null && tools.isNotEmpty) {
@@ -600,6 +619,7 @@ class ApiService {
     List<String>? systemPrompts,
     List<Map<String, dynamic>>? tools,
     required bool enableThinking,
+    Set<AgentFileType>? inlineFileTypes,
   }) async* {
     // Backward-compat wrapper: run a single turn, ignore any tool
     // calls the model emits, just stream the text. (No orchestrator
@@ -612,6 +632,7 @@ class ApiService {
       systemPrompts: systemPrompts,
       tools: tools,
       enableThinking: enableThinking,
+      inlineFileTypes: inlineFileTypes,
     )) {
       if (ev.kind == OrchestratorEventKind.turnDone) {
         finalResult = ev.turnResult;
@@ -639,12 +660,13 @@ class ApiService {
     required List<String>? systemPrompts,
     required List<Map<String, dynamic>>? tools,
     required bool enableThinking,
+    Set<AgentFileType>? inlineFileTypes,
   }) async* {
     final payload = <String, dynamic>{
       'model': model,
       'stream': true,
       'max_tokens': 4096,
-      'messages': _buildAnthropicMessages(history),
+      'messages': _buildAnthropicMessages(history, inlineFileTypes),
     };
     if (enableThinking) {
       payload['thinking'] = {'type': 'enabled', 'budget_tokens': 2048};
@@ -835,19 +857,20 @@ class ApiService {
   @visibleForTesting
   List<Map<String, dynamic>> buildOpenAIMessagesForTest(
     List<ChatRequestMessage> messages,
-    List<String>? systemPrompts,
-  ) =>
-      _buildOpenAIMessages(messages, systemPrompts);
+    List<String>? systemPrompts, [
+    Set<AgentFileType>? inlineFileTypes,
+  ]) => _buildOpenAIMessages(messages, systemPrompts, inlineFileTypes);
 
   @visibleForTesting
   List<Map<String, dynamic>> buildAnthropicMessagesForTest(
-    List<ChatRequestMessage> messages,
-  ) =>
-      _buildAnthropicMessages(messages);
+    List<ChatRequestMessage> messages, [
+    Set<AgentFileType>? inlineFileTypes,
+  ]) => _buildAnthropicMessages(messages, inlineFileTypes);
 
   List<Map<String, dynamic>> _buildOpenAIMessages(
     List<ChatRequestMessage> messages,
     List<String>? systemPrompts,
+    Set<AgentFileType>? inlineFileTypes,
   ) {
     final out = <Map<String, dynamic>>[];
     if (systemPrompts != null) {
@@ -866,21 +889,59 @@ class ApiService {
               parts.add({'type': 'text', 'text': m.content});
             }
             for (final file in m.fileAttachments) {
-              if (file.textContent != null) {
-                parts.add({'type': 'text', 'text': _textFileContent(file)});
-              } else if (file.base64Data != null) {
+              // Text files are NEVER inlined — regardless of
+              // [inlineFileTypes]. We always emit a path-only
+              // `<attached_file path="…" />` header so the model
+              // can pull the file via the file tool. Inlining
+              // decoded text bodies bloats the context window
+              // and forces the user to manually pick "text" off
+              // every time they configure a model; the path
+              // reference is always sufficient.
+              final inline =
+                  file.textContent == null &&
+                  _shouldInline(
+                    categorizeFile(name: file.name, mimeType: file.mimeType),
+                    inlineFileTypes,
+                  );
+              if (inline && file.base64Data != null) {
                 parts.add({'type': 'text', 'text': _binaryFileHeader(file)});
                 parts.add({
                   'type': 'file',
                   'file': {'filename': file.name, 'file_data': file.dataUrl},
                 });
+              } else {
+                // Path-only fallback. Covers:
+                //  * text files (always),
+                //  * non-text files whose category isn't in
+                //    [inlineFileTypes] (user opted out),
+                //  * non-text files whose category *is* inline
+                //    but the prepared payload has no base64 data
+                //    (binary wasn't loaded).
+                parts.add({'type': 'text', 'text': _binaryFileHeader(file)});
               }
             }
             for (final url in m.imageDataUrls) {
-              parts.add({
-                'type': 'image_url',
-                'image_url': {'url': url},
-              });
+              // Images go through the same gate — models that
+              // don't support images inline get only a path
+              // header instead of the base64 data URL.
+              final mediaType = _mediaTypeFromDataUrl(url);
+              if (_shouldInline(AgentFileType.image, inlineFileTypes)) {
+                parts.add({
+                  'type': 'image_url',
+                  'image_url': {'url': url},
+                });
+              } else if (mediaType.isNotEmpty) {
+                // Emit a tiny header so the model knows the
+                // original mime type when it tries to load the
+                // path.
+                parts.add({
+                  'type': 'text',
+                  'text':
+                      '[Image suppressed: $mediaType — model does '
+                      'not accept images inline. The model can read it '
+                      'via the file tool from the original path.]',
+                });
+              }
             }
             out.add({'role': 'user', 'content': parts});
           } else {
@@ -923,6 +984,7 @@ class ApiService {
 
   List<Map<String, dynamic>> _buildAnthropicMessages(
     List<ChatRequestMessage> messages,
+    Set<AgentFileType>? inlineFileTypes,
   ) {
     final out = <Map<String, dynamic>>[];
     for (final m in messages) {
@@ -934,9 +996,18 @@ class ApiService {
               parts.add({'type': 'text', 'text': m.content});
             }
             for (final file in m.fileAttachments) {
-              if (file.textContent != null) {
-                parts.add({'type': 'text', 'text': _textFileContent(file)});
-              } else if (file.base64Data != null &&
+              // See the matching comment in [_buildOpenAIMessages]:
+              // text files are NEVER inlined, regardless of the
+              // configured supported-types set.
+              final category = categorizeFile(
+                name: file.name,
+                mimeType: file.mimeType,
+              );
+              final isText = file.textContent != null;
+              final inline =
+                  !isText && _shouldInline(category, inlineFileTypes);
+              if (inline &&
+                  file.base64Data != null &&
                   file.mimeType.startsWith('image/')) {
                 parts.add({'type': 'text', 'text': _binaryFileHeader(file)});
                 parts.add({
@@ -947,7 +1018,7 @@ class ApiService {
                     'data': file.base64Data,
                   },
                 });
-              } else if (file.base64Data != null) {
+              } else if (inline && file.base64Data != null) {
                 parts.add({'type': 'text', 'text': _binaryFileHeader(file)});
                 parts.add({
                   'type': 'document',
@@ -958,19 +1029,33 @@ class ApiService {
                   },
                   'title': file.name,
                 });
+              } else {
+                // Path-only fallback — see the matching comment
+                // in [_buildOpenAIMessages] for the rationale.
+                parts.add({'type': 'text', 'text': _binaryFileHeader(file)});
               }
             }
             for (final url in m.imageDataUrls) {
               final mediaType = _mediaTypeFromDataUrl(url);
               final data = _dataFromDataUrl(url);
-              parts.add({
-                'type': 'image',
-                'source': {
-                  'type': 'base64',
-                  'media_type': mediaType,
-                  'data': data,
-                },
-              });
+              if (_shouldInline(AgentFileType.image, inlineFileTypes)) {
+                parts.add({
+                  'type': 'image',
+                  'source': {
+                    'type': 'base64',
+                    'media_type': mediaType,
+                    'data': data,
+                  },
+                });
+              } else if (mediaType.isNotEmpty) {
+                parts.add({
+                  'type': 'text',
+                  'text':
+                      '[Image suppressed: $mediaType — model does '
+                      'not accept images inline. The model can read it '
+                      'via the file tool from the original path.]',
+                });
+              }
             }
             out.add({'role': 'user', 'content': parts});
           } else {
@@ -1056,25 +1141,16 @@ class ApiService {
   }
 
   @visibleForTesting
-  String textFileContentForTest(PreparedFileAttachment file) =>
-      _textFileContent(file);
-
-  @visibleForTesting
   String binaryFileHeaderForTest(PreparedFileAttachment file) =>
       _binaryFileHeader(file);
 
-  String _textFileContent(PreparedFileAttachment file) {
-    final attrs = _attachedFileAttrs(file);
-    return '<attached_file $attrs>\n'
-        '${file.textContent ?? ''}\n'
-        '</attached_file>';
-  }
-
   /// Self-closing metadata header emitted as a separate text part
   /// right before a binary file payload. Keeps the `name` / `type` /
-  /// `path` triple in the same `<attached_file …>` envelope shape as
-  /// [_textFileContent] so the model can read the local path for the
-  /// `file` tool without parsing the file part.
+  /// `path` triple in the same `<attached_file …>` envelope shape
+  /// as the previous (now-removed) inline-text envelope so the
+  /// model can read the local path for the `file` tool without
+  /// parsing the file part. Text files also fall through this
+  /// path — they're never inlined.
   String _binaryFileHeader(PreparedFileAttachment file) {
     final attrs = _attachedFileAttrs(file);
     return '<attached_file $attrs />';
@@ -1092,6 +1168,33 @@ class ApiService {
 
   String _xmlAttr(String value) =>
       value.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
+
+  /// Decide whether the wire layer should inline a file's payload
+  /// or fall back to a path-only `<attached_file … />` reference.
+  ///
+  /// Rules:
+  ///   * `inlineFileTypes == null` → "legacy / unspecified"
+  ///     behaviour: inline everything (matches every test in
+  ///     this repo and every provider that pre-dates the
+  ///     supported-types UI).
+  ///   * `category == null` → the file didn't match any
+  ///     well-known category. Don't inline; emit a path header
+  ///     only. The model can still pull the bytes via the
+  ///     `file` tool.
+  ///   * Otherwise → consult the set. `image` decides the
+  ///     image_data_url / image-part gating; the other
+  ///     categories gate `file_data` / `document` payloads as
+  ///     well as the inline-text envelope. Toggling `text` off
+  ///     means even the decoded text body is suppressed — the
+  ///     user explicitly opted out of having the file contents
+  ///     enter the model's context window, so we hand it a path
+  ///     header and let the model `file read` it itself.
+  bool _shouldInline(AgentFileType? category, Set<AgentFileType>? inline) {
+    if (inline == null) return true;
+    final c = category;
+    if (c == null) return false;
+    return inline.contains(c);
+  }
 
   String _mediaTypeFromDataUrl(String dataUrl) {
     final commaIdx = dataUrl.indexOf(',');

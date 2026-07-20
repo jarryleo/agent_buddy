@@ -241,6 +241,28 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get providerSupportedFileTypes => 'Supported file types';
+
+  @override
+  String get providerSupportedFileTypesHelper =>
+      'Picked files in these categories are sent inline to the model. Other files are forwarded as path-only references so the model can read them via the file tool.';
+
+  @override
+  String get providerFileTypeText => 'Text';
+
+  @override
+  String get providerFileTypeImage => 'Image';
+
+  @override
+  String get providerFileTypeAudio => 'Audio';
+
+  @override
+  String get providerFileTypeVideo => 'Video';
+
+  @override
+  String get providerFileTypeDocument => 'Document';
+
+  @override
   String providerModelCount(int count) {
     return '$count models';
   }
@@ -917,6 +939,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String imageErrorFailedToAttach(String error) {
     return 'Failed to attach image: $error';
   }
+
+  @override
+  String get chatMentionPopupTitle => 'Files in working directory';
+
+  @override
+  String get chatMentionPopupHint =>
+      'Type to filter; ↑/↓ to pick; Enter to attach the first match.';
+
+  @override
+  String get chatMentionPopupEmpty =>
+      'No matching files in the working directory.';
+
+  @override
+  String get chatMentionPopupNoWorkingDir =>
+      'Pick a working directory in the chat toolbar to use @ mentions.';
+
+  @override
+  String get chatMentionAttachedAsImage => 'Image';
+
+  @override
+  String get chatMentionAttachedAsFile => 'File';
 
   @override
   String get messageThinking => 'Thinking';

@@ -235,6 +235,28 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get providerSupportedFileTypes => '支持的文件类型';
+
+  @override
+  String get providerSupportedFileTypesHelper =>
+      '选中的文件类型会以原始内容直接发给模型;其他类型只会把路径告诉模型,模型需要时通过 file 工具读取。';
+
+  @override
+  String get providerFileTypeText => '文本';
+
+  @override
+  String get providerFileTypeImage => '图片';
+
+  @override
+  String get providerFileTypeAudio => '音频';
+
+  @override
+  String get providerFileTypeVideo => '视频';
+
+  @override
+  String get providerFileTypeDocument => '文档';
+
+  @override
   String providerModelCount(int count) {
     return '$count 个模型';
   }
@@ -877,6 +899,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String imageErrorFailedToAttach(String error) {
     return '添加图片失败: $error';
   }
+
+  @override
+  String get chatMentionPopupTitle => '工作目录文件';
+
+  @override
+  String get chatMentionPopupHint => '继续输入可过滤;↑/↓ 选择;回车引用第一个匹配项。';
+
+  @override
+  String get chatMentionPopupEmpty => '工作目录中没有匹配的文件。';
+
+  @override
+  String get chatMentionPopupNoWorkingDir => '请先在聊天工具栏选择工作目录后使用 @ 引用。';
+
+  @override
+  String get chatMentionAttachedAsImage => '图片';
+
+  @override
+  String get chatMentionAttachedAsFile => '文件';
 
   @override
   String get messageThinking => '思考过程';

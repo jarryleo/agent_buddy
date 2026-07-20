@@ -18,6 +18,7 @@ import '../services/platform/calendar_service.dart'
 import '../services/platform/voice_service.dart';
 import '../theme/app_theme.dart';
 import 'image_preview.dart';
+import 'mention_lookup.dart';
 
 class ChatInput extends StatefulWidget {
   const ChatInput({
@@ -96,6 +97,26 @@ class _ChatInputState extends State<ChatInput> {
   bool _pickingFile = false;
   bool _toolbarOpen = false;
 
+  // @-mention state. [_mentionActive] flips on when the user's
+  // cursor sits right after an `@<query>` token that's anchored
+  // at start-of-input or preceded by whitespace; the popup is
+  // rendered above the input row and tracks the cursor live.
+  // [_mentionQuery] is the text the user typed after the `@`
+  // (empty string == list all files). [_mentionStart] is the
+  // absolute offset of the `@` itself so [_attachMention] can
+  // splice the resolved filename into the controller.
+  bool _mentionActive = false;
+  String _mentionQuery = '';
+  int _mentionStart = -1;
+  // Most recent list of candidate files for the popup, sorted
+  // best-match first. Empty when the working directory is unset
+  // or doesn't yield any matches.
+  List<_MentionCandidate> _mentionCandidates = const [];
+  // In-memory cache of the working directory listing, keyed by
+  // the working-directory path. Avoids re-scanning on every
+  // keystroke when the user is just narrowing their query.
+  final Map<String, List<_MentionCandidate>> _mentionScanCache = {};
+
   // Voice input state.
   bool _voiceListening = false;
   double _voiceLevel = 0.0;
@@ -167,6 +188,11 @@ class _ChatInputState extends State<ChatInput> {
   void _onTextChanged() {
     final has = _controller.text.trim().isNotEmpty;
     if (has != _hasText) setState(() => _hasText = has);
+    // Re-evaluate the @ mention trigger whenever the input
+    // changes. Cheap when the cursor isn't sitting after an
+    // `@`: the detector returns false immediately without
+    // touching the working-directory cache.
+    _refreshMentionState();
   }
 
   @override
@@ -190,6 +216,16 @@ class _ChatInputState extends State<ChatInput> {
   }
 
   void _send() {
+    // The Enter key routes here from [_InputField._onKey]. If the
+    // @-mention popup is open, Enter should attach the first
+    // matching file instead of sending the message — that matches
+    // the explicit "直接回车表示引用第一个匹配的文件" requirement
+    // and avoids surprising users who pressed Enter expecting
+    // "complete the mention", not "send the half-typed query".
+    if (_mentionActive && _mentionCandidates.isNotEmpty) {
+      _attachMention(_mentionCandidates.first);
+      return;
+    }
     final text = _controller.text.trim();
     if ((text.isEmpty && _imagePaths.isEmpty && _fileAttachments.isEmpty) ||
         !widget.enabled) {
@@ -216,6 +252,222 @@ class _ChatInputState extends State<ChatInput> {
       _toolbarOpen = open;
       if (open) _focusNode.unfocus();
     });
+  }
+
+  // ---- @ mention ---------------------------------------------------------
+  //
+  // UX summary: typing `@` in the input field opens a popup above
+  // the input listing the files in the current working directory.
+  // Subsequent characters narrow the list (substring / prefix /
+  // fuzzy match against the file basename — see
+  // [_MentionCandidate.score]). Pressing Enter attaches the top
+  // match (resolved into either the image list or the file
+  // attachment list, mirroring the existing `_pickFile` /
+  // `_pickImage` split). Clicking a row in the popup does the same
+  // for that specific row. The `@query` token in the input box is
+  // replaced by the resolved filename so the user can see what got
+  // attached.
+  //
+  // The popup auto-hides when:
+  //   * the user moves the cursor away from the `@<query>` token
+  //     (e.g. clicks elsewhere in the input);
+  //   * the user types a space, newline, or another `@` that
+  //     breaks the "anchored at start or whitespace" rule;
+  //   * the working directory changes / is unset;
+  //   * the popup's filtered candidate list becomes empty *and*
+  //     there are no working-directory files at all (we hide
+  //     instead of showing "no matches" — there's nothing for the
+  //     user to do in that state).
+
+  /// Re-evaluate whether the @-mention popup should be visible
+  /// and rebuild the candidate list. Called from
+  /// [_onTextChanged] on every keystroke. Cheap when no `@` is
+  /// active — the early-out skips the working-directory scan.
+  void _refreshMentionState() {
+    final text = _controller.text;
+    final caret = _controller.selection.baseOffset;
+    if (caret < 0) {
+      _deactivateMention();
+      return;
+    }
+    final hit = findMentionToken(text, caret);
+    if (hit == null) {
+      _deactivateMention();
+      return;
+    }
+    final query = text.substring(hit.atSign + 1, caret);
+    final workdir = widget.workingDirectory;
+    if (workdir == null || workdir.isEmpty) {
+      // Working directory not configured — surface the hint so
+      // the user understands why nothing is showing.
+      setState(() {
+        _mentionActive = true;
+        _mentionQuery = query;
+        _mentionStart = hit.atSign;
+        _mentionCandidates = const [];
+      });
+      return;
+    }
+    final candidates = _scanWorkingDirectory(workdir, query);
+    setState(() {
+      _mentionActive = true;
+      _mentionQuery = query;
+      _mentionStart = hit.atSign;
+      _mentionCandidates = candidates;
+    });
+  }
+
+  /// Splice the resolved file into the input box and the matching
+  /// attachment list. Mirrors the existing `_pickFile` /
+  /// `_pickImage` split:
+  ///   * image extensions → [_imagePaths] (rendered in the
+  ///     bubble + sent as `image_data` / `LlamaImageContent`).
+  ///   * everything else → [_fileAttachments] (sent as
+  ///     `file_data` or path-only depending on the model's
+  ///     supported-types config — see the cloud / local wire
+  ///     builders).
+  Future<void> _attachMention(_MentionCandidate candidate) async {
+    final path = candidate.path;
+    final name = candidate.name;
+    final l10n = AppLocalizations.of(context);
+    try {
+      if (candidate.isImage) {
+        setState(() => _imagePaths.add(path));
+      } else {
+        // Reuse the same path-import helper the paste flow uses.
+        // The single-element list is intentional — we want the
+        // error message for "file doesn't exist" to surface to
+        // the user without crashing the input.
+        final imported = await widget.fileAttachmentService.importPaths([path]);
+        if (!mounted) return;
+        if (imported.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(l10n.fileErrorFailedToAttach('file not found')),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
+        setState(() => _fileAttachments.add(imported.first));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.fileErrorFailedToAttach(e.toString())),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+    // Replace `@query` with the filename so the user can see
+    // what was just attached in plain text. Keep the caret right
+    // after the inserted name.
+    final text = _controller.text;
+    final caret = _controller.selection.baseOffset.clamp(0, text.length);
+    final atSign = _mentionStart;
+    if (atSign < 0 || atSign > caret) {
+      _deactivateMention();
+      return;
+    }
+    final newText = text.replaceRange(atSign, caret, name);
+    final newCaret = atSign + name.length;
+    _controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newCaret),
+    );
+    // Drop a trailing space so subsequent typing doesn't
+    // accidentally re-open the popup against the just-inserted
+    // filename. Two spaces if the user originally had a trailing
+    // one (so we don't visibly delete their existing space).
+    if (!_endsWithSpace(newText, newCaret)) {
+      _controller.value = TextEditingValue(
+        text: '$newText ',
+        selection: TextSelection.collapsed(offset: newCaret + 1),
+      );
+    }
+    _deactivateMention();
+  }
+
+  bool _endsWithSpace(String text, int offset) {
+    return offset > 0 && text[offset - 1] == ' ';
+  }
+
+  void _deactivateMention() {
+    if (!_mentionActive &&
+        _mentionQuery.isEmpty &&
+        _mentionStart == -1 &&
+        _mentionCandidates.isEmpty) {
+      return;
+    }
+    setState(() {
+      _mentionActive = false;
+      _mentionQuery = '';
+      _mentionStart = -1;
+      _mentionCandidates = const [];
+    });
+  }
+
+  /// Scan the working directory (cached per path) and return the
+  /// list of files matching [query], sorted best-match first.
+  ///
+  /// The scan only looks at top-level entries — we deliberately
+  /// don't recurse, so users can `@project/src/foo.dart` style
+  /// references only after they type enough of the path. The
+  /// matching score prefers:
+  ///   * exact basename match → 1.0
+  ///   * prefix match → 0.9
+  ///   * substring (case-insensitive) → 0.7
+  ///   * everything else → 0 (filtered out)
+  List<_MentionCandidate> _scanWorkingDirectory(String dir, String query) {
+    final all = _mentionScanCache.putIfAbsent(dir, () => _listDir(dir));
+    if (query.isEmpty) {
+      // No query — return alphabetical (case-insensitive).
+      final sorted = [...all]
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      return sorted;
+    }
+    final q = query.toLowerCase();
+    final scored = <_MentionCandidate>[];
+    for (final c in all) {
+      final score = matchScore(c.name.toLowerCase(), q);
+      if (score > 0) scored.add(c.copyWith(score: score));
+    }
+    scored.sort((a, b) {
+      final cmp = b.score.compareTo(a.score);
+      if (cmp != 0) return cmp;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+    return scored;
+  }
+
+  /// Top-level scan of [dir] → list of regular-file candidates.
+  /// Skips dotfiles, subdirectories, and symlinks (keeps the
+  /// popup predictable — `@` shouldn't drag in `node_modules/`
+  /// or `..`).
+  List<_MentionCandidate> _listDir(String dir) {
+    try {
+      final entity = Directory(dir);
+      if (!entity.existsSync()) return const [];
+      final out = <_MentionCandidate>[];
+      for (final child in entity.listSync(followLinks: false)) {
+        final name = p.basename(child.path);
+        if (name.startsWith('.')) continue;
+        if (child is! File) continue;
+        out.add(
+          _MentionCandidate(
+            name: name,
+            path: child.path,
+            isImage: _isImageFile(name),
+          ),
+        );
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
   }
 
   // ---- Voice input -------------------------------------------------------
@@ -1135,6 +1387,7 @@ class _ChatInputState extends State<ChatInput> {
           children: [
             if (hasAttachments) _buildThumbnails(l10n),
             if (_voiceListening) _buildVoiceBar(l10n),
+            if (_mentionActive) _buildMentionPopup(l10n),
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               mainAxisAlignment: MainAxisAlignment.center,
@@ -1472,6 +1725,131 @@ class _ChatInputState extends State<ChatInput> {
             );
           },
         ),
+      ),
+    );
+  }
+
+  /// Popup that lists the working-directory files when the user
+  /// types `@` in the input. Anchored above the input row; the
+  /// first row is keyboard-attachable via Enter (handled in
+  /// [_send]). The header shows the current filter query (or an
+  /// empty-state message when the working directory is unset).
+  Widget _buildMentionPopup(AppLocalizations l10n) {
+    final workdir = widget.workingDirectory;
+    final showEmpty =
+        workdir == null ||
+        workdir.isEmpty ||
+        (_mentionQuery.isNotEmpty && _mentionCandidates.isEmpty);
+    final showNoWorkingDir = workdir == null || workdir.isEmpty;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        elevation: 6,
+        borderRadius: BorderRadius.circular(12),
+        color: context.surface,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: context.appBorder),
+          ),
+          constraints: const BoxConstraints(maxHeight: 220),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.folder_open_outlined,
+                      size: 14,
+                      color: context.textSecondary,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        l10n.chatMentionPopupTitle,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: context.textSecondary,
+                          letterSpacing: 0.4,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (_mentionQuery.isNotEmpty)
+                      Text(
+                        _mentionQuery,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: context.textSecondary,
+                          fontFamily: 'monospace',
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                child: Text(
+                  l10n.chatMentionPopupHint,
+                  style: TextStyle(fontSize: 10, color: context.textSecondary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Divider(height: 1, thickness: 0.5, color: context.appBorder),
+              Flexible(
+                child: showNoWorkingDir
+                    ? _mentionHintRow(
+                        l10n.chatMentionPopupNoWorkingDir,
+                        Icons.info_outline,
+                      )
+                    : showEmpty
+                    ? _mentionHintRow(
+                        l10n.chatMentionPopupEmpty,
+                        Icons.search_off_outlined,
+                      )
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        padding: EdgeInsets.zero,
+                        itemCount: _mentionCandidates.length,
+                        itemBuilder: (context, index) {
+                          final c = _mentionCandidates[index];
+                          return _MentionCandidateRow(
+                            candidate: c,
+                            highlight: index == 0,
+                            onTap: () => _attachMention(c),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _mentionHintRow(String text, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: context.textSecondary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(fontSize: 12, color: context.textSecondary),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1827,6 +2205,113 @@ class _InputFieldState extends State<_InputField> {
 /// slides into view. A 2% baseline strip keeps the bar visible
 /// even at zero amplitude so the user knows the field is in
 /// "live" mode between phrases.
+
+/// One entry in the @-mention file popup. Carries the file's
+/// on-disk path, its basename (used both in the popup row and
+/// when splicing back into the input box), the pre-computed
+/// image flag (so [_MentionCandidateRow] can render the right
+/// icon), and the current match score for sort ordering.
+class _MentionCandidate {
+  const _MentionCandidate({
+    required this.name,
+    required this.path,
+    required this.isImage,
+    this.score = 0,
+  });
+
+  final String name;
+  final String path;
+  final bool isImage;
+  final double score;
+
+  _MentionCandidate copyWith({double? score}) => _MentionCandidate(
+    name: name,
+    path: path,
+    isImage: isImage,
+    score: score ?? this.score,
+  );
+}
+
+/// Single row in the @-mention popup. Renders the file's
+/// basename with an icon hinting at its category, plus a
+/// right-aligned affordance chip that says whether attaching it
+/// will land it in the image list or the file list. The first
+/// row gets a brand-color background so the user can see what
+/// Enter would attach.
+class _MentionCandidateRow extends StatelessWidget {
+  const _MentionCandidateRow({
+    required this.candidate,
+    required this.highlight,
+    required this.onTap,
+  });
+
+  final _MentionCandidate candidate;
+  final bool highlight;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final bg = highlight
+        ? AppTheme.primary.withValues(alpha: 0.08)
+        : Colors.transparent;
+    final fg = highlight ? AppTheme.primary : context.textPrimary;
+    final subtitleColor = highlight
+        ? AppTheme.primary.withValues(alpha: 0.7)
+        : context.textSecondary;
+    return Material(
+      color: bg,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Icon(
+                candidate.isImage
+                    ? Icons.image_outlined
+                    : Icons.insert_drive_file_outlined,
+                size: 16,
+                color: fg,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  candidate.name,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: fg,
+                    fontWeight: highlight ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: subtitleColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  candidate.isImage
+                      ? l10n.chatMentionAttachedAsImage
+                      : l10n.chatMentionAttachedAsFile,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: subtitleColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _AttachmentThumbnail extends StatelessWidget {
   const _AttachmentThumbnail({

@@ -8,6 +8,7 @@ import '../l10n/app_localizations.dart';
 import '../models/chat_session.dart';
 import '../models/download.dart';
 import '../models/file_attachment.dart';
+import '../models/file_type.dart';
 import '../models/local_provider.dart';
 import '../models/mcp_provider.dart';
 import '../models/message.dart';
@@ -1863,6 +1864,9 @@ class ChatProvider extends ChangeNotifier {
             orchestrator: _orchestrator,
             boundSessionId: _activeSession?.id,
             onBoundSessionId: (id) => setLocalSessionId(id?.toString()),
+            inlineFileTypes: useLocal
+                ? _effectiveLocalInlineFileTypes(localProvider)
+                : null,
           )
         : _api.streamChat(
             provider: provider!,
@@ -1875,6 +1879,7 @@ class ChatProvider extends ChangeNotifier {
             enableThinking: _settings.thinkingModeEnabled,
             onToolCall: (tc) => _onToolCall(context, tc, assistantId),
             orchestrator: _orchestrator,
+            inlineFileTypes: provider.effectiveSupportedFileTypes,
           );
 
     _streamSub = sub;
@@ -2263,6 +2268,35 @@ class ChatProvider extends ChangeNotifier {
   /// No-op if [sessionId] matches the current binding.
   void setLocalSessionId(String? sessionId) {
     _localSessionId = sessionId;
+  }
+
+  /// Derive the file categories the local model can accept inline.
+  ///
+  /// Local llama.cpp backends can't actually decode arbitrary
+  /// binaries (audio/video/PDFs) — only text (the decoder reads
+  /// files as text and prepends them to the prompt) and images
+  /// (when an mmproj projector is loaded and the engine reports
+  /// [LocalLlmService.supportsVision]). So:
+  ///
+  ///   * `text` is always inline-able — [FileAttachmentService]
+  ///     decodes the bytes into a UTF-8 string and we prepend the
+  ///     envelope + body to the prompt.
+  ///   * `image` is inline-able only when the loaded model has an
+  ///     mmproj projector (otherwise the engine would just drop
+  ///     the image part on the floor).
+  ///   * Everything else (audio / video / document) falls through
+  ///     to path-only — the model gets the path header so it can
+  ///     use the `file` tool to pull the bytes itself.
+  ///
+  /// This mirrors the cloud path's behavior without forcing the
+  /// user to flip per-type toggles for the local model — the
+  /// engine capabilities are the source of truth.
+  Set<AgentFileType> _effectiveLocalInlineFileTypes(LocalProvider? lp) {
+    final inline = <AgentFileType>{AgentFileType.text};
+    if (lp != null && _localLlm.supportsVision) {
+      inline.add(AgentFileType.image);
+    }
+    return Set.unmodifiable(inline);
   }
 
   // -------- Download affordances (called from the message bubble) --------

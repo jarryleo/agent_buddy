@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:uuid/uuid.dart';
 
-import '../models/file_attachment.dart';
+import '../models/file_type.dart';
 import '../models/local_provider.dart';
 import '../models/message.dart';
 import 'api_service.dart';
@@ -286,6 +286,14 @@ class LocalLlmService extends ChangeNotifier {
     Future<String> Function(Map<String, dynamic> toolCall)? onToolCall,
     ToolOrchestrator? orchestrator,
 
+    /// File categories the local model accepts inline (base64
+    /// image / decoded text body). Anything outside the set
+    /// becomes a path-only `<attached_file … />` reference;
+    /// the model can still pull the bytes via the `file` tool
+    /// using the path in the header. `null` = inline everything
+    /// (legacy behaviour, used by tests).
+    Set<AgentFileType>? inlineFileTypes,
+
     /// Identifier of the chat session this turn belongs to. The
     /// engine's KV cache is only useful across turns of the same
     /// session, so we use this to decide whether to reset+seed the
@@ -327,7 +335,7 @@ class LocalLlmService extends ChangeNotifier {
       final historyMessages = messages.length > 1
           ? messages.sublist(0, messages.length - 1)
           : <ChatRequestMessage>[];
-      _seedHistory(session, historyMessages);
+      _seedHistory(session, historyMessages, inlineFileTypes);
       _boundSessionId = boundSessionId;
       if (onBoundSessionId != null) onBoundSessionId(boundSessionId);
     } else {
@@ -341,7 +349,7 @@ class LocalLlmService extends ChangeNotifier {
     final availableToolNames = {for (final tool in llamaTools) tool.name};
     final fallbackEnabled = onToolCall != null && llamaTools.isNotEmpty;
 
-    final parts = _buildUserParts(messages);
+    final parts = _buildUserParts(messages, inlineFileTypes);
     if (parts.isEmpty) {
       yield StreamEvent.error('No user content to send');
       return;
@@ -627,7 +635,11 @@ class LocalLlmService extends ChangeNotifier {
     super.dispose();
   }
 
-  void _seedHistory(ChatSession session, List<ChatRequestMessage> messages) {
+  void _seedHistory(
+    ChatSession session,
+    List<ChatRequestMessage> messages,
+    Set<AgentFileType>? inlineFileTypes,
+  ) {
     for (final m in messages) {
       if (m.role == MessageRole.system) {
         session.addMessage(
@@ -643,7 +655,7 @@ class LocalLlmService extends ChangeNotifier {
           : LlamaChatRole.assistant;
       if (m.role == MessageRole.user &&
           (m.imagePaths.isNotEmpty || m.fileAttachments.isNotEmpty)) {
-        final parts = _buildContentParts(m);
+        final parts = _buildContentParts(m, inlineFileTypes);
         session.addMessage(
           LlamaChatMessage.withContent(role: role, content: parts),
         );
@@ -655,14 +667,17 @@ class LocalLlmService extends ChangeNotifier {
     }
   }
 
-  List<LlamaContentPart> _buildUserParts(List<ChatRequestMessage> messages) {
+  List<LlamaContentPart> _buildUserParts(
+    List<ChatRequestMessage> messages,
+    Set<AgentFileType>? inlineFileTypes,
+  ) {
     // We use the last user message as the new turn's content; the
     // history was already seeded above.
     for (var i = messages.length - 1; i >= 0; i--) {
       final m = messages[i];
       if (m.role != MessageRole.user) continue;
       if (m.imagePaths.isNotEmpty || m.fileAttachments.isNotEmpty) {
-        return _buildContentParts(m);
+        return _buildContentParts(m, inlineFileTypes);
       }
       return <LlamaContentPart>[LlamaTextContent(m.content)];
     }
@@ -670,22 +685,47 @@ class LocalLlmService extends ChangeNotifier {
   }
 
   @visibleForTesting
-  List<LlamaContentPart> buildContentPartsForTest(ChatRequestMessage message) =>
-      _buildContentParts(message);
+  List<LlamaContentPart> buildContentPartsForTest(
+    ChatRequestMessage message, [
+    Set<AgentFileType>? inlineFileTypes,
+  ]) => _buildContentParts(message, inlineFileTypes);
 
-  List<LlamaContentPart> _buildContentParts(ChatRequestMessage message) {
+  /// Build the multi-part content for a user message with images
+  /// and/or file attachments. The [inlineFileTypes] set mirrors the
+  /// cloud wire-builder's gate: when a file's category isn't in
+  /// the set, we still emit a path header so the model can use the
+  /// `file` tool to read it — but we don't inline the binary /
+  /// decoded text body. `null` means "inline everything" (legacy
+  /// behaviour).
+  ///
+  /// Text files are NEVER inlined, regardless of the configured
+  /// set — the model always gets the path header so it can pull
+  /// the file via the `file` tool. This matches the cloud wire
+  /// behaviour; the local engine has no separate text slot anyway,
+  /// so it would be the same header either way.
+  List<LlamaContentPart> _buildContentParts(
+    ChatRequestMessage message,
+    Set<AgentFileType>? inlineFileTypes,
+  ) {
     final text = StringBuffer(message.content);
     final fileImages = <String>[];
+    final inlineImages = _shouldInline(AgentFileType.image, inlineFileTypes);
     for (final file in message.fileAttachments) {
-      if (file.textContent != null) {
-        if (text.isNotEmpty) text.write('\n\n');
-        text
-          ..writeln(_textFileEnvelope(file))
-          ..writeln(file.textContent)
-          ..write('</attached_file>');
-      } else if (file.mimeType.startsWith('image/') && file.path.isNotEmpty) {
+      final category = categorizeFile(name: file.name, mimeType: file.mimeType);
+      // Text files are always path-only — see the doc above.
+      // Non-text files respect the inline gate.
+      final isText = file.textContent != null;
+      final inline = !isText && _shouldInline(category, inlineFileTypes);
+      if (inline &&
+          file.mimeType.startsWith('image/') &&
+          file.path.isNotEmpty) {
         fileImages.add(file.path);
       } else {
+        // Path-only: covers text files (always), non-text
+        // binaries when the category isn't in the set, and any
+        // unknown case. The local engine doesn't have a separate
+        // file_data slot, so even "inline" non-image binaries
+        // collapse to the same path header.
         if (text.isNotEmpty) text.write('\n\n');
         text.write(
           '[Attached file: ${file.name}, type=${file.mimeType}, path=${file.path}]',
@@ -694,20 +734,22 @@ class LocalLlmService extends ChangeNotifier {
     }
     return <LlamaContentPart>[
       if (text.isNotEmpty) LlamaTextContent(text.toString()),
-      for (final path in message.imagePaths) LlamaImageContent(path: path),
-      for (final path in fileImages) LlamaImageContent(path: path),
+      if (inlineImages)
+        for (final path in message.imagePaths) LlamaImageContent(path: path),
+      if (inlineImages)
+        for (final path in fileImages) LlamaImageContent(path: path),
     ];
   }
 
-  String _textFileEnvelope(PreparedFileAttachment file) {
-    final buf = StringBuffer()
-      ..write('<attached_file name="${file.name}"')
-      ..write(' type="${file.mimeType}"');
-    if (file.path.isNotEmpty) {
-      buf.write(' path="${file.path}"');
-    }
-    buf.write('>');
-    return buf.toString();
+  /// Mirror of [ApiService._shouldInline]. Duplicated here so the
+  /// local LLM service doesn't have to pull in the cloud wire
+  /// builder just to ask "should I inline this?". See the matching
+  /// comment in `api_service.dart` for the full rule table.
+  bool _shouldInline(AgentFileType? category, Set<AgentFileType>? inline) {
+    if (inline == null) return true;
+    final c = category;
+    if (c == null) return false;
+    return inline.contains(c);
   }
 
   List<Map<String, dynamic>> _lastToolCalls(
