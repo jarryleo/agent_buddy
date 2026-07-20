@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
-import '../providers/chat_provider.dart';
 import '../providers/settings_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/no_focus_icon_button.dart';
@@ -48,12 +47,7 @@ class SettingsPage extends StatelessWidget {
             return TabBarView(
               children: [
                 const GeneralTab(),
-                ProvidersTab(
-                  settings: settings,
-                  onChanged: () {
-                    context.read<ChatProvider>().clearMessages();
-                  },
-                ),
+                ProvidersTab(settings: settings),
                 RolesTab(settings: settings),
                 ToolsTab(settings: settings),
                 SkillsTab(settings: settings),

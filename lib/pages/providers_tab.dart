@@ -13,14 +13,9 @@ import 'builtin_model_download_page.dart';
 import 'settings_page.dart';
 
 class ProvidersTab extends StatelessWidget {
-  const ProvidersTab({
-    super.key,
-    required this.settings,
-    required this.onChanged,
-  });
+  const ProvidersTab({super.key, required this.settings});
 
   final SettingsProvider settings;
-  final VoidCallback onChanged;
 
   Future<void> _openAdd(BuildContext context) async {
     if (settings.useLocalModel) {
@@ -34,7 +29,6 @@ class ProvidersTab extends StatelessWidget {
         MaterialPageRoute(builder: (_) => AddProviderPage(settings: settings)),
       );
     }
-    onChanged();
   }
 
   Future<void> _openEditCloud(BuildContext context, ModelProvider p) async {
@@ -43,7 +37,6 @@ class ProvidersTab extends StatelessWidget {
         builder: (_) => AddProviderPage(settings: settings, existing: p),
       ),
     );
-    onChanged();
   }
 
   Future<void> _openEditLocal(BuildContext context, LocalProvider p) async {
@@ -52,7 +45,6 @@ class ProvidersTab extends StatelessWidget {
         builder: (_) => AddLocalProviderPage(settings: settings, existing: p),
       ),
     );
-    onChanged();
   }
 
   Future<void> _openBuiltinDownload(
@@ -69,7 +61,6 @@ class ProvidersTab extends StatelessWidget {
         ),
       ),
     );
-    onChanged();
   }
 
   Future<void> _testConnection(BuildContext context, ModelProvider p) async {
@@ -152,7 +143,6 @@ class ProvidersTab extends StatelessWidget {
                 ? _LocalList(
                     settings: settings,
                     l10n: l10n,
-                    onChanged: onChanged,
                     onEdit: (p) => _openEditLocal(context, p),
                     onOpenBuiltinDownload: (m, existing) =>
                         _openBuiltinDownload(context, m, existing),
@@ -160,7 +150,6 @@ class ProvidersTab extends StatelessWidget {
                 : _CloudList(
                     settings: settings,
                     l10n: l10n,
-                    onChanged: onChanged,
                     onEdit: (p) => _openEditCloud(context, p),
                     onTest: (p) => _testConnection(context, p),
                     onFetch: (p) => _fetchModels(context, p),
@@ -176,7 +165,6 @@ class _CloudList extends StatelessWidget {
   const _CloudList({
     required this.settings,
     required this.l10n,
-    required this.onChanged,
     required this.onEdit,
     required this.onTest,
     required this.onFetch,
@@ -184,7 +172,6 @@ class _CloudList extends StatelessWidget {
 
   final SettingsProvider settings;
   final AppLocalizations l10n;
-  final VoidCallback onChanged;
   final ValueChanged<ModelProvider> onEdit;
   final ValueChanged<ModelProvider> onTest;
   final ValueChanged<ModelProvider> onFetch;
@@ -233,7 +220,6 @@ class _CloudList extends StatelessWidget {
             );
             if (confirm == true) {
               await settings.deleteProvider(p.id);
-              onChanged();
             }
           },
         );
@@ -246,14 +232,12 @@ class _LocalList extends StatelessWidget {
   const _LocalList({
     required this.settings,
     required this.l10n,
-    required this.onChanged,
     required this.onEdit,
     required this.onOpenBuiltinDownload,
   });
 
   final SettingsProvider settings;
   final AppLocalizations l10n;
-  final VoidCallback onChanged;
   final ValueChanged<LocalProvider> onEdit;
   final void Function(BuiltinModel model, LocalProvider? existing)
   onOpenBuiltinDownload;
@@ -305,7 +289,6 @@ class _LocalList extends StatelessWidget {
               );
               if (confirm == true) {
                 await settings.deleteLocalProvider(providers[i].id);
-                onChanged();
               }
             },
           ),
@@ -798,7 +781,10 @@ class _ProviderCard extends StatelessWidget {
                       children: [
                         TextButton.icon(
                           onPressed: onSetActive,
-                          icon: const Icon(Icons.check_circle_outline, size: 16),
+                          icon: const Icon(
+                            Icons.check_circle_outline,
+                            size: 16,
+                          ),
                           label: Text(l10n.providerSetAsDefault),
                           style: TextButton.styleFrom(
                             padding: const EdgeInsets.symmetric(horizontal: 6),
