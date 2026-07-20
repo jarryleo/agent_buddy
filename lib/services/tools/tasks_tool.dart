@@ -11,6 +11,8 @@ class TasksTool extends ToolBase {
   @override
   String get description => '管理待办清单(增删改查/标记完成),数据存本地,所有平台可用。';
   @override
+  String get shortDescription => '本地任务/待办 CRUD(全平台)';
+  @override
   bool get isSupportedOnCurrentPlatform => true;
 
   @override

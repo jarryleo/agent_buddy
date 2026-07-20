@@ -107,11 +107,14 @@ String buildBaseSystemPrompt({
       '4. 回复简洁,别啰嗦。\n'
       '\n'
       '## 工具使用\n'
-      '- 每个工具的最终参数以 function schema 为准(列表里的 "parameters")。\n'
-      '- 最佳实践、推荐用法、坑点都在技能"工具使用提示"里。'
-      '第一次涉及某个工具、或结果不像预期时,先 load_skill(skill_name: "工具使用提示") 看一眼。\n'
+      '- 可用工具一览见下面的"可用工具"列表(只有 id + 一句话用途)。\n'
+      '- 想用某个工具时先 load_tool(tool_name="<id>") 加载完整 schema + 约束手册,'
+      '之后该工具就会出现在本轮的 function 列表里,可直接调用。\n'
+      '- 已经加载过的工具在同一会话内不需要重复加载,直接调用即可。\n'
       '- 工具调用失败返回的是软错误时(比如 cancelled / not_found / permission_denied),'
       '根据 message 给用户讲清楚,然后给个替代方案,不要直接放弃。\n'
+      '- 最佳实践、推荐用法、坑点统一放在技能"工具使用提示"里。'
+      '第一次涉及某个工具、或结果不像预期时,先 load_skill(skill_name: "工具使用提示") 看一眼。\n'
       '\n'
       '完整用法和并发模式见 load_skill(skill_name: "工具使用提示")。'
       '$workingDirectoryHint$mcpHint';
@@ -183,6 +186,25 @@ class ChatProvider extends ChangeNotifier {
   /// reuses the same engine session, which keeps llama.cpp's
   /// prompt-prefix reuse hot.
   String? _localSessionId;
+
+  /// Tools whose full JSON schema is currently exposed to the
+  /// model via the `tools=[...]` array. Populated lazily as the
+  /// model calls `load_tool(name)` during a session; cleared on
+  /// session switch / delete so the next session starts fresh.
+  ///
+  /// The set is intentionally bounded by the model's own choices
+  /// rather than auto-prefilled — most turns use 2-3 tools, so
+  /// the per-turn schema cost stays in the low-thousand-token
+  /// range even with 20+ tools configured. [load_tool] is always
+  /// implicitly loaded (it's emitted unconditionally by
+  /// [_buildToolsSchema]).
+  final Set<String> _loadedToolIds = <String>{};
+
+  /// Snapshot of [_loadedToolIds] for the message bubble's UI —
+  /// chips for "currently loaded" tools. Read-only; the set is
+  /// mutated in place during [loadTool] and copied here at the
+  /// end of each turn.
+  Set<String> get loadedToolIds => Set.unmodifiable(_loadedToolIds);
 
   /// Pending `ask_user` tool calls. When the model invokes ask_user
   /// we drop a [Completer] here keyed by the tool-call id; the
@@ -376,6 +398,7 @@ class ChatProvider extends ChangeNotifier {
   Future<void> createNewSession() async {
     final session = _createBlankSessionInternal();
     setLocalSessionId(null);
+    _loadedToolIds.clear();
     await _storage.sessions.save(session);
     await _storage.setActiveSessionId(session.id);
     refreshSessionList();
@@ -392,6 +415,7 @@ class ChatProvider extends ChangeNotifier {
       messages: const [],
     );
     _setActiveSession(session);
+    _loadedToolIds.clear();
     return session;
   }
 
@@ -406,6 +430,9 @@ class ChatProvider extends ChangeNotifier {
     // Force the local-llm engine to reset+seed on the next turn of
     // the new session; the existing ChatSession binding is stale.
     setLocalSessionId(null);
+    // Tool schemas don't follow session ids — model would have to
+    // re-load them anyway on the new conversation's first turn.
+    _loadedToolIds.clear();
     await _storage.setActiveSessionId(id);
     notifyListeners();
   }
@@ -460,6 +487,7 @@ class ChatProvider extends ChangeNotifier {
       if (!c.isCompleted) c.completeError(ToolException('chat cleared'));
     }
     _pendingAskUser.clear();
+    _loadedToolIds.clear();
     final cleared = s.copyWith(messages: const [], updatedAt: DateTime.now());
     _setActiveSession(cleared);
     await _storage.sessions.save(cleared);
@@ -513,8 +541,26 @@ class ChatProvider extends ChangeNotifier {
       );
     }
 
+    // Always-on tool index: one line per active tool. The model
+    // learns what exists without paying for the full schema on
+    // every turn. Built only when tools are enabled — otherwise
+    // the index is meaningless.
+    String? toolIndexPrompt;
+    if (_settings.toolsEnabled) {
+      toolIndexPrompt = _buildToolIndex();
+      // Also list MCP servers (one line each) so the model knows
+      // the per-server namespace exists; concrete tool names are
+      // discoverable via load_tool.
+      for (final server in _settings.mcpProviders.where((m) => m.enabled)) {
+        final name = server.name;
+        toolIndexPrompt =
+            '$toolIndexPrompt\n- MCP server `$name`: load_tool("mcp__${name}__<tool>") 按需加载';
+      }
+    }
+
     return [
       if (baseSystem != null && baseSystem.isNotEmpty) baseSystem,
+      if (toolIndexPrompt != null && toolIndexPrompt.isNotEmpty) toolIndexPrompt,
       if (thinkingPrompt.isNotEmpty) thinkingPrompt,
       if (rolePrompt != null && rolePrompt.isNotEmpty) rolePrompt,
       if (skillsPrompt != null && skillsPrompt.isNotEmpty) skillsPrompt,
@@ -522,13 +568,39 @@ class ChatProvider extends ChangeNotifier {
   }
 
   Future<List<Map<String, dynamic>>> _buildToolsSchema() async {
-    final tools = _settings.activeTools;
     final list = <Map<String, dynamic>>[];
-    for (final t in tools) {
+    final activeTools = _settings.activeTools;
+
+    // 1. load_tool is the always-on entrypoint — emit it first so the
+    //    model sees it even when nothing else is loaded yet. Its
+    //    `tool_name` enum is rebuilt every turn from the active
+    //    settings so disabled / unsupported tools never appear.
+    final loadTool = ToolRegistry.byId('load_tool');
+    if (loadTool != null) {
+      final lt = loadTool as dynamic;
+      try {
+        lt.allowedToolIds = activeTools
+            .map((t) => t.id)
+            .where((id) => id != 'load_tool')
+            .toList();
+      } catch (_) {
+        // Defensive: if a future refactor breaks the cast, skip the
+        // enum hint rather than crash the whole schema build.
+      }
+      final s = loadTool.buildSchema();
+      if (s.isNotEmpty) list.add(s);
+    }
+
+    // 2. Emit full JSON schemas ONLY for tools the model has already
+    //    loaded in this session via load_tool(name). Untouched tools
+    //    stay in the system-prompt "tool index" only — the model
+    //    learns about them but their full parameters aren't sent.
+    for (final t in activeTools) {
+      if (!_loadedToolIds.contains(t.id)) continue;
       final tool = ToolRegistry.byId(t.id);
       if (tool == null || !tool.isSupportedOnCurrentPlatform) continue;
 
-      // Skip the old call_mcp tool — MCP tools are now exposed via
+      // Skip the old call_mcp tool — MCP tools are exposed via
       // individual dynamically-generated schemas below.
       if (tool.id == 'call_mcp') continue;
 
@@ -536,7 +608,10 @@ class ChatProvider extends ChangeNotifier {
       if (schema.isNotEmpty) list.add(schema);
     }
     // auto-include load_skill when there are active skills (skip if
-    // already present to avoid duplicate function names).
+    // already present to avoid duplicate function names). load_skill
+    // stays always-on — the system prompt already advertises skills
+    // by name and short description, so the model can discover them
+    // without first loading a schema.
     if (_settings.activeSkills.isNotEmpty &&
         !list.any((s) => s['function']?['name'] == 'load_skill')) {
       final ls = ToolRegistry.byId('load_skill');
@@ -545,9 +620,14 @@ class ChatProvider extends ChangeNotifier {
         if (schema.isNotEmpty) list.add(schema);
       }
     }
-    // Dynamically add MCP tools from enabled servers. Each MCP tool
-    // becomes an individual function schema so the model sees the
-    // exact tool name, description, and parameter schema.
+    // 3. MCP tools — each one stays behind its own load_tool entry
+    //    until the model unlocks it. We only build the per-server
+    //    tool list on demand (lazy), but the system-prompt tool
+    //    index lists every enabled MCP server so the model knows
+    //    what to load. [_onMcpToolCall] still routes anything
+    //    prefixed `mcp__` regardless of loaded state, so the model
+    //    can also use MCP tools without a separate load step if it
+    //    guesses the name from the index.
     final mcpServers = _settings.mcpProviders.where((m) => m.enabled).toList();
     if (mcpServers.isNotEmpty) {
       for (final server in mcpServers) {
@@ -555,6 +635,7 @@ class ChatProvider extends ChangeNotifier {
           final mcpTools = await _tools.mcp.getServerTools(server);
           for (final mt in mcpTools) {
             final schemaName = 'mcp__${server.name}__${mt.name}';
+            if (!_loadedToolIds.contains(schemaName)) continue;
             list.add({
               'type': 'function',
               'function': {
@@ -577,6 +658,29 @@ class ChatProvider extends ChangeNotifier {
       }
     }
     return list;
+  }
+
+  /// Builds the always-on "tool index" markdown block for the
+  /// system prompt. One line per active tool: `id: short purpose`.
+  /// Lives in the system prompt rather than the `tools=[...]`
+  /// array so the model can see what exists without paying the
+  /// full-schema token cost up front.
+  String _buildToolIndex() {
+    final sb = StringBuffer()..writeln('## 可用工具(按需 load_tool)');
+    final active = _settings.activeTools;
+    for (final t in active) {
+      if (t.id == 'load_tool') continue;
+      final tool = ToolRegistry.byId(t.id);
+      if (tool == null || !tool.isSupportedOnCurrentPlatform) continue;
+      final loaded = _loadedToolIds.contains(t.id);
+      final marker = loaded ? '✓' : '·';
+      sb.writeln('- `$marker ${tool.id}`: ${tool.shortDescription}');
+    }
+    sb.writeln();
+    sb.writeln('用法: `load_tool(tool_name="fetch_web")` → 返回该工具的精简手册,'
+        '之后即可在本会话内直接调用,schema 会进入 tools 数组。');
+    sb.writeln('当前已加载: ${_loadedToolIds.isEmpty ? "无" : _loadedToolIds.toList().join(", ")}');
+    return sb.toString().trim();
   }
 
   // -------- Mutators (operate on the active session) --------
@@ -925,6 +1029,8 @@ class ChatProvider extends ChangeNotifier {
         return await _runDownload(context, toolCall, assistantId, args);
       case 'load_skill':
         return await _loadSkill(args);
+      case 'load_tool':
+        return await _loadTool(args);
       case 'subagent':
         return await _onSubAgentCall(context, toolCall, assistantId, args);
       case 'edit_image':
@@ -1169,6 +1275,127 @@ class ChatProvider extends ChangeNotifier {
       _subAgentNotifyTimer = null;
       if (!_disposed) notifyListeners();
     });
+  }
+
+  /// Handles a `load_tool(name)` call. Looks up the tool in
+  /// [ToolRegistry] (or the live MCP server list for
+  /// `mcp__<server>__<name>` ids), marks it as loaded so the
+  /// next [_buildToolsSchema] call includes its full schema in
+  /// `tools=[...]`, and returns the tool's
+  /// [ToolBase.compactSchemaForModel] markdown cheat-sheet.
+  ///
+  /// Loading is idempotent — calling `load_tool("fetch_web")`
+  /// twice in a row does not change the loaded set, the second
+  /// call just returns the same manual page. An unknown /
+  /// unsupported / disabled name raises [ToolException] so the
+  /// model can self-correct.
+  Future<String> _loadTool(Map<String, dynamic> args) async {
+    final raw = (args['tool_name'] as String? ?? '').trim();
+    if (raw.isEmpty) {
+      throw ToolException('请指定 tool_name');
+    }
+
+    // Built-in tool path.
+    final builtin = ToolRegistry.byId(raw);
+    if (builtin != null) {
+      if (!builtin.isSupportedOnCurrentPlatform) {
+        throw ToolException('工具 "$raw" 在当前平台不可用');
+      }
+      // Disabled in settings? SettingsProvider.activeTools is the
+      // source of truth for what the user has opted into.
+      final activeIds = _settings.activeTools.map((t) => t.id).toSet();
+      if (!activeIds.contains(raw)) {
+        throw ToolException('工具 "$raw" 未启用');
+      }
+      final alreadyLoaded = !_loadedToolIds.add(raw);
+      final cheat = builtin.compactSchemaForModel;
+      final sb = StringBuffer()
+        ..writeln('## ${builtin.id}')
+        ..writeln(builtin.shortDescription)
+        ..writeln();
+      if (cheat.isNotEmpty) {
+        sb
+          ..writeln('### 详细 schema')
+          ..writeln(cheat);
+      }
+      sb
+        ..writeln()
+        ..writeln(alreadyLoaded
+            ? '_(该工具此前已加载,可直接调用)_'
+            : '_(已加入 tools 数组,本会话内可直接调用)_');
+      notifyListeners();
+      return sb.toString().trim();
+    }
+
+    // MCP tool path: mcp__<server>__<name>. We resolve lazily so the
+    // user's MCP servers stay cold until the model actually wants
+    // one. If the server is disabled or the tool doesn't exist we
+    // bubble a soft error.
+    if (raw.startsWith('mcp__')) {
+      final parts = raw.split('__');
+      if (parts.length < 3 || parts[1].isEmpty || parts[2].isEmpty) {
+        throw ToolException('MCP 工具名格式应为 mcp__<server>__<tool>: $raw');
+      }
+      final serverName = parts[1];
+      final toolName = parts.sublist(2).join('__');
+      final server = _settings.mcpProviders
+          .where((m) => m.enabled && m.name == serverName)
+          .firstOrNull;
+      if (server == null) {
+        throw ToolException('MCP 服务器 "$serverName" 未启用');
+      }
+      List<McpToolDef> mcpTools;
+      try {
+        mcpTools = await _tools.mcp.getServerTools(server);
+      } catch (e) {
+        throw ToolException('无法连接 MCP 服务器 "$serverName": $e');
+      }
+      final match = mcpTools
+          .where((t) => t.name == toolName)
+          .firstOrNull;
+      if (match == null) {
+        final names = mcpTools.map((t) => t.name).join(', ');
+        throw ToolException(
+            'MCP 服务器 "$serverName" 上找不到工具 "$toolName"。可用: $names');
+      }
+      final alreadyLoaded = !_loadedToolIds.add(raw);
+      final sb = StringBuffer()
+        ..writeln('## $raw')
+        ..writeln(match.description)
+        ..writeln()
+        ..writeln('### 详细 schema')
+        ..writeln(jsonEncode(match.inputSchema.isNotEmpty
+            ? match.inputSchema
+            : {'type': 'object', 'properties': <String, dynamic>{}}))
+        ..writeln()
+        ..writeln(alreadyLoaded
+            ? '_(该 MCP 工具此前已加载,可直接调用)_'
+            : '_(已加入 tools 数组,本会话内可直接调用)_');
+      notifyListeners();
+      return sb.toString().trim();
+    }
+
+    throw ToolException('未找到工具 "$raw"。可用工具见系统提示的"工具索引"。');
+  }
+
+  /// Pure helper that decides whether a tool id is one the model
+  /// is allowed to load right now (active in settings AND
+  /// supported on the current platform). Exposed for tests so the
+  /// load_tool enum hint and the runtime resolver stay in sync.
+  @visibleForTesting
+  bool canLoadTool(String toolId) {
+    if (toolId.isEmpty || toolId == 'load_tool') return false;
+    final activeIds = _settings.activeTools.map((t) => t.id).toSet();
+    if (toolId.startsWith('mcp__')) {
+      final parts = toolId.split('__');
+      if (parts.length < 3) return false;
+      final serverName = parts[1];
+      return _settings.mcpProviders
+          .any((m) => m.enabled && m.name == serverName);
+    }
+    if (!activeIds.contains(toolId)) return false;
+    final tool = ToolRegistry.byId(toolId);
+    return tool != null && tool.isSupportedOnCurrentPlatform;
   }
 
   Future<String> _loadSkill(Map<String, dynamic> args) async {

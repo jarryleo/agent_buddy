@@ -9,6 +9,8 @@ class AskUserTool extends ToolBase {
   @override
   String get description => '向用户提问,用户回答后把结果给你。需要用户确认或选择时用。';
   @override
+  String get shortDescription => '向用户提问(选项式)';
+  @override
   bool get isSupportedOnCurrentPlatform => true;
 
   @override

@@ -38,7 +38,35 @@ class GoogleSheetTool extends ToolBase {
   bool get isEnabledByDefault => false;
 
   @override
+  String get shortDescription => '读写用户的 Google Sheet(桌面端)';
+
+  @override
   bool get isSupportedOnCurrentPlatform => isDesktop();
+
+  @override
+  String get compactSchemaForModel => '''
+参数:
+- action (string, 必填): list_tabs | read | update | append | clear | create_tab | delete_tab | format
+- tab (string, 可选): 覆盖默认表,不带 ! 也行;range 无 ! 且省略 tab 时走默认表
+- range (string, 看 action): A1 表示法 (A1 / A1:D10 / 5:5 / B:B / Sheet1!A1:D10)
+- values (any[][], update/append 必填): 二维数组,按行填
+- title (string, create_tab 必填): 新表名
+- format 字段 (format 用): bold / italic / strikethrough / underline / font_size (int) / text_color (#RRGGBB) / background_color (#RRGGBB) / number_format_type (NUMBER|PERCENT|CURRENCY|DATE|TIME|DATE_TIME|SCIENTIFIC|TEXT) / number_format_pattern
+
+返回:
+- list_tabs: {action, spreadsheet_id, default_tab, count, tabs:[]}
+- read: {action, range, rows, cols, values:2D}
+- update/append: {action, updated_range, updated_rows, updated_columns, updated_cells}
+- clear: {action, range, cleared:true}
+- create_tab: {action, tab, sheet_id, index}
+- delete_tab: {action, tab, sheet_id, deleted:true}
+- format: {action, range, applied_fields:[]}
+
+约束:
+- spreadsheet_id 隐式从 settings 读,模型不传
+- 401 → "Google 授权已过期,请重新测试连接"
+- valueInputOption=USER_ENTERED(=A1+1 会算成公式)
+''';
 
   @override
   Map<String, dynamic> buildSchema() {

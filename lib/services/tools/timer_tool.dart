@@ -22,7 +22,28 @@ class TimerTool extends ToolBase {
   @override
   String get description => '在指定时间后回调自己(可以同时触发系统通知)。可对计时任务进行增删改查。仅在程序运行时有效。';
   @override
+  String get shortDescription => '定时回调自己(仅运行时有效)';
+  @override
   bool get isSupportedOnCurrentPlatform => true;
+
+  @override
+  String get compactSchemaForModel => '''
+参数:
+- action (string, 必填): create | list | update | cancel | delete | get
+- create / update: label, delay_seconds (或 fire_at_ms 二选一), prompt (回调时的 user 消息内容), action_hint
+- list: include_terminal (bool, 默认 false);max
+- get / cancel / delete: id
+- update 字段可单独传
+
+返回:
+- create: {action, task:{id, label, fire_at_ms, status:pending}}
+- list: {action, count, tasks:[...]}
+- cancel: {action, id, cancelled:true}
+
+约束:
+- **仅在程序运行时有效**,app 退出/被杀则丢失
+- 触发时会自动调 notification.show,系统提示已说明
+''';
 
   @override
   Map<String, dynamic> buildSchema() {

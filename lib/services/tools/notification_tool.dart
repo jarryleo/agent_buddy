@@ -25,6 +25,8 @@ class NotificationTool extends ToolBase {
   @override
   String get description => '向用户发送本地通知。手机用系统通知,电脑/Web 用应用内右下角弹窗。仅在程序运行时有效。';
   @override
+  String get shortDescription => '发送本地通知(系统/应用内弹窗)';
+  @override
   bool get isSupportedOnCurrentPlatform => true;
 
   @override

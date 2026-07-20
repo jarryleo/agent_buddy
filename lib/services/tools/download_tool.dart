@@ -11,6 +11,8 @@ class DownloadTool extends ToolBase {
       '从网址下载文件到临时目录,用户得在界面上点"保存"才能存到磁盘。'
       '一次下载一个文件,多个文件就连续调用。手机和电脑可用,Web 不行。';
   @override
+  String get shortDescription => '下载 URL 文件到临时目录(用户手动保存)';
+  @override
   bool get isSupportedOnCurrentPlatform => notWeb();
 
   @override

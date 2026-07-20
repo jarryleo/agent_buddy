@@ -17,6 +17,8 @@ class LocationTool extends ToolBase {
   @override
   String get description => '获取当前位置(经纬度+城市+时区)。手机用 GPS(需授权),电脑/Web 靠 IP。';
   @override
+  String get shortDescription => '获取当前位置(GPS 或 IP)';
+  @override
   bool get isSupportedOnCurrentPlatform => true;
 
   @override

@@ -59,7 +59,34 @@ class SubAgentTool extends ToolBase {
       'google_sheet(写) / mcp__* 等需要用户交互或改用户数据的工具。';
 
   @override
+  String get shortDescription =>
+      '把独立调研任务交给子 agent,只拿回压缩报告';
+
+  @override
   bool get isSupportedOnCurrentPlatform => true;
+
+  @override
+  String get compactSchemaForModel => '''
+参数:
+- action (string, 必填): delegate | list | get | cancel
+- delegate 三件套:
+  - task (string): 要子 agent 完成的调研任务,**必须与主对话上下文无关**
+  - want (string): 你想要的最终报告形状(越具体越好)
+  - context (string, 可选): 主对话里抽出的关键事实,别把整个对话塞进去
+- id (string): get / cancel 用
+- include_terminal (bool, 默认 true): list 时是否包含已结束任务
+- max (int, 默认 20): list 最多返回条数
+
+子 agent 工具集(只读):
+- 可用: fetch_web / search / current_time / location / memory / run_command
+- 不可用: ask_user / notification / timer / download / file(写) / google_sheet(写) / mcp__*
+
+返回:
+- delegate: {action, id, status, report, tool_call_count, duration_ms}
+- list: {action, tasks:[{id,status,summary,duration_ms,created_at}]}
+- get: {action, id, status, report, tool_calls, error?}
+- cancel: {action, id, cancelled:true}
+''';
 
   @override
   Map<String, dynamic> buildSchema() {

@@ -12,7 +12,28 @@ class MemoryTool extends ToolBase {
   String get description =>
       '管理长期记忆。写入时多给 tags 关键词;查找时用 keywords[] 给多个相关词,命中一个就返回。';
   @override
+  String get shortDescription =>
+      '长期记忆(写入带 tags,搜索用 keywords[])';
+  @override
   bool get isSupportedOnCurrentPlatform => true;
+
+  @override
+  String get compactSchemaForModel => '''
+参数:
+- action (string, 必填): list | search | get | create | update | delete | delete_batch
+- list: max (int, 默认 20)
+- search: keywords (string[], 首选) 或 keyword (string);tags (string[]);max
+- get / update / delete: id (string)
+- create: content (string);tags (string[], 推荐 3~6 个)
+- update: id;content?;tags?(不传则保留)
+- delete_batch: ids (string[], 非空)
+
+返回: {action, items:[...] | item | ok | deleted_count}
+
+约束:
+- search 用 OR 语义: keywords[] 任一命中(content 或 tags)即返回
+- source 默认 "ai"(create),UI 写入的才是 "user"
+''';
 
   @override
   Map<String, dynamic> buildSchema() {

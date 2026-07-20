@@ -38,6 +38,9 @@ class EditImageTool extends ToolBase {
       '`image_path` 必须是当前对话中已上传的图片文件路径。';
 
   @override
+  String get shortDescription =>
+      '编辑图片(压缩/裁剪/旋转/转格式)';
+  @override
   bool get isSupportedOnCurrentPlatform => notWeb();
 
   @override

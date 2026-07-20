@@ -11,6 +11,8 @@ class CurrentTimeTool extends ToolBase {
   @override
   String get description => '获取当前日期和时间,返回本地时间、ISO 格式和 Unix 时间戳。';
   @override
+  String get shortDescription => '获取当前日期/时间';
+  @override
   bool get isSupportedOnCurrentPlatform => true;
 
   @override

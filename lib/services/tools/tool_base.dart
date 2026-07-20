@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart'
@@ -40,6 +41,26 @@ abstract class ToolBase {
   /// tool's function description. **Not** the user-facing copy in
   /// the settings list (that's [userDescriptionKey] → l10n).
   String get description;
+
+  /// One-line summary used in the always-on "tool index" block of
+  /// the system prompt (see `ChatProvider._buildToolIndex`). Keep
+  /// ≤ 30 characters so the index stays under ~200 tokens for the
+  /// whole toolset. Defaults to the first line of [description].
+  String get shortDescription => description.split('\n').first.trim();
+
+  /// Compact markdown cheat-sheet returned by the `load_tool`
+  /// meta-tool when the model asks to unlock this tool's full
+  /// schema. The full JSON schema is reserved for the
+  /// `tools=[...]` array of the actual request; this text is the
+  /// model-readable "manual page" — action enum, parameter shape,
+  /// important constraints — written by hand per tool so it can
+  /// be 5–10× smaller than the JSON Schema while staying
+  /// unambiguous. Defaults to a JSON dump of [buildSchema] for
+  /// tools that haven't bothered to override.
+  String get compactSchemaForModel {
+    final s = buildSchema();
+    return s.isEmpty ? '' : _prettyJson(s);
+  }
 
   /// ARB key for the user-facing one-liner shown in the settings
   /// Tools tab. The default derives `toolDesc<PascalId>` from
@@ -143,4 +164,30 @@ bool isDesktopForRuntime() {
 bool isMobileForRuntime() {
   if (_forcedIsMobile != null) return _forcedIsMobile!;
   return isMobile();
+}
+
+// Compact two-space indented JSON for tool cheat-sheets. Avoids
+// the dart:convert import cycle in this header file by inlining
+// the recursive walker; the structure we emit (OpenAI function
+// schemas) has no cycles so a depth-first encoder is enough.
+String _prettyJson(Object? value, [int depth = 0]) {
+  final indent = '  ' * depth;
+  final next = '  ' * (depth + 1);
+  if (value == null) return 'null';
+  if (value is bool) return value ? 'true' : 'false';
+  if (value is num) return value.toString();
+  if (value is String) return jsonEncode(value);
+  if (value is List) {
+    if (value.isEmpty) return '[]';
+    final items = value.map((e) => '$next${_prettyJson(e, depth + 1)}').join(',\n');
+    return '[\n$items\n$indent]';
+  }
+  if (value is Map) {
+    if (value.isEmpty) return '{}';
+    final entries = value.entries
+        .map((e) => '$next${jsonEncode(e.key.toString())}: ${_prettyJson(e.value, depth + 1)}')
+        .join(',\n');
+    return '{\n$entries\n$indent}';
+  }
+  return jsonEncode(value.toString());
 }

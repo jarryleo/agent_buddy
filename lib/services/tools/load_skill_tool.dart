@@ -9,6 +9,8 @@ class LoadSkillTool extends ToolBase {
   @override
   String get description => '获取某个技能的完整内容。需要用到某个技能的具体指令时调用此工具获取完整内容';
   @override
+  String get shortDescription => '按需加载技能完整内容';
+  @override
   bool get isSupportedOnCurrentPlatform => true;
 
   @override

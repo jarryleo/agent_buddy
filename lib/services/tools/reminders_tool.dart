@@ -11,6 +11,8 @@ class RemindersTool extends ToolBase {
   @override
   String get description => '管理提醒和待办(iOS 用 Reminders,Android 用日历)。需要权限。仅手机可用。';
   @override
+  String get shortDescription => '手机 Reminders/待办 CRUD';
+  @override
   bool get isSupportedOnCurrentPlatform => isMobile();
 
   // On Android the tool needs the user to pick a "todo" calendar

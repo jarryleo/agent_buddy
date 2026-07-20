@@ -15,6 +15,8 @@ class GetEnvironmentTool extends ToolBase {
   @override
   String get description => '查看本机系统信息(系统类型、架构、用户名等)。执行命令前先看看环境。仅桌面端可用。';
   @override
+  String get shortDescription => '查看系统/平台信息(仅桌面端)';
+  @override
   bool get isSupportedOnCurrentPlatform => isDesktop();
 
   @override

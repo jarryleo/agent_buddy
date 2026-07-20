@@ -21,7 +21,29 @@ class FetchWebTool extends ToolBase {
       '抓取网页。填入 link_text 会直接返回匹配的链接 URL,不返回页面内容——'
       '你需要再调一次 fetch_web 来抓那个链接的页面。多级深入是正常操作,别只看首页。';
   @override
+  String get shortDescription => '抓取网页正文(支持按链接文字深入)';
+  @override
   bool get isSupportedOnCurrentPlatform => true;
+
+  @override
+  String get compactSchemaForModel => '''
+参数:
+- url (string, 必填): 目标网址,带 http:// 或 https://
+- link_text (string, 可选): 页面上看到的链接文字;返回匹配的 URL,**不返回页面内容**,需再调一次 fetch_web
+- include_links (bool, 可选, 默认 false): 返回页面上全部链接(最多 50 条);仅当 link_text 不够用时用
+- max_length (int, 可选, 默认 8000): 截断长度(字符)
+
+返回:
+- 默认: {url, title, text, link_count}
+- 带 link_text 但命中: {url, link_url, link_text_matched, note}
+- 带 link_text 但没命中: {url, text, link_count, link_error}
+- include_links=true: 额外带 links: [{text,url}],上限 50
+
+约束:
+- 同一 URL + max_length 会本地缓存(16 条)
+- 4xx/5xx/超时自动重试 3 次,指数退避
+- 仅 http/https scheme,空响应抛 empty page content
+''';
 
   @override
   Map<String, dynamic> buildSchema() {

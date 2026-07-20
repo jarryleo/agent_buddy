@@ -64,6 +64,8 @@ class RunCommandTool extends ToolBase {
   @override
   String get description => '在电脑上执行命令,返回输出结果和退出码。仅 Windows / macOS / Linux 可用。';
   @override
+  String get shortDescription => '执行 shell 命令(仅桌面端)';
+  @override
   bool get isSupportedOnCurrentPlatform => isDesktop();
 
   @override

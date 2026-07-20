@@ -67,8 +67,31 @@ class SearchTool extends ToolBase {
   }
 
   @override
+  String get shortDescription =>
+      '按正则搜目录/文件,返回匹配 (file,line,col,text)';
+
+  @override
   bool get isSupportedOnCurrentPlatform =>
       isDesktopForRuntime() || isMobileForRuntime();
+
+  @override
+  String get compactSchemaForModel => '''
+参数:
+- pattern (string, 必填): ECMAScript 正则(不需要 // 包裹)
+- path (string, 可选): 起始目录;desktop 可绝对/相对;mobile 用 working:// 或 picker://;空=工作目录
+- files (string[], 可选): 直接列文件路径,会覆盖 path
+- case_sensitive (bool, 默认 false)
+- include_globs / exclude_globs (string[], 可选)
+- max_results (int, 默认 200): 命中上限,达上限立即停
+- max_files (int, 默认 5000): 扫描文件数上限
+- max_file_size_mb (int, 默认 8): 单文件跳过阈值
+
+返回: {matches:[{file,line,column,text}], total, scanned_files, skipped_files, truncated}
+
+约束:
+- 自动跳过 .git / node_modules / build / dist / Pods / target / 二进制
+- mobile 端 picker:// 单文件直接走 FileService,无工作目录时报错
+''';
 
   @override
   Map<String, dynamic> buildSchema() {

@@ -11,6 +11,8 @@ class NotesTool extends ToolBase {
   @override
   String get description => '管理笔记(增删改查),数据存本地,所有平台可用。';
   @override
+  String get shortDescription => '本地笔记 CRUD(全平台)';
+  @override
   bool get isSupportedOnCurrentPlatform => true;
 
   @override

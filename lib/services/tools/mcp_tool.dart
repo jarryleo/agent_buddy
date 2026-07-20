@@ -20,6 +20,8 @@ class McpTool extends ToolBase {
       '当前可用服务器: ${_availableServers()}';
 
   @override
+  String get shortDescription => '调用 MCP 服务器上的工具(legacy)';
+  @override
   bool get isSupportedOnCurrentPlatform => true;
 
   @override

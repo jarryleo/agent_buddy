@@ -11,6 +11,8 @@ class CalendarTool extends ToolBase {
   @override
   String get description => '管理手机日历(增删改查)。需要日历权限。仅 Android / iOS 可用。';
   @override
+  String get shortDescription => '手机日历 CRUD(需日历权限)';
+  @override
   bool get isSupportedOnCurrentPlatform => isMobile();
 
   @override

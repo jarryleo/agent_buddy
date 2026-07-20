@@ -53,6 +53,64 @@ class FileTool extends ToolBase {
   }
 
   @override
+  String get shortDescription => '文件读写改列删(改代码用 action=edit)';
+
+  @override
+  String get compactSchemaForModel {
+    if (!isSupportedOnCurrentPlatform) return '';
+    final mobile = isMobileForRuntime();
+    final actions = mobile
+        ? '''
+- pick {mime_type?, read_only?}: 弹系统选择器;返回 {ok, picker_id, name, mime_type, size_bytes, encoding}。需用户操作,awaitUserAction=true
+- release {picker_id}: 释放 picker_id 的 URI 授权
+- read {path, max_bytes?, offset_lines?, max_lines?, pattern?}: path 可为 picker://<id>、working://<rel> 或相对路径
+- read_attr {path}
+- write {path, content, mode=overwrite|append?}
+- edit {path, edits:[{old_text, new_text, global_replace?}]}: 精确替换;old_text 默认必须唯一
+- append {path, content}
+- list_dir {path} (仅 working://)
+- delete / rename / list_dir (仅 working://)'''
+        : '''
+- read {path, max_bytes?, offset_lines?, max_lines?, pattern?}
+- read_attr {path}
+- write {path, content, mode=overwrite|append?}
+- edit {path, edits:[{old_text, new_text, global_replace?}]}: 精确替换;old_text 默认必须唯一
+- append {path, content}
+- list_dir {path}
+- delete {path}
+- rename {path, new_path}''';
+
+    return '''
+path 形式 (mobile):
+- picker://<id>        系统选择器返回的文件
+- working://<rel>      用户选定的工作目录(默认;缺省时报"未配置工作目录")
+- 裸相对路径           同 working://
+
+公共参数:
+- action (string, 必填): 见下方
+- 其余参数按 action
+
+actions:$actions
+
+edit 返回:
+- 成功: {action:"edit", applied:true, diff:[{matched_line,old_preview,new_preview,replacements}]}
+- 失败: {action:"edit", applied:false, error_code:OLD_TEXT_NOT_FOUND|OLD_TEXT_NOT_UNIQUE|PATH_NOT_FOUND, near_matches?/candidates? 含 1-based 行号}
+
+read 返回:
+- 默认: 全文 + 行号前缀 "N|line"
+- offset_lines + max_lines: 分页
+- pattern: 命中行 + 上下 2 行,200 行上限
+- 二进制: {encoding:"binary", content:"[binary file, N bytes]"}
+
+约束:
+- edit 一次提交多个 edits 时,**任何一个失败都不会写盘**(整批原子)
+- edit 默认 old_text 必须唯一;批量改名传 global_replace=true
+- new_text="" 等价于删除匹配块
+- 所有路径禁止 .. 跳出工作目录
+''';
+  }
+
+  @override
   bool get isSupportedOnCurrentPlatform =>
       isDesktopForRuntime() || isMobileForRuntime();
 
