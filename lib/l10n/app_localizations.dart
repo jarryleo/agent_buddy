@@ -1962,6 +1962,12 @@ abstract class AppLocalizations {
   /// **'{count} tool calls'**
   String toolGroupSummary(int count);
 
+  /// No description provided for @askUserQuestionPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Model asks:'**
+  String get askUserQuestionPrompt;
+
   /// No description provided for @toolCallRetryNote.
   ///
   /// In en, this message translates to:

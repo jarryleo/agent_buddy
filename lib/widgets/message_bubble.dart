@@ -675,6 +675,10 @@ class _MessageBubbleState extends State<MessageBubble> {
               ],
             ),
           ),
+          // ask_user chips live at the very bottom of the bubble
+          // (below the content + footer) so the model’s question
+          // can’t be hidden inside a collapsed tool-call section.
+          _buildAskUserQuestions(context, m),
         ],
       ),
     );
@@ -1195,19 +1199,61 @@ class _MessageBubbleState extends State<MessageBubble> {
                 ? () => chat.retryToolCall(context, assistantId, calls[i].id)
                 : null,
           ),
-          if (calls[i].question != null && calls[i].options != null) ...[
-            const SizedBox(height: 4),
-            _AskUserOptions(
-              key: ValueKey('ask_user_${calls[i].id}'),
-              toolCall: calls[i],
-              onSubmit: (selection) {
-                chat.resolveAskUser(calls[i].id, selection);
-              },
-            ),
-          ],
           SizedBox(height: 6),
         ],
       ],
+    );
+  }
+
+  /// Renders one `_AskUserQuestionCard` per pending ask_user tool
+  /// call on this assistant message. Sits at the bottom of the
+  /// bubble (below the content + footer) so the user can't miss
+  /// the question — previously the chips lived inside the tool
+  /// call section, which is collapsed by default and felt like
+  /// an internal implementation detail.
+  Widget _buildAskUserQuestions(BuildContext context, ChatMessage m) {
+    // Cheap pre-check — defer the [ChatProvider] lookup until we
+    // know there's at least one ask_user to render, so messages
+    // without any pending question don't trip widget tests that
+    // don't mount the provider (and the bare `context.read`
+    // call doesn't run on every unrelated rebuild).
+    final asks = <ToolCall>[];
+    for (final tc in m.toolCalls) {
+      if (tc.question != null && tc.options != null) {
+        asks.add(tc);
+      }
+    }
+    if (asks.isEmpty) return const SizedBox.shrink();
+    // Same graceful fallback as `_lookupTts`: production always
+    // supplies `Provider<ChatProvider>` via `main.dart`, but
+    // legacy bubble widget tests pre-date this code path, and
+    // surfacing an uncaught "no provider" exception would defeat
+    // the whole point of the pre-check above. Without the
+    // provider we can't dispatch taps back to the chat session,
+    // so suppress the card entirely.
+    final ChatProvider chat;
+    try {
+      chat = context.read<ChatProvider>();
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < asks.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            _AskUserQuestionCard(
+              key: ValueKey('ask_user_${asks[i].id}'),
+              toolCall: asks[i],
+              onSubmit: (selection) {
+                chat.resolveAskUser(asks[i].id, selection);
+              },
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -1918,12 +1964,18 @@ class _TypingIndicatorState extends State<_TypingIndicator>
   }
 }
 
-/// Inline option chips rendered below an `ask_user` tool call card.
-/// Tapping a chip (single-select) or tapping Confirm (multi-select)
-/// hands the selection to [ChatProvider.resolveAskUser], which
-/// unblocks the SSE stream's `await` on the tool call.
-class _AskUserOptions extends StatefulWidget {
-  const _AskUserOptions({
+/// Renders the model’s question and its option chips at the
+/// bottom of an assistant message bubble. Tapping a chip
+/// (single-select) or tapping Confirm (multi-select) hands the
+/// selection to [ChatProvider.resolveAskUser], which unblocks
+/// the orchestrator’s `await` on the tool call.
+///
+/// Previously this widget lived inside the (default-collapsed)
+/// tool call section, which made the question easy to miss.
+/// Now it sits below the bubble + footer so the user always
+/// notices that the model is asking them to choose.
+class _AskUserQuestionCard extends StatefulWidget {
+  const _AskUserQuestionCard({
     super.key,
     required this.toolCall,
     required this.onSubmit,
@@ -1933,12 +1985,38 @@ class _AskUserOptions extends StatefulWidget {
   final ValueChanged<String> onSubmit;
 
   @override
-  State<_AskUserOptions> createState() => _AskUserOptionsState();
+  State<_AskUserQuestionCard> createState() => _AskUserQuestionCardState();
 }
 
-class _AskUserOptionsState extends State<_AskUserOptions> {
+class _AskUserQuestionCardState extends State<_AskUserQuestionCard> {
   final Set<String> _localSelected = <String>{};
   bool _submitted = false;
+
+  /// Coerce the persisted ask_user options list to `List<String>`.
+  /// New tool calls already arrive normalized (see
+  /// `ChatProvider._normalizeAskUserOptions`); this fallback exists
+  /// for sessions written by older app versions where each option
+  /// was an object like `{"label": "A"}` and would otherwise crash
+  /// the chip Wrap with a Map→String cast. Returns `const []` when
+  /// the input is null or empty.
+  static List<String> _coerceOptions(List<dynamic>? raw) {
+    if (raw == null || raw.isEmpty) return const [];
+    final out = <String>[];
+    for (final entry in raw) {
+      if (entry is String) {
+        if (entry.isNotEmpty) out.add(entry);
+      } else if (entry is Map) {
+        for (final key in const ['label', 'value', 'text']) {
+          final v = entry[key];
+          if (v is String && v.isNotEmpty) {
+            out.add(v);
+            break;
+          }
+        }
+      }
+    }
+    return out;
+  }
 
   bool get _isMulti => widget.toolCall.multiSelect ?? false;
 
@@ -1993,34 +2071,90 @@ class _AskUserOptionsState extends State<_AskUserOptions> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final selected = _effectiveSelected;
-    final options = widget.toolCall.options ?? const <String>[];
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, right: 4, top: 2, bottom: 2),
+    // Defensive: if a stale ToolCall (persisted before the
+    // ask_user options normalizer existed) loaded from disk has
+    // object-shaped entries, `for (final opt in options)` would
+    // throw `type 'Map<String, dynamic>' is not a subtype of
+    // type 'String' in type cast` mid-render. Coerce eagerly
+    // here so the bubble never crashes on a non-string entry;
+    // new tool calls go through `_normalizeAskUserOptions` in
+    // ChatProvider._onToolCall and arrive as `List<String>`.
+    final options = _coerceOptions(widget.toolCall.options);
+    final question = widget.toolCall.question ?? '';
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: context.bubbleAssistant,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(4),
+          topRight: Radius.circular(16),
+          bottomLeft: Radius.circular(16),
+          bottomRight: Radius.circular(16),
+        ),
+        border: Border.all(color: context.appBorder),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
+          // Header: "模型询问:" / "Model asks:" — makes it
+          // obvious the user is being prompted, since this card
+          // now sits below the bubble (outside the tool call
+          // block) and could otherwise look like a stray UI.
+          Row(
             children: [
-              for (final opt in options)
-                _OptionChip(
-                  label: opt,
-                  selected: selected.contains(opt),
-                  enabled: _isInteractive,
-                  onTap: () => _onPick(opt),
+              Icon(
+                Icons.help_outline_rounded,
+                size: 13,
+                color: context.textSecondary,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                l10n.askUserQuestionPrompt,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: context.textSecondary,
                 ),
+              ),
             ],
           ),
-          if (_isMulti && _isInteractive) ...[
-            const SizedBox(height: 6),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton(
-                onPressed: _localSelected.isEmpty ? null : _submitMulti,
-                child: Text(l10n.commonConfirm),
+          if (question.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              question,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.35,
+                color: context.textPrimary,
+                fontWeight: FontWeight.w500,
               ),
             ),
+          ],
+          if (options.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final opt in options)
+                  _OptionChip(
+                    label: opt,
+                    selected: selected.contains(opt),
+                    enabled: _isInteractive,
+                    onTap: () => _onPick(opt),
+                  ),
+              ],
+            ),
+            if (_isMulti && _isInteractive) ...[
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton(
+                  onPressed: _localSelected.isEmpty ? null : _submitMulti,
+                  child: Text(l10n.commonConfirm),
+                ),
+              ),
+            ],
           ],
         ],
       ),

@@ -1014,6 +1014,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get askUserQuestionPrompt => '模型询问:';
+
+  @override
   String toolCallRetryNote(String tool, String result) {
     return '[重试 $tool] 工具返回了新的结果,请基于此继续或修正之前的回答:\n\n$result';
   }

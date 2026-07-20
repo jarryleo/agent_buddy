@@ -341,6 +341,7 @@
   "toolCallRetryFailed": "重新执行该工具调用",
   "toolCallAwaitingUser": "等待用户在系统选择器中操作…",
   "toolGroupSummary": "调用了 {count} 个工具",
+  "askUserQuestionPrompt": "模型询问:",
   "@toolGroupSummary": {
     "placeholders": {
       "count": { "type": "int" }

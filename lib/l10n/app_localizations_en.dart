@@ -1059,6 +1059,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get askUserQuestionPrompt => 'Model asks:';
+
+  @override
   String toolCallRetryNote(String tool, String result) {
     return '[Retry of $tool] The tool returned the following new result. Please use it to continue or correct your previous answer:\n\n$result';
   }

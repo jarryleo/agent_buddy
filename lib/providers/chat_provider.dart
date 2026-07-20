@@ -240,6 +240,44 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  /// Normalize the `options` argument for the `ask_user` tool.
+  /// The schema declares a flat `string[]`, but newer models
+  /// (and a few existing prompts) emit each option as an object
+  /// like `{"label": "A", "description": "..."}` instead of a
+  /// bare string. The `List.cast<String>()` Dart idiom is a
+  /// *lazy* view — `length` doesn't trigger it, but iterating
+  /// the list later (in `MessageBubble._AskUserQuestionCard.build`)
+  /// does, and throws
+  /// `type 'Map<String, dynamic>' is not a subtype of type 'String'`
+  /// mid-render. So we eagerly walk the raw list
+  /// once here, coerce each entry to a String, and return a
+  /// concrete `List<String>` that the bubble can iterate
+  /// safely. Object entries fall back to `label` / `value` /
+  /// `text` keys (in that order) so we stay compatible with
+  /// the most common variants without making the model learn a
+  /// new schema.
+  static List<String> _normalizeAskUserOptions(dynamic raw) {
+    if (raw is! List) return const [];
+    final out = <String>[];
+    for (final entry in raw) {
+      if (entry == null) continue;
+      if (entry is String) {
+        if (entry.isNotEmpty) out.add(entry);
+        continue;
+      }
+      if (entry is Map) {
+        for (final key in const ['label', 'value', 'text']) {
+          final v = entry[key];
+          if (v is String && v.isNotEmpty) {
+            out.add(v);
+            break;
+          }
+        }
+      }
+    }
+    return out;
+  }
+
   /// Pure helper that decides what id to use for a new
   /// `ToolCall` bubble in [MessageBubble]. Three failure modes
   /// to defend against (see the `toolStart` branch of
@@ -841,7 +879,7 @@ class ChatProvider extends ChangeNotifier {
     switch (name) {
       case 'ask_user':
         final question = args['question'] as String? ?? '';
-        final options = (args['options'] as List?)?.cast<String>() ?? const [];
+        final options = _normalizeAskUserOptions(args['options']);
         final multiSelect = args['multi_select'] as bool? ?? false;
         final toolId = toolCall['id'] as String? ?? '';
         if (question.isEmpty) {

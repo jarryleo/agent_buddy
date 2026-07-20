@@ -473,6 +473,7 @@
   "toolCallRetryFailed": "Retry this tool call",
   "toolCallAwaitingUser": "Waiting for the user in the system picker…",
   "toolGroupSummary": "{count} tool calls",
+  "askUserQuestionPrompt": "Model asks:",
   "@toolGroupSummary": {
     "placeholders": {
       "count": { "type": "int" }
