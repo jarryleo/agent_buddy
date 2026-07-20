@@ -282,6 +282,7 @@ class LocalLlmService extends ChangeNotifier {
     required List<String> systemPrompts,
     required List<ChatRequestMessage> messages,
     required List<Map<String, dynamic>> tools,
+    ToolSchemaBuilder? toolsBuilder,
     bool enableThinking = false,
     Future<String> Function(Map<String, dynamic> toolCall)? onToolCall,
     ToolOrchestrator? orchestrator,
@@ -345,9 +346,9 @@ class LocalLlmService extends ChangeNotifier {
       session.systemPrompt = joinedPrompt.isEmpty ? null : joinedPrompt;
     }
 
-    final llamaTools = _buildTools(tools);
-    final availableToolNames = {for (final tool in llamaTools) tool.name};
-    final fallbackEnabled = onToolCall != null && llamaTools.isNotEmpty;
+    final canOrchestrate =
+        onToolCall != null && (toolsBuilder != null || tools.isNotEmpty);
+    var availableToolNames = <String>{};
 
     final parts = _buildUserParts(messages, inlineFileTypes);
     if (parts.isEmpty) {
@@ -378,6 +379,12 @@ class LocalLlmService extends ChangeNotifier {
       Stream<OrchestratorEvent> runOneTurn(
         List<ChatRequestMessage> history,
       ) async* {
+        final roundSchemas = toolsBuilder == null
+            ? tools
+            : await toolsBuilder();
+        final llamaTools = _buildTools(roundSchemas);
+        availableToolNames = {for (final tool in llamaTools) tool.name};
+        final fallbackEnabled = onToolCall != null && llamaTools.isNotEmpty;
         final historyBefore = session.history.length;
         final fallbackParser = GemmaToolCallFallbackParser();
         // Empty parts array is the engine's way of saying "continue
@@ -478,7 +485,7 @@ class LocalLlmService extends ChangeNotifier {
       }
 
       try {
-        if (onToolCall != null && llamaTools.isNotEmpty) {
+        if (canOrchestrate) {
           final orch = orchestrator ?? ToolOrchestrator();
           await for (final ev in orch.run(
             runOneTurn: runOneTurn,
@@ -910,6 +917,11 @@ class LocalLlmService extends ChangeNotifier {
     return ThinkingBudget(maxTokens: tokens);
   }
 
+  @visibleForTesting
+  List<ToolDefinition> buildToolsForTest(
+    List<Map<String, dynamic>> openAiTools,
+  ) => _buildTools(openAiTools);
+
   List<ToolDefinition> _buildTools(List<Map<String, dynamic>> openAiTools) {
     if (openAiTools.isEmpty) return const [];
     final out = <ToolDefinition>[];
@@ -922,47 +934,100 @@ class LocalLlmService extends ChangeNotifier {
       final paramsRaw =
           (fn['parameters'] as Map?)?.cast<String, dynamic>() ??
           const <String, dynamic>{};
-      final props =
-          (paramsRaw['properties'] as Map?)?.cast<String, dynamic>() ??
-          const <String, dynamic>{};
-      final required =
-          (paramsRaw['required'] as List?)?.cast<String>() ?? const <String>[];
-      final parameters = <ToolParam>[];
-      props.forEach((pname, pdef) {
-        final def = (pdef as Map?)?.cast<String, dynamic>() ?? const {};
-        final type = def['type'] as String? ?? 'string';
-        final desc = def['description'] as String?;
-        final isRequired = required.contains(pname);
-        switch (type) {
-          case 'integer':
-          case 'number':
-            parameters.add(
-              ToolParam.number(pname, description: desc, required: isRequired),
-            );
-            break;
-          case 'boolean':
-            parameters.add(
-              ToolParam.boolean(pname, description: desc, required: isRequired),
-            );
-            break;
-          default:
-            parameters.add(
-              ToolParam.string(pname, description: desc, required: isRequired),
-            );
-        }
-      });
       out.add(
         ToolDefinition(
           name: name,
           description: description,
-          parameters: parameters,
-          // The handler is unused because we execute tools ourselves
-          // after parsing the assistant message. Returning an empty
-          // string keeps llamadart happy if it ever does invoke it.
+          parameters: _buildToolParams(paramsRaw),
           handler: (params) async => '',
         ),
       );
     }
     return out;
+  }
+
+  List<ToolParam> _buildToolParams(Map<String, dynamic> schema) {
+    final props =
+        (schema['properties'] as Map?)?.cast<String, dynamic>() ??
+        const <String, dynamic>{};
+    final required =
+        (schema['required'] as List?)?.whereType<String>().toSet() ??
+        const <String>{};
+    final parameters = <ToolParam>[];
+    for (final entry in props.entries) {
+      final definition =
+          (entry.value as Map?)?.cast<String, dynamic>() ??
+          const <String, dynamic>{};
+      parameters.add(
+        _buildToolParam(
+          entry.key,
+          definition,
+          required: required.contains(entry.key),
+        ),
+      );
+    }
+    return parameters;
+  }
+
+  ToolParam _buildToolParam(
+    String name,
+    Map<String, dynamic> definition, {
+    required bool required,
+  }) {
+    final description = definition['description'] as String?;
+    final enumValues =
+        (definition['enum'] as List?)?.whereType<String>().toList() ??
+        const <String>[];
+    switch (definition['type'] as String? ?? 'string') {
+      case 'integer':
+        return ToolParam.integer(
+          name,
+          description: description,
+          required: required,
+        );
+      case 'number':
+        return ToolParam.number(
+          name,
+          description: description,
+          required: required,
+        );
+      case 'boolean':
+        return ToolParam.boolean(
+          name,
+          description: description,
+          required: required,
+        );
+      case 'array':
+        final itemDefinition =
+            (definition['items'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{'type': 'string'};
+        return ToolParam.array(
+          name,
+          itemType: _buildToolParam('item', itemDefinition, required: false),
+          description: description,
+          required: required,
+        );
+      case 'object':
+        return ToolParam.object(
+          name,
+          properties: _buildToolParams(definition),
+          description: description,
+          required: required,
+        );
+      default:
+        if (enumValues.isNotEmpty) {
+          return ToolParam.enumType(
+            name,
+            values: enumValues,
+            description: description,
+            required: required,
+          );
+        }
+        return ToolParam.string(
+          name,
+          description: description,
+          required: required,
+        );
+    }
   }
 }

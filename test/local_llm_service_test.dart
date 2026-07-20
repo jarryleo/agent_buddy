@@ -2,6 +2,7 @@ import 'package:agent_buddy/models/local_provider.dart';
 import 'package:agent_buddy/services/local_llm_service.dart';
 import 'package:agent_buddy/services/tool_orchestrator.dart';
 import 'package:agent_buddy/services/tool_service.dart';
+import 'package:agent_buddy/services/tools/load_tool.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -194,6 +195,23 @@ void main() {
 
       expect(visible, text);
       expect(parser.calls, isEmpty);
+    });
+  });
+
+  group('LocalLlmService local tool schemas', () {
+    test('preserves load_tool tool_names as a required string array', () {
+      final loadTool = LoadTool()..allowedToolIds = ['current_time'];
+      final definition = LocalLlmService().buildToolsForTest([
+        loadTool.buildSchema(),
+      ]).single;
+      final schema = definition.toJsonSchema();
+      final properties = schema['properties'] as Map<String, dynamic>;
+      final toolNames = properties['tool_names'] as Map<String, dynamic>;
+
+      expect(toolNames['type'], 'array');
+      expect((toolNames['items'] as Map)['type'], 'string');
+      expect((toolNames['items'] as Map)['enum'], ['current_time']);
+      expect(schema['required'], ['tool_names']);
     });
   });
 

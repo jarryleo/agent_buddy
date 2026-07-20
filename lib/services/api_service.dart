@@ -10,6 +10,8 @@ import '../models/message.dart';
 import '../models/provider.dart';
 import 'tool_orchestrator.dart';
 
+typedef ToolSchemaBuilder = Future<List<Map<String, dynamic>>> Function();
+
 class StreamEvent {
   final String type;
   final String text;
@@ -232,6 +234,7 @@ class ApiService {
     required List<ChatRequestMessage> messages,
     List<String>? systemPrompts,
     List<Map<String, dynamic>>? tools,
+    ToolSchemaBuilder? toolsBuilder,
     bool enableThinking = false,
     Future<String> Function(Map<String, dynamic> toolCall)? onToolCall,
     ToolOrchestrator? orchestrator,
@@ -241,12 +244,13 @@ class ApiService {
     // model can't actually call any tools, so we just do a single
     // turn.
     if (onToolCall == null) {
+      final resolvedTools = toolsBuilder == null ? tools : await toolsBuilder();
       yield* _streamSingleTurn(
         provider: provider,
         model: model,
         messages: messages,
         systemPrompts: systemPrompts,
-        tools: tools,
+        tools: resolvedTools,
         enableThinking: enableThinking,
         inlineFileTypes: inlineFileTypes,
       );
@@ -263,28 +267,31 @@ class ApiService {
     // already streams its content / reasoning deltas, so the UI sees
     // the live token stream without waiting for a full round to
     // complete.
-    Stream<OrchestratorEvent> runOneTurn(List<ChatRequestMessage> h) {
+    Stream<OrchestratorEvent> runOneTurn(List<ChatRequestMessage> h) async* {
+      final roundTools = toolsBuilder == null ? tools : await toolsBuilder();
       switch (provider.protocol) {
         case ProviderProtocol.openai:
-          return _runOpenAITurn(
+          yield* _runOpenAITurn(
             provider: provider,
             model: model,
             history: h,
             systemPrompts: systemPrompts,
-            tools: tools,
+            tools: roundTools,
             enableThinking: enableThinking,
             inlineFileTypes: inlineFileTypes,
           );
+          return;
         case ProviderProtocol.anthropic:
-          return _runAnthropicTurn(
+          yield* _runAnthropicTurn(
             provider: provider,
             model: model,
             history: h,
             systemPrompts: systemPrompts,
-            tools: tools,
+            tools: roundTools,
             enableThinking: enableThinking,
             inlineFileTypes: inlineFileTypes,
           );
+          return;
       }
     }
 
