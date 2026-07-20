@@ -7,12 +7,21 @@ import 'tool_base.dart';
 /// The always-on base system prompt only carries a tiny "tool
 /// index" (`tool id + one-line summary` for every active tool,
 /// ~200 tokens total). When the model decides to actually call a
-/// tool it first invokes `load_tool(tool_name="...")` and the
-/// returned compact markdown cheat-sheet tells it the exact
-/// action enum / parameter shape / constraints. Once a tool is
-/// loaded, `ChatProvider._loadedToolIds` keeps it in the
-/// `tools=[...]` array for the rest of the session so the model
-/// can call it directly without re-loading.
+/// tool it first invokes `load_tool(...)` and the returned
+/// compact markdown cheat-sheet tells it the exact action enum /
+/// parameter shape / constraints. Once a tool is loaded,
+/// `ChatProvider._loadedToolIds` keeps it in the `tools=[...]`
+/// array for the rest of the session so the model can call it
+/// directly without re-loading.
+///
+/// **Batch loading.** [toolNames] accepts a list so the model can
+/// unlock several related tools in one round-trip — important on
+/// per-request-billed providers (some Anthropic / OpenRouter
+/// endpoints), and on the local GGUF where each turn costs a
+/// full prompt re-eval. A single
+/// `load_tool(tool_names=["search","file","memory"])` returns
+/// three manuals in one response (~one round-trip, one response
+/// token block) instead of three separate calls.
 ///
 /// The full schema is still emitted to the model in the
 /// `tools=[...]` array (so the function-call parser knows the
@@ -29,12 +38,13 @@ class LoadTool extends ToolBase {
 
   @override
   String get description =>
-      '按需加载指定工具的完整使用说明。返回该工具的精简 markdown 手册 '
-      '(actions / 参数 / 约束)。加载后该工具的 schema 会进入 tools 数组,'
+      '按需加载指定工具的完整使用说明,**支持一次加载多个**。'
+      '返回这些工具的精简 markdown 手册(actions / 参数 / 约束),'
+      '合并到同一次响应里。加载后这些工具的 schema 会进入 tools 数组,'
       '本会话内可一直直接调用,无需重复加载。';
 
   @override
-  String get shortDescription => '按需加载工具的详细使用手册(schema + 约束)';
+  String get shortDescription => '批量加载工具详细手册(schema + 约束),一次可加载多个';
 
   @override
   bool get isSupportedOnCurrentPlatform => true;
@@ -58,15 +68,38 @@ class LoadTool extends ToolBase {
         'parameters': {
           'type': 'object',
           'properties': {
+            // Preferred form: a list. The model can unlock every
+            // tool it might need for the current task in a single
+            // round-trip — one of the biggest savings on per-request
+            // providers and on the local GGUF.
+            'tool_names': {
+              'type': 'array',
+              'items': {'type': 'string', 'enum': allowedToolIds},
+              'description':
+                  '要加载的工具 id 列表,与系统提示"工具索引"里的 id 完全一致。'
+                  'MCP 工具填 mcp__<server>__<tool>。'
+                  '一次传多个 = 一次 round-trip 拿到所有手册。',
+            },
+            // Legacy single-name form. Kept for backwards
+            // compatibility with the few model providers whose
+            // pre-trained behaviour still emits a scalar; the
+            // runtime resolver normalises both shapes to a list
+            // before walking the registry.
             'tool_name': {
               'type': 'string',
-              'description':
-                  '工具 id,与系统提示"工具索引"里的 name 完全一致。'
-                  'MCP 工具填 mcp__<server>__<tool>',
+              'description': '(单数,向后兼容;优先用 tool_names)。工具 id。',
               'enum': allowedToolIds,
             },
           },
-          'required': ['tool_name'],
+          // Either field is enough — the resolver accepts both.
+          'anyOf': [
+            {
+              'required': ['tool_names'],
+            },
+            {
+              'required': ['tool_name'],
+            },
+          ],
         },
       },
     };

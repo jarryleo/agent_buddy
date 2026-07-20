@@ -146,6 +146,109 @@ void main() {
       );
     });
 
+    test('batch loading returns combined manuals in one response', () async {
+      final response = await chat.debugLoadTools([
+        'fetch_web',
+        'memory',
+        'current_time',
+      ]);
+      // All three manuals land in the same response.
+      expect(response, contains('## fetch_web'));
+      expect(response, contains('## memory'));
+      expect(response, contains('## current_time'));
+      // The response is bounded by the loaded set summary.
+      expect(response, contains('本批'));
+    });
+
+    test('a single batch call adds all three to the loaded set in one '
+        'round-trip', () async {
+      // One call should be enough — same effect as three
+      // sequential debugLoadTool calls.
+      await chat.debugLoadTools(['fetch_web', 'memory', 'current_time']);
+      expect(
+        chat.loadedToolIds,
+        containsAll({'fetch_web', 'memory', 'current_time'}),
+      );
+      final schemas = await chat.debugBuildToolsSchema();
+      final names = schemas
+          .map((s) => s['function']?['name'] as String?)
+          .whereType<String>()
+          .toSet();
+      expect(
+        names,
+        containsAll({'load_tool', 'fetch_web', 'memory', 'current_time'}),
+      );
+    });
+
+    test(
+      'partial failure surfaces in a footer but still loads the rest',
+      () async {
+        final response = await chat.debugLoadTools([
+          'fetch_web',
+          'not_a_real_tool',
+          'memory',
+        ]);
+        // The good ones made it in.
+        expect(response, contains('## fetch_web'));
+        expect(response, contains('## memory'));
+        // The bad one is named in the failure footer.
+        expect(response, contains('加载失败'));
+        expect(response, contains('not_a_real_tool'));
+        // And the loaded set still got the good ones.
+        expect(chat.loadedToolIds, containsAll({'fetch_web', 'memory'}));
+        expect(chat.loadedToolIds, isNot(contains('not_a_real_tool')));
+      },
+    );
+
+    test('total failure throws ToolException (so the orchestrator '
+        'surfaces it as a tool error)', () async {
+      expect(
+        () => chat.debugLoadTools(['unknown_a', 'unknown_b']),
+        throwsA(
+          isA<ToolException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('全部失败'),
+              contains('unknown_a'),
+              contains('unknown_b'),
+            ),
+          ),
+        ),
+      );
+      // Nothing should have been added to the loaded set.
+      expect(chat.loadedToolIds, isEmpty);
+    });
+
+    test('empty input throws a friendly ToolException', () async {
+      expect(
+        () => chat.debugLoadTools(const []),
+        throwsA(isA<ToolException>()),
+      );
+    });
+
+    test('legacy scalar form still works (back-compat)', () async {
+      // Models that were trained on the old single-name form
+      // should keep working without the provider enforcing a
+      // breaking schema change.
+      final response = await chat.debugLoadTool('fetch_web');
+      expect(response, contains('## fetch_web'));
+      expect(chat.loadedToolIds, contains('fetch_web'));
+    });
+
+    test('deduplicates when the same id appears multiple times', () async {
+      final response = await chat.debugLoadTools([
+        'fetch_web',
+        'fetch_web',
+        'memory',
+        'memory',
+      ]);
+      // Only one manual per id should appear.
+      expect('## fetch_web'.allMatches(response).length, 1);
+      expect('## memory'.allMatches(response).length, 1);
+      expect(chat.loadedToolIds, containsAll({'fetch_web', 'memory'}));
+    });
+
     test('the loaded set survives across _buildToolsSchema calls', () async {
       await chat.debugLoadTool('memory');
       await chat.debugLoadTool('fetch_web');

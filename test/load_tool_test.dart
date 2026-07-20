@@ -1,4 +1,5 @@
 import 'package:agent_buddy/models/mcp_provider.dart';
+import 'package:agent_buddy/providers/chat_provider.dart';
 import 'package:agent_buddy/services/tools/tool_base.dart';
 import 'package:agent_buddy/services/tools/tool_registry.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -116,6 +117,99 @@ void main() {
               'so the load_tool result stays compact',
         );
       }
+    });
+  });
+
+  group('LoadTool schema', () {
+    test('buildSchema exposes BOTH tool_names (preferred) and tool_name', () {
+      final tool = ToolRegistry.byId('load_tool')!;
+      final schema = tool.buildSchema();
+      final props = schema['function']['parameters']['properties'] as Map;
+      expect(props, contains('tool_names'));
+      expect(props, contains('tool_name'));
+      expect(props['tool_names']['type'], 'array');
+      expect(props['tool_name']['type'], 'string');
+      // Either field satisfies the schema (anyOf).
+      final params = schema['function']['parameters'] as Map;
+      expect(params['anyOf'], isA<List>());
+    });
+
+    test('buildSchema reflects the current active-tools whitelist', () {
+      final tool = ToolRegistry.byId('load_tool')! as dynamic;
+      // Mutate the whitelist and re-emit the schema.
+      tool.allowedToolIds = ['fetch_web', 'memory', 'file'];
+      final schema = tool.buildSchema();
+      final multiEnum =
+          (schema['function']['parameters']['properties']['tool_names']['items']['enum'])
+              as List;
+      final singleEnum =
+          (schema['function']['parameters']['properties']['tool_name']['enum'])
+              as List;
+      expect(multiEnum, containsAll(['fetch_web', 'memory', 'file']));
+      expect(singleEnum, containsAll(['fetch_web', 'memory', 'file']));
+    });
+  });
+
+  group('ChatProvider._extractLoadToolNames normalizer', () {
+    test('reads tool_names[] in order', () {
+      final out = ChatProvider.debugExtractLoadToolNames({
+        'tool_names': ['a', 'b', 'c'],
+      });
+      expect(out, ['a', 'b', 'c']);
+    });
+
+    test('reads the legacy scalar tool_name', () {
+      final out = ChatProvider.debugExtractLoadToolNames({'tool_name': 'x'});
+      expect(out, ['x']);
+    });
+
+    test('prefers tool_names[] when both shapes are present', () {
+      final out = ChatProvider.debugExtractLoadToolNames({
+        'tool_names': ['multi'],
+        'tool_name': 'single',
+      });
+      expect(out, ['multi', 'single']);
+    });
+
+    test('deduplicates while preserving order', () {
+      final out = ChatProvider.debugExtractLoadToolNames({
+        'tool_names': ['a', 'b', 'a', 'c', 'b'],
+      });
+      expect(out, ['a', 'b', 'c']);
+    });
+
+    test('drops empty strings and non-string entries', () {
+      final out = ChatProvider.debugExtractLoadToolNames({
+        'tool_names': ['a', '', '   ', 42, null, 'b'],
+      });
+      expect(out, ['a', 'b']);
+    });
+
+    test('returns an empty list when both fields are missing/empty', () {
+      expect(ChatProvider.debugExtractLoadToolNames(const {}), isEmpty);
+      expect(
+        ChatProvider.debugExtractLoadToolNames({
+          'tool_names': <String>[],
+          'tool_name': '',
+        }),
+        isEmpty,
+      );
+    });
+
+    test('tolerates a bare string under tool_names (some model '
+        'serialisations)', () {
+      final out = ChatProvider.debugExtractLoadToolNames({
+        'tool_names': 'lone',
+      });
+      expect(out, ['lone']);
+    });
+
+    test('trims whitespace around each name', () {
+      final out = ChatProvider.debugExtractLoadToolNames({
+        'tool_names': ['  alpha  ', 'beta'],
+        'tool_name': ' gamma ',
+      });
+      expect(out, ['alpha', 'beta', 'gamma']);
     });
   });
 

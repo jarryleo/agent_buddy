@@ -29,6 +29,7 @@ import '../services/timer_service.dart';
 import '../services/tool_orchestrator.dart';
 import '../services/tool_service.dart';
 import '../services/tools/sub_agent_tool.dart';
+import '../services/tools/tool_base.dart';
 import '../services/tools/tool_registry.dart';
 import 'settings_provider.dart';
 
@@ -70,6 +71,21 @@ class _TurnOutcome {
       _TurnOutcome._(_TurnOutcomeKind.retryable, err);
 }
 
+/// Per-tool resolution outcome from
+/// [ChatProvider._loadOneTool]. Exactly one of [manual] / [error]
+/// is non-null. [justAdded] is true when this call freshly added
+/// the id to `_loadedToolIds`; false on a re-load of a tool that
+/// was already in the set.
+class _LoadOneResult {
+  const _LoadOneResult.success({required this.manual, required this.justAdded})
+    : error = null;
+  const _LoadOneResult.error(this.error) : manual = null, justAdded = false;
+
+  final String? manual;
+  final String? error;
+  final bool justAdded;
+}
+
 /// Builds the always-on base system prompt for a chat turn.
 ///
 /// Kept as a top-level pure function (instead of a method on
@@ -107,9 +123,10 @@ String buildBaseSystemPrompt({
       '\n'
       '## 工具使用\n'
       '- 可用工具一览见下面的"可用工具"列表(只有 id + 一句话用途)。\n'
-      '- 想用某个工具时先 load_tool(tool_name="<id>") 加载完整 schema + 约束手册,'
-      '之后该工具就会出现在本轮的 function 列表里,可直接调用。\n'
-      '- 已经加载过的工具在同一会话内不需要重复加载,直接调用即可。\n'
+      '- 想用某个工具时先 `load_tool(tool_names=["a","b","c"])` '
+      '**一次加载多个**完整 schema + 约束手册(更省 round-trip 和 token),'
+      '之后这些工具就会出现在本轮的 function 列表里,可直接调用。\n'
+      '- 同一会话内已经加载的工具不需要重复加载,直接调用即可。\n'
       '- 工具调用失败返回的是软错误时(比如 cancelled / not_found / permission_denied),'
       '根据 message 给用户讲清楚,然后给个替代方案,不要直接放弃。\n'
       '\n'
@@ -197,6 +214,22 @@ class ChatProvider extends ChangeNotifier {
   /// effects we care about here are the same).
   @visibleForTesting
   Future<String> debugLoadTool(String name) => _loadTool({'tool_name': name});
+
+  /// Batch variant of [debugLoadTool]; mirrors the production
+  /// `tool_names` array shape so tests can exercise the
+  /// combined-response path that production goes through for any
+  /// model that wants multiple manuals in one round-trip.
+  @visibleForTesting
+  Future<String> debugLoadTools(List<String> names) =>
+      _loadTool({'tool_names': names});
+
+  /// Pure helper used by [_loadTool] to keep the per-tool
+  /// resolution branch readable. Exposed for tests so the
+  /// name-extraction normaliser can be pinned down without
+  /// spinning up the provider.
+  @visibleForTesting
+  static List<String> debugExtractLoadToolNames(Map<String, dynamic> args) =>
+      _extractLoadToolNames(args);
 
   /// Returns the system-prompt blocks the next turn would use.
   @visibleForTesting
@@ -580,7 +613,7 @@ class ChatProvider extends ChangeNotifier {
       for (final server in _settings.mcpProviders.where((m) => m.enabled)) {
         final name = server.name;
         toolIndexPrompt =
-            '$toolIndexPrompt\n- MCP server `$name`: load_tool("mcp__${name}__<tool>") 按需加载';
+            '$toolIndexPrompt\n- MCP server `$name`: `load_tool(tool_names=["mcp__${name}__<tool>"])` 按需加载';
       }
     }
 
@@ -705,8 +738,9 @@ class ChatProvider extends ChangeNotifier {
     }
     sb.writeln();
     sb.writeln(
-      '用法: `load_tool(tool_name="fetch_web")` → 返回该工具的精简手册,'
-      '之后即可在本会话内直接调用,schema 会进入 tools 数组。',
+      '用法: `load_tool(tool_names=["fetch_web","memory","file"])` '
+      '→ 一次返回所有手册 + 把 schema 一起加入 tools 数组(一次 round-trip);'
+      '单数 `tool_name="x"` 也兼容。同一会话内已加载的不需重复加载。',
     );
     sb.writeln(
       '当前已加载: ${_loadedToolIds.isEmpty ? "无" : _loadedToolIds.toList().join(", ")}',
@@ -1308,110 +1342,217 @@ class ChatProvider extends ChangeNotifier {
     });
   }
 
-  /// Handles a `load_tool(name)` call. Looks up the tool in
-  /// [ToolRegistry] (or the live MCP server list for
-  /// `mcp__<server>__<name>` ids), marks it as loaded so the
-  /// next [_buildToolsSchema] call includes its full schema in
-  /// `tools=[...]`, and returns the tool's
-  /// [ToolBase.compactSchemaForModel] markdown cheat-sheet.
+  /// Handles a `load_tool(...)` call. Accepts both the legacy
+  /// scalar form (`tool_name: "fetch_web"`) and the preferred
+  /// batch form (`tool_names: ["fetch_web", "memory", "file"]`)
+  /// and returns the combined cheat-sheets in a single response.
+  /// Batch loading is the headline optimisation: on per-request
+  /// billing (some Anthropic / OpenRouter endpoints) it cuts the
+  /// model round-trips for unlocking N tools from N to 1, and on
+  /// the local GGUF where each turn is a full prompt re-eval it
+  /// saves the system-prompt token amplification of N separate
+  /// responses.
   ///
-  /// Loading is idempotent — calling `load_tool("fetch_web")`
-  /// twice in a row does not change the loaded set, the second
-  /// call just returns the same manual page. An unknown /
-  /// unsupported / disabled name raises [ToolException] so the
-  /// model can self-correct.
+  /// For each requested id the resolver:
+  ///   * looks it up in [ToolRegistry] (or the MCP server cache
+  ///     for `mcp__<server>__<name>` ids),
+  ///   * marks it as loaded so [_buildToolsSchema] includes its
+  ///     full schema in `tools=[...]` next turn,
+  ///   * appends its [ToolBase.compactSchemaForModel] markdown
+  ///     to the response.
+  ///
+  /// Unknown / disabled / unsupported ids are reported in a
+  /// `加载失败` footer rather than aborting the whole batch —
+  /// partial success is strictly more useful than all-or-nothing
+  /// when the model is unsure of an exact id (cheap to retry the
+  /// bad one with a corrected name).
   Future<String> _loadTool(Map<String, dynamic> args) async {
-    final raw = (args['tool_name'] as String? ?? '').trim();
-    if (raw.isEmpty) {
-      throw ToolException('请指定 tool_name');
+    // Normalise both input shapes into a deduped list. Order is
+    // preserved (the model's preferred order is usually the
+    // order it'll call them in).
+    final names = _extractLoadToolNames(args);
+    if (names.isEmpty) {
+      throw ToolException('请指定 tool_names(数组)或 tool_name(单个)');
+    }
+
+    final manuals = <String>[];
+    final loadedNow = <String>[];
+    final errors = <String>[];
+
+    for (final raw in names) {
+      final result = await _loadOneTool(raw);
+      if (result.error != null) {
+        errors.add('- "$raw": ${result.error}');
+        continue;
+      }
+      manuals.add(result.manual!);
+      if (result.justAdded) loadedNow.add(raw);
+    }
+
+    if (manuals.isEmpty && errors.isNotEmpty) {
+      // Total failure: throw so the orchestrator surfaces it as
+      // a tool error and the model can retry the whole batch.
+      throw ToolException('load_tool 全部失败:\n${errors.join('\n')}');
+    }
+
+    final sb = StringBuffer();
+    if (manuals.isNotEmpty) {
+      sb
+        ..writeln(manuals.join('\n\n---\n\n'))
+        ..writeln()
+        ..writeln(_batchFooter(names, loadedNow));
+    }
+    if (errors.isNotEmpty) {
+      sb
+        ..writeln()
+        ..writeln('## 加载失败(本次未生效)')
+        ..writeln(errors.join('\n'));
+    }
+    notifyListeners();
+    return sb.toString().trim();
+  }
+
+  /// Extracts and deduplicates the requested tool ids from
+  /// [args], accepting both the legacy `tool_name` (scalar) and
+  /// the new `tool_names` (list) shapes. Empty / non-string
+  /// entries are silently dropped — the empty-list error path
+  /// lives one level up.
+  static List<String> _extractLoadToolNames(Map<String, dynamic> args) {
+    final seen = <String>{};
+    final out = <String>[];
+    void add(String? s) {
+      if (s == null) return;
+      final t = s.trim();
+      if (t.isEmpty) return;
+      if (seen.add(t)) out.add(t);
+    }
+
+    final multi = args['tool_names'];
+    if (multi is List) {
+      for (final e in multi) {
+        if (e is String) add(e);
+        // Non-string entries are ignored (the resolver will
+        // also report the same id as unknown if it shows up
+        // via tool_name below — no need to double-error).
+      }
+    } else if (multi is String) {
+      // Some models serialise a single-element list as a bare
+      // string. Be tolerant.
+      add(multi);
+    }
+
+    add(args['tool_name'] as String?);
+    return out;
+  }
+
+  /// Returns the trailing footer line that wraps up a batch
+  /// `load_tool` response. Always names every requested id so
+  /// the model knows what landed in the loaded set, and calls
+  /// out which ones were already loaded vs freshly added.
+  String _batchFooter(List<String> requested, List<String> loadedNow) {
+    final allLoaded = _loadedToolIds.toSet();
+    final newlyAdded = requested.where(allLoaded.contains).toList();
+    final alreadyHad = requested.where((n) => !loadedNow.contains(n)).toList();
+    final parts = <String>[];
+    if (newlyAdded.isNotEmpty) parts.add('已加入 tools 数组:$newlyAdded');
+    if (alreadyHad.isNotEmpty) parts.add('此前已加载:$alreadyHad');
+    return '_(本批: ${parts.join("; ")},本会话内可直接调用)_';
+  }
+
+  /// Per-tool resolution result. [manual] is non-null on
+  /// success; [error] is non-null on failure (so the caller can
+  /// decide whether to continue or abort the batch). [justAdded]
+  /// distinguishes a fresh add to [_loadedToolIds] from an
+  /// idempotent re-load.
+  Future<_LoadOneResult> _loadOneTool(String raw) async {
+    if (raw == 'load_tool') {
+      return _LoadOneResult.error('load_tool 不能加载自身');
     }
 
     // Built-in tool path.
     final builtin = ToolRegistry.byId(raw);
     if (builtin != null) {
       if (!builtin.isSupportedOnCurrentPlatform) {
-        throw ToolException('工具 "$raw" 在当前平台不可用');
+        return _LoadOneResult.error('当前平台不可用');
       }
-      // Disabled in settings? SettingsProvider.activeTools is the
-      // source of truth for what the user has opted into.
       final activeIds = _settings.activeTools.map((t) => t.id).toSet();
       if (!activeIds.contains(raw)) {
-        throw ToolException('工具 "$raw" 未启用');
+        return _LoadOneResult.error('工具未启用(在 Settings → Tools 打开)');
       }
-      final alreadyLoaded = !_loadedToolIds.add(raw);
-      final cheat = builtin.compactSchemaForModel;
-      final sb = StringBuffer()
-        ..writeln('## ${builtin.id}')
-        ..writeln(builtin.shortDescription)
-        ..writeln();
-      if (cheat.isNotEmpty) {
-        sb
-          ..writeln('### 详细 schema')
-          ..writeln(cheat);
-      }
-      sb
-        ..writeln()
-        ..writeln(
-          alreadyLoaded ? '_(该工具此前已加载,可直接调用)_' : '_(已加入 tools 数组,本会话内可直接调用)_',
-        );
-      notifyListeners();
-      return sb.toString().trim();
+      final justAdded = _loadedToolIds.add(raw);
+      return _LoadOneResult.success(
+        manual: _formatBuiltinManual(builtin),
+        justAdded: justAdded,
+      );
     }
 
-    // MCP tool path: mcp__<server>__<name>. We resolve lazily so the
-    // user's MCP servers stay cold until the model actually wants
-    // one. If the server is disabled or the tool doesn't exist we
-    // bubble a soft error.
+    // MCP tool path: mcp__<server>__<name>. We resolve lazily so
+    // the user's MCP servers stay cold until the model actually
+    // wants one.
     if (raw.startsWith('mcp__')) {
-      final parts = raw.split('__');
-      if (parts.length < 3 || parts[1].isEmpty || parts[2].isEmpty) {
-        throw ToolException('MCP 工具名格式应为 mcp__<server>__<tool>: $raw');
-      }
-      final serverName = parts[1];
-      final toolName = parts.sublist(2).join('__');
-      final server = _settings.mcpProviders
-          .where((m) => m.enabled && m.name == serverName)
-          .firstOrNull;
-      if (server == null) {
-        throw ToolException('MCP 服务器 "$serverName" 未启用');
-      }
-      List<McpToolDef> mcpTools;
-      try {
-        mcpTools = await _tools.mcp.getServerTools(server);
-      } catch (e) {
-        throw ToolException('无法连接 MCP 服务器 "$serverName": $e');
-      }
-      final match = mcpTools.where((t) => t.name == toolName).firstOrNull;
-      if (match == null) {
-        final names = mcpTools.map((t) => t.name).join(', ');
-        throw ToolException(
-          'MCP 服务器 "$serverName" 上找不到工具 "$toolName"。可用: $names',
-        );
-      }
-      final alreadyLoaded = !_loadedToolIds.add(raw);
-      final sb = StringBuffer()
-        ..writeln('## $raw')
-        ..writeln(match.description)
-        ..writeln()
-        ..writeln('### 详细 schema')
-        ..writeln(
-          jsonEncode(
-            match.inputSchema.isNotEmpty
-                ? match.inputSchema
-                : {'type': 'object', 'properties': <String, dynamic>{}},
-          ),
-        )
-        ..writeln()
-        ..writeln(
-          alreadyLoaded
-              ? '_(该 MCP 工具此前已加载,可直接调用)_'
-              : '_(已加入 tools 数组,本会话内可直接调用)_',
-        );
-      notifyListeners();
-      return sb.toString().trim();
+      return _loadOneMcpTool(raw);
     }
 
-    throw ToolException('未找到工具 "$raw"。可用工具见系统提示的"工具索引"。');
+    return _LoadOneResult.error('未找到工具,可用工具见系统提示的"工具索引"');
+  }
+
+  String _formatBuiltinManual(ToolBase builtin) {
+    final cheat = builtin.compactSchemaForModel;
+    final sb = StringBuffer()
+      ..writeln('## ${builtin.id}')
+      ..writeln(builtin.shortDescription)
+      ..writeln();
+    if (cheat.isNotEmpty) {
+      sb
+        ..writeln('### 详细 schema')
+        ..writeln(cheat);
+    }
+    return sb.toString().trim();
+  }
+
+  Future<_LoadOneResult> _loadOneMcpTool(String raw) async {
+    final parts = raw.split('__');
+    if (parts.length < 3 || parts[1].isEmpty || parts[2].isEmpty) {
+      return _LoadOneResult.error('MCP 工具名格式应为 mcp__<server>__<tool>');
+    }
+    final serverName = parts[1];
+    final toolName = parts.sublist(2).join('__');
+    final server = _settings.mcpProviders
+        .where((m) => m.enabled && m.name == serverName)
+        .firstOrNull;
+    if (server == null) {
+      return _LoadOneResult.error('MCP 服务器 "$serverName" 未启用');
+    }
+    final List<McpToolDef> mcpTools;
+    try {
+      mcpTools = await _tools.mcp.getServerTools(server);
+    } catch (e) {
+      return _LoadOneResult.error('无法连接 MCP 服务器 "$serverName": $e');
+    }
+    final match = mcpTools.where((t) => t.name == toolName).firstOrNull;
+    if (match == null) {
+      final names = mcpTools.map((t) => t.name).join(', ');
+      return _LoadOneResult.error(
+        'MCP 服务器 "$serverName" 上找不到工具 "$toolName"。可用: $names',
+      );
+    }
+    final justAdded = _loadedToolIds.add(raw);
+    final sb = StringBuffer()
+      ..writeln('## $raw')
+      ..writeln(match.description)
+      ..writeln()
+      ..writeln('### 详细 schema')
+      ..writeln(
+        jsonEncode(
+          match.inputSchema.isNotEmpty
+              ? match.inputSchema
+              : {'type': 'object', 'properties': <String, dynamic>{}},
+        ),
+      );
+    return _LoadOneResult.success(
+      manual: sb.toString().trim(),
+      justAdded: justAdded,
+    );
   }
 
   /// Pure helper that decides whether a tool id is one the model
