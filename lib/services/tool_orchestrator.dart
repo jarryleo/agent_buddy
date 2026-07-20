@@ -187,7 +187,7 @@ class ToolOrchestrator {
   /// bound a runaway loop.
   final int maxToolRounds;
 
-  ToolOrchestrator({this.maxToolRounds = 30});
+  ToolOrchestrator({this.maxToolRounds = 100});
 
   /// Set to true by [cancel] so the [run] generator can stop early.
   bool _cancelled = false;
