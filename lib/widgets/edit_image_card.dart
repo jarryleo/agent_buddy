@@ -62,6 +62,15 @@ class EditImageCard extends StatelessWidget {
         return l10n.editImageActionResize;
       case 'rotate':
         return l10n.editImageActionRotate;
+      case 'convert':
+        return l10n.editImageActionConvert;
+      case 'circle':
+        return l10n.editImageActionCircle;
+      case 'rounded_corners':
+      case 'roundedCorners':
+        return l10n.editImageActionRoundedCorners;
+      case 'flip':
+        return l10n.editImageActionFlip;
       default:
         return image.action;
     }

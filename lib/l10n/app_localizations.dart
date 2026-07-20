@@ -1311,7 +1311,7 @@ abstract class AppLocalizations {
   /// No description provided for @toolDescEditImage.
   ///
   /// In en, this message translates to:
-  /// **'Compress, crop, resize, rotate, or convert the format of an image the user uploaded in this chat. Each call processes a copy in the temp directory — the original is never modified.'**
+  /// **'Edit an image the user uploaded in this chat: compress, crop, resize, rotate, convert to circle / rounded-corner mask, flip horizontally / vertically, or change format. Each call processes a copy in the temp directory — the original is never modified.'**
   String get toolDescEditImage;
 
   /// No description provided for @toolNameFetchWeb.
@@ -1565,6 +1565,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Convert'**
   String get editImageActionConvert;
+
+  /// No description provided for @editImageActionCircle.
+  ///
+  /// In en, this message translates to:
+  /// **'Circle'**
+  String get editImageActionCircle;
+
+  /// No description provided for @editImageActionRoundedCorners.
+  ///
+  /// In en, this message translates to:
+  /// **'Rounded corners'**
+  String get editImageActionRoundedCorners;
+
+  /// No description provided for @editImageActionFlip.
+  ///
+  /// In en, this message translates to:
+  /// **'Flip'**
+  String get editImageActionFlip;
 
   /// No description provided for @editImageActionSave.
   ///

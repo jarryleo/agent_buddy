@@ -692,7 +692,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolDescEditImage =>
-      'Compress, crop, resize, rotate, or convert the format of an image the user uploaded in this chat. Each call processes a copy in the temp directory — the original is never modified.';
+      'Edit an image the user uploaded in this chat: compress, crop, resize, rotate, convert to circle / rounded-corner mask, flip horizontally / vertically, or change format. Each call processes a copy in the temp directory — the original is never modified.';
 
   @override
   String get toolNameFetchWeb => 'Fetch Web';
@@ -824,6 +824,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get editImageActionConvert => 'Convert';
+
+  @override
+  String get editImageActionCircle => 'Circle';
+
+  @override
+  String get editImageActionRoundedCorners => 'Rounded corners';
+
+  @override
+  String get editImageActionFlip => 'Flip';
 
   @override
   String get editImageActionSave => 'Save image';

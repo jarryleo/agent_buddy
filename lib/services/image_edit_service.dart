@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
@@ -12,7 +13,16 @@ import 'tool_service.dart' show ToolException;
 /// Actions the `edit_image` tool exposes. Mirrors the schema
 /// `enum` and is used by [ImageEditService.edit] as a routing
 /// key.
-enum EditImageAction { compress, crop, resize, rotate, convert }
+enum EditImageAction {
+  compress,
+  crop,
+  resize,
+  rotate,
+  convert,
+  circle,
+  roundedCorners,
+  flip,
+}
 
 /// Snapshot of the source image the model passed in. Captured
 /// in [ImageEditService.edit] so the resulting [EditedImage] can
@@ -135,6 +145,18 @@ class ImageEditService {
       case EditImageAction.convert:
         processed = decoded;
         targetFormat = _readTargetFormat(params, snapshot.format);
+        break;
+      case EditImageAction.circle:
+        processed = _circle(decoded, params);
+        targetFormat = snapshot.format;
+        break;
+      case EditImageAction.roundedCorners:
+        processed = _roundedCorners(decoded, params);
+        targetFormat = snapshot.format;
+        break;
+      case EditImageAction.flip:
+        processed = _flip(decoded, params);
+        targetFormat = snapshot.format;
         break;
     }
 
@@ -365,6 +387,156 @@ class ImageEditService {
     return img.copyRotate(src, angle: snapped);
   }
 
+  /// Produce a square image where pixels outside an inscribed
+  /// circle are made fully transparent. The source is
+  /// center-cropped to a square first (so a portrait / landscape
+  /// image becomes a square circle without distortion), then
+  /// `img.copyCropCircle` applies the alpha mask with built-in
+  /// anti-aliasing at the edge.
+  ///
+  /// The conversion to RGBA **before** the `copyCropCircle` call
+  /// is critical: `copyCropCircle` writes pixels via
+  /// `setRgba(r, g, b, a)`. On a 3-channel image the alpha is
+  /// silently dropped — the "transparent" corners would still
+  /// be visible. JPEG sources (always 3-channel) are the main
+  /// reason this method needs the explicit `convert`.
+  ///
+  /// `radius` is optional. Default = inscribed circle of the
+  /// square. A non-zero smaller radius shrinks the visible disc
+  /// (creating a "ring" of transparency around the edge). The
+  /// `ratio` form (0..1) is friendlier than pixel coordinates:
+  /// `0.5` = half the bounding square.
+  img.Image _circle(img.Image src, Map<String, dynamic> params) {
+    final w = src.width;
+    final h = src.height;
+    final size = math.min(w, h);
+    final x0 = (w - size) ~/ 2;
+    final y0 = (h - size) ~/ 2;
+    final sq = img.copyCrop(src, x: x0, y: y0, width: size, height: size);
+
+    // Force 4-channel so the alpha actually takes effect in
+    // `copyCropCircle` regardless of the source format.
+    final rgba = sq.numChannels >= 4 ? sq : sq.convert(numChannels: 4);
+
+    final ratio = _readRatio(params, 'radius_ratio');
+    final explicitRadius = _readInt(params, 'radius', -1);
+    final int computedRadius;
+    if (ratio != null) {
+      // radius_ratio in [0, 1] of the inscribed circle radius.
+      final inscribed = size / 2;
+      computedRadius = math.max(1, (inscribed * ratio).round());
+    } else if (explicitRadius > 0) {
+      computedRadius = math.min(explicitRadius, size ~/ 2);
+    } else {
+      computedRadius = size ~/ 2;
+    }
+    // Inscribed-circle center of a `size × size` square.
+    final cx = size ~/ 2;
+    final cy = size ~/ 2;
+    return img.copyCropCircle(
+      rgba,
+      radius: computedRadius,
+      centerX: cx,
+      centerY: cy,
+      antialias: true,
+    );
+  }
+
+  /// Produce an image of the same size with rounded corners.
+  /// `radius_percent` (1-50, default 10) controls how big the
+  /// corner arcs are relative to the **shortest side** — this
+  /// matches how most image editors express "border radius"
+  /// (the corner radius is a fraction of the smaller dim).
+  ///
+  /// Implementation walks every pixel and copies it onto a
+  /// transparent background; pixels inside the 4 corner
+  /// quarters are either kept (inside the arc), anti-aliased
+  /// (right at the arc edge), or dropped (outside the arc).
+  /// O(W×H) per call — cheap at our 1200-ish-pixel preview
+  /// sizes, not so cheap at 4K+ — but the `image` package has
+  /// no built-in rounded-rect mask and a port of the same
+  /// algorithm in C would be overkill for one tool.
+  ///
+  /// We always work in RGBA; JPEG (3-channel) sources are
+  /// converted up-front so the mask's alpha actually lands in
+  /// the destination bytes (see `_circle` for the rationale).
+  img.Image _roundedCorners(img.Image src, Map<String, dynamic> params) {
+    final ratio = _readRatio(params, 'radius_ratio');
+    final percent = _readInt(params, 'radius_percent', -1);
+    final w = src.width;
+    final h = src.height;
+    final shortest = math.min(w, h);
+
+    final int radius;
+    if (ratio != null) {
+      // radius_ratio in [0, 0.5] of the shortest side — matches
+      // CSS `border-radius: %` semantics (capped at 50% so the
+      // arcs never overlap and erode the centre).
+      radius = math.max(0, (shortest * ratio).round()).clamp(0, shortest ~/ 2);
+    } else if (percent > 0) {
+      radius = math
+          .max(0, (shortest * percent / 100).round())
+          .clamp(0, shortest ~/ 2);
+    } else {
+      radius = (shortest * 10 / 100).round().clamp(0, shortest ~/ 2);
+    }
+
+    final rgba = src.numChannels >= 4 ? src : src.convert(numChannels: 4);
+
+    if (radius == 0) {
+      return rgba;
+    }
+
+    final result = img.Image(width: w, height: h, numChannels: 4);
+    result.clear(img.ColorRgba8(0, 0, 0, 0));
+
+    final rSqr = radius * radius;
+    for (final p in rgba) {
+      final x = p.x;
+      final y = p.y;
+      int cax;
+      int cay;
+      if (x < radius && y < radius) {
+        cax = radius;
+        cay = radius;
+      } else if (x >= w - radius && y < radius) {
+        cax = w - radius - 1;
+        cay = radius;
+      } else if (x < radius && y >= h - radius) {
+        cax = radius;
+        cay = h - radius - 1;
+      } else if (x >= w - radius && y >= h - radius) {
+        cax = w - radius - 1;
+        cay = h - radius - 1;
+      } else {
+        // Inside the safe rectangle — copy as-is.
+        result.setPixel(x, y, p);
+        continue;
+      }
+
+      final dx = x - cax;
+      final dy = y - cay;
+      final distSqr = dx * dx + dy * dy;
+      if (distSqr <= rSqr) {
+        result.setPixel(x, y, p);
+      } else {
+        // Skip — leave the result's transparent pixel in place.
+        // We avoid an explicit `setPixel(..., transparent)` here
+        // because the destination is already all-transparent
+        // from the `clear` above.
+      }
+    }
+    return result;
+  }
+
+  /// Flip horizontally / vertically / both. Wraps the
+  /// `image` package's flip primitives. Output dimensions are
+  /// identical to the input (no resize).
+  img.Image _flip(img.Image src, Map<String, dynamic> params) {
+    final direction = _readFlipDirection(params);
+    return img.copyFlip(src, direction: direction);
+  }
+
   Uint8List? _encode(img.Image image, String format, int quality) {
     switch (format) {
       case 'png':
@@ -445,5 +617,58 @@ class ImageEditService {
     if (raw is num) return raw.toInt();
     if (raw is String) return int.tryParse(raw) ?? fallback;
     return fallback;
+  }
+
+  /// Read a [0.0 .. 1.0] ratio, accepting either a Dart `num`
+  /// (`0.5`) or a numeric `String` (`"0.5"` / `"50%"`). Returns
+  /// `null` when the key is missing / unparsable so callers can
+  /// fall back to their other input source / default.
+  ///
+  /// Trailing `%` is treated as a percent (so `"30%"` → 0.30).
+  /// Out-of-range values are clamped to `[0.0, 1.0]` — a tiny
+  /// safety net against the model doubling "0.3" as `30`.
+  double? _readRatio(Map<String, dynamic> params, String key) {
+    final raw = params[key];
+    double? v;
+    if (raw is num) {
+      v = raw.toDouble();
+    } else if (raw is String) {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty) return null;
+      if (trimmed.endsWith('%')) {
+        final p = double.tryParse(trimmed.substring(0, trimmed.length - 1));
+        if (p != null) v = p / 100.0;
+      } else {
+        v = double.tryParse(trimmed);
+      }
+    }
+    if (v == null) return null;
+    return v.clamp(0.0, 1.0);
+  }
+
+  /// Resolve the `direction` parameter for the `flip` action.
+  /// Accepts (`'horizontal'` / `'h'`) / (`'vertical'` / `'v'`)
+  /// / (`'both'`). Throws when the value is unrecognised so
+  /// the model sees the same input vocabulary other tools use.
+  img.FlipDirection _readFlipDirection(Map<String, dynamic> params) {
+    final raw = (params['direction'] as String? ?? '').trim().toLowerCase();
+    switch (raw) {
+      case '':
+      case 'horizontal':
+      case 'h':
+        return img.FlipDirection.horizontal;
+      case 'vertical':
+      case 'v':
+        return img.FlipDirection.vertical;
+      case 'both':
+      case 'hv':
+      case '180':
+        return img.FlipDirection.both;
+      default:
+        throw ToolException(
+          'flip: unknown direction "$raw" '
+          '(expected: horizontal | vertical | both)',
+        );
+    }
   }
 }

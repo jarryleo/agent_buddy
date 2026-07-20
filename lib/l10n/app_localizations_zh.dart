@@ -659,7 +659,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get toolDescEditImage =>
-      '压缩、裁剪、调整分辨率、旋转或转换格式,处理用户上传的图片。每次调用都在临时目录处理副本,绝不修改原图。';
+      '处理用户上传的图片:压缩体积、裁剪区域、调整分辨率、旋转、转换为圆形 / 圆角(透明背景)、左右或上下翻转、转换图片格式。每次调用都在临时目录处理副本,绝不修改原图。';
 
   @override
   String get toolNameFetchWeb => 'Fetch Web';
@@ -790,6 +790,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get editImageActionConvert => '转换格式';
+
+  @override
+  String get editImageActionCircle => '圆形';
+
+  @override
+  String get editImageActionRoundedCorners => '圆角';
+
+  @override
+  String get editImageActionFlip => '翻转';
 
   @override
   String get editImageActionSave => '保存图片';

@@ -33,12 +33,13 @@ class EditImageTool extends ToolBase {
 
   @override
   String get description =>
-      '编辑用户上传的图片:压缩体积、裁剪区域、调整分辨率(可选保持宽高比)、旋转 90/180/270 度、转换图片格式。'
+      '编辑用户上传的图片:压缩体积、裁剪区域、调整分辨率(可选保持宽高比)、旋转 90/180/270 度、'
+      '转换为圆形/圆角图片(透明背景)、左右或上下翻转、转换图片格式。'
       '每次调用处理一次,在临时目录生成新文件,不会影响原图。处理结果会展示在气泡里供用户预览和保存。'
       '`image_path` 必须是当前对话中已上传的图片文件路径。';
 
   @override
-  String get shortDescription => '编辑图片(压缩/裁剪/旋转/转格式)';
+  String get shortDescription => '编辑图片(压缩/裁剪/旋转/圆形/圆角/翻转/转格式)';
   @override
   bool get isSupportedOnCurrentPlatform => notWeb();
 
@@ -55,13 +56,25 @@ class EditImageTool extends ToolBase {
           'properties': {
             'action': {
               'type': 'string',
-              'enum': ['compress', 'crop', 'resize', 'rotate', 'convert'],
+              'enum': [
+                'compress',
+                'crop',
+                'resize',
+                'rotate',
+                'convert',
+                'circle',
+                'rounded_corners',
+                'flip',
+              ],
               'description':
                   '要执行的操作。compress = 重编码到指定 quality 以压缩体积;'
                   'crop = 按 x/y/width/height 裁剪;'
                   'resize = 调整分辨率(keep_aspect_ratio 默认 true);'
                   'rotate = 顺时针旋转(degrees 必须是 90/180/270 的倍数);'
-                  'convert = 转换图片格式(通过 target_format 指定目标格式)。',
+                  'convert = 转换图片格式(通过 target_format 指定目标格式);'
+                  'circle = 生成圆形图片(自动中心裁剪到正方形后做圆形 alpha 蒙版,边缘抗锯齿);'
+                  'rounded_corners = 给图片加圆角(默认 10%);'
+                  'flip = 翻转(direction 控制水平 / 垂直 / 双向)。',
             },
             'image_path': {
               'type': 'string',
@@ -114,6 +127,34 @@ class EditImageTool extends ToolBase {
               'type': 'integer',
               'enum': [90, 180, 270],
               'description': 'rotate 专用。顺时针旋转的度数,必须是 90/180/270 之一。',
+            },
+            'radius_ratio': {
+              'type': 'number',
+              'minimum': 0,
+              'maximum': 1,
+              'description':
+                  'circle / rounded_corners 专用。圆角半径,'
+                  'circle:相对内切圆半径的比值(0.0-1.0,默认 1.0 = 圆);'
+                  'rounded_corners:相对短边的比值,最大 0.5(默认 0.10)。'
+                  '与 radius / radius_percent 不能同时传。',
+            },
+            'radius': {
+              'type': 'integer',
+              'minimum': 1,
+              'description': 'circle 专用。圆半径(像素)。不传则自动用内切圆半径。',
+            },
+            'radius_percent': {
+              'type': 'integer',
+              'minimum': 0,
+              'maximum': 50,
+              'description': 'rounded_corners 专用。圆角半径,以短边的百分比表示(0-50,默认 10)。',
+            },
+            'direction': {
+              'type': 'string',
+              'enum': ['horizontal', 'vertical', 'both'],
+              'description':
+                  'flip 专用。horizontal = 水平翻转(左右镜像);'
+                  'vertical = 垂直翻转(上下镜像);both = 水平 + 垂直(180° 等价)。',
             },
           },
           'required': ['action', 'image_path'],
@@ -192,10 +233,18 @@ class EditImageTool extends ToolBase {
         return EditImageAction.rotate;
       case 'convert':
         return EditImageAction.convert;
+      case 'circle':
+        return EditImageAction.circle;
+      case 'rounded_corners':
+      case 'roundedCorners':
+        return EditImageAction.roundedCorners;
+      case 'flip':
+        return EditImageAction.flip;
       default:
         throw ToolException(
           'unknown edit_image action: "$raw" '
-          '(expected: compress | crop | resize | rotate | convert)',
+          '(expected: compress | crop | resize | rotate | convert | '
+          'circle | rounded_corners | flip)',
         );
     }
   }

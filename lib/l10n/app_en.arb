@@ -294,7 +294,7 @@
   "toolDescGoogleSheet": "Read and edit your Google Sheet (desktop only).",
   "toolDescCallMcp": "Call tools on a configured MCP server.",
   "toolDescSubAgent": "Delegate a self-contained research / information-gathering task to an isolated sub-agent that runs in its own context window and returns a compressed report. Keeps the main conversation clean and saves tokens.",
-  "toolDescEditImage": "Compress, crop, resize, rotate, or convert the format of an image the user uploaded in this chat. Each call processes a copy in the temp directory — the original is never modified.",
+  "toolDescEditImage": "Edit an image the user uploaded in this chat: compress, crop, resize, rotate, convert to circle / rounded-corner mask, flip horizontally / vertically, or change format. Each call processes a copy in the temp directory — the original is never modified.",
 
   "toolNameFetchWeb": "Fetch Web",
   "toolNameCurrentTime": "Current Time",
@@ -347,6 +347,9 @@
   "editImageActionResize": "Resize",
   "editImageActionRotate": "Rotate",
   "editImageActionConvert": "Convert",
+  "editImageActionCircle": "Circle",
+  "editImageActionRoundedCorners": "Rounded corners",
+  "editImageActionFlip": "Flip",
   "editImageActionSave": "Save image",
   "editImagePickFolderTitle": "Choose a folder to save the edited image in",
   "editImageSavedSnackbar": "Saved to {path}",
