@@ -347,4 +347,9 @@ class ToolService {
     final tool = ToolRegistry.byId('subagent')!;
     return tool.execute(args, this);
   }
+
+  Future<String> runEditImage(Map<String, dynamic> args) async {
+    final tool = ToolRegistry.byId('edit_image')!;
+    return tool.execute(args, this);
+  }
 }

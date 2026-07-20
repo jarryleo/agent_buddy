@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/widgets.dart';
+import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/chat_session.dart';
 import '../models/download.dart';
+import '../models/edited_image.dart';
 import '../models/file_attachment.dart';
 import '../models/file_type.dart';
 import '../models/local_provider.dart';
@@ -924,6 +927,8 @@ class ChatProvider extends ChangeNotifier {
         return await _loadSkill(args);
       case 'subagent':
         return await _onSubAgentCall(context, toolCall, assistantId, args);
+      case 'edit_image':
+        return await _onEditImageCall(context, toolCall, assistantId, args);
       default:
         if (name.startsWith('mcp__')) {
           return await _onMcpToolCall(name, args);
@@ -936,6 +941,62 @@ class ChatProvider extends ChangeNotifier {
           return await tool.execute(args, _tools);
         }
     }
+  }
+
+  /// Backs the `edit_image` tool. The tool itself is a plain
+  /// [ToolBase] that returns a JSON envelope — this wrapper
+  /// executes the tool, then parses the envelope and appends
+  /// the resulting [EditedImage] to the in-place
+  /// [ToolCall.editedImages] so the message bubble can render
+  /// the preview + Save affordance immediately.
+  ///
+  /// Returning the same envelope string lets the standard
+  /// `toolDone` event apply it as the model-visible result; we
+  /// piggy-back on [applyToolDoneEvent] (which preserves
+  /// `editedImages` via copyWith's pass-through) and only
+  /// mutate the list when we successfully parse a result.
+  Future<String> _onEditImageCall(
+    BuildContext context,
+    Map<String, dynamic> toolCall,
+    String assistantId,
+    Map<String, dynamic> args,
+  ) async {
+    final tool = ToolRegistry.byId('edit_image')!;
+    final toolId = toolCall['id'] as String? ?? '';
+    final resultStr = await tool.execute(args, _tools);
+
+    // Best-effort parse of the envelope. We tolerate a parse
+    // failure (which would be a bug — the envelope is fully
+    // under our control) by returning the raw result so the
+    // model still sees the tool output.
+    try {
+      final decoded = jsonDecode(resultStr);
+      if (decoded is Map && decoded['ok'] == true && decoded['path'] is String) {
+        final edited = EditedImage(
+          path: decoded['path'] as String,
+          filename: decoded['filename'] as String? ?? 'image',
+          width: (decoded['width'] as num?)?.toInt() ?? 0,
+          height: (decoded['height'] as num?)?.toInt() ?? 0,
+          size: (decoded['size'] as num?)?.toInt() ?? 0,
+          format: decoded['format'] as String? ?? 'jpeg',
+          action: decoded['action'] as String? ?? '',
+          sourceWidth: (decoded['source_width'] as num?)?.toInt(),
+          sourceHeight: (decoded['source_height'] as num?)?.toInt(),
+          sourceSize: (decoded['source_size'] as num?)?.toInt(),
+        );
+        _mutateToolCall(assistantId, toolId, (tc) {
+          return tc.copyWith(
+            editedImages: [...tc.editedImages, edited],
+          );
+        });
+        notifyListeners();
+      }
+    } catch (_) {
+      // Swallow: the model still gets the raw envelope as the
+      // result string. The bubble just won't render a preview.
+    }
+
+    return resultStr;
   }
 
   /// Backs the `subagent` tool. Resolves the per-turn transport
@@ -1785,18 +1846,77 @@ class ChatProvider extends ChangeNotifier {
           );
         }
       }
+      // Surface the local file paths of any attached images to
+      // the model in the user-visible content. Cloud APIs receive
+      // the images inline as base64, but the file paths are the
+      // only handle the model can use to feed back into tools
+      // that read raw bytes (e.g. `edit_image` / `file` /
+      // `subagent`). Without this header, the model would have
+      // to guess the path — or copy-paste the base64 back into
+      // a tool call, neither of which works.
+      final augmentedContent = _augmentContentWithImagePaths(
+        m.content,
+        m.imagePaths,
+      );
       out.add(
         ChatRequestMessage(
           role: m.role,
-          content: m.content,
+          content: augmentedContent,
           imageDataUrls: dataUrls,
-          imagePaths: useLocal ? List.unmodifiable(m.imagePaths) : const [],
+          // Always carry the paths even on the cloud path so
+          // the wire-builder can fall back to a "path header"
+          // when the model doesn't accept images inline (see
+          // `ApiService._buildOpenAIMessages`).
+          imagePaths: List.unmodifiable(m.imagePaths),
           fileAttachments: List.unmodifiable(preparedFiles),
         ),
       );
     }
     return out;
   }
+
+  /// Augment [content] with a trailing "Attached images:"
+  /// block that lists the absolute local paths of any attached
+  /// images. Returns [content] unchanged when no images are
+  /// attached.
+  ///
+  /// The block uses a stable format the model can copy-paste
+  /// verbatim into the `edit_image` tool's `image_path` arg
+  /// without any quoting / escaping: just one absolute path
+  /// per line. The English header is intentional — even when
+  /// the chat is in Chinese, the path strings themselves have
+  /// to be byte-exact, and anchoring on the English keyword
+  /// lets the model regex them out cleanly.
+  static String _augmentContentWithImagePaths(
+    String content,
+    List<String> imagePaths,
+  ) {
+    if (imagePaths.isEmpty) return content;
+    final buf = StringBuffer();
+    if (content.isNotEmpty) {
+      buf.write(content);
+      buf.write('\n\n');
+    }
+    buf.write('Attached images (local file paths — pass to `edit_image.image_path` '
+        'or `file.read` when needed):');
+    for (final p in imagePaths) {
+      buf.write('\n- $p');
+    }
+    return buf.toString();
+  }
+
+  /// Test seam for [_augmentContentWithImagePaths]. Exposed
+  /// as a public static so unit tests can pin down the exact
+  /// path-header format without spinning up the full
+  /// ChatProvider. Returns the same string as the private
+  /// helper above; the public name just lets `@visibleForTesting`
+  /// flag it.
+  @visibleForTesting
+  static String augmentContentWithImagePaths(
+    String content,
+    List<String> imagePaths,
+  ) =>
+      _augmentContentWithImagePaths(content, imagePaths);
 
   /// Runs ONE streaming turn attempt. Returns the [_TurnOutcome]
   /// so the orchestrator can decide whether to retry on the
@@ -2435,6 +2555,61 @@ class ChatProvider extends ChangeNotifier {
     // re-render to show the file as gone (e.g. on app restart,
     // `localPath` is set but the file no longer exists).
     notifyListeners();
+  }
+
+  // -------- Edited-image affordances (called from the message bubble) --------
+
+  /// Copies an edited-image temp file to the user-picked
+  /// [destDir]. The temp file is **not** deleted — unlike
+  /// [saveDownload], we keep the source so the user can still
+  /// preview the image in the bubble after saving (and so the
+  /// model can keep referencing it if the user wants a
+  /// follow-up edit). Returns the final destination path.
+  /// Throws [ToolException] if the temp file is gone (e.g. the
+  /// app was restarted between the edit and the save).
+  ///
+  /// The caller (the bubble's `EditImageCard`) opens a
+  /// `FilePicker` dialog first to get `destDir`, then awaits
+  /// this method to perform the actual copy.
+  Future<String> saveEditedImage({
+    required String assistantId,
+    required String toolId,
+    required String imagePath,
+    required String destDir,
+  }) async {
+    final s = _activeSession;
+    if (s == null) {
+      throw ToolException('no active session');
+    }
+    final src = File(imagePath);
+    if (!await src.exists()) {
+      throw ToolException(
+        'edited image is no longer available '
+        '(temp file was wiped, probably after an app restart)',
+      );
+    }
+    // Sanitize the filename: strip any path separators the
+    // temp-dir helper may have leaked in. We don't let the
+    // user pick a destination *name* — only a directory — so
+    // the original `filename` carries over verbatim (with
+    // separators replaced).
+    final rawName = p.basename(imagePath);
+    final safeName = rawName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    var dest = p.join(destDir, safeName);
+    var attempt = 1;
+    while (await File(dest).exists()) {
+      final stem = p.basenameWithoutExtension(safeName);
+      final ext = p.extension(safeName);
+      dest = p.join(destDir, '$stem ($attempt)$ext');
+      attempt++;
+      if (attempt > 9999) {
+        throw ToolException(
+          'could not find a non-clashing filename in $destDir',
+        );
+      }
+    }
+    await src.copy(dest);
+    return dest;
   }
 
   @override

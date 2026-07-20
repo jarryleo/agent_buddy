@@ -658,6 +658,10 @@ class AppLocalizationsZh extends AppLocalizations {
       '把一个独立的调研/搜集任务交给子 AI 跑 —— 子 agent 在独立的上下文里执行,完成后只把压缩后的报告回给主对话,节省 token 并保持主对话整洁。';
 
   @override
+  String get toolDescEditImage =>
+      '压缩、裁剪、调整分辨率、旋转或转换格式,处理用户上传的图片。每次调用都在临时目录处理副本,绝不修改原图。';
+
+  @override
   String get toolNameFetchWeb => 'Fetch Web';
 
   @override
@@ -718,6 +722,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolNameSubAgent => '子 Agent';
 
   @override
+  String get toolNameEditImage => '编辑图片';
+
+  @override
   String get downloadStatusPending => '等待中…';
 
   @override
@@ -768,6 +775,50 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get downloadExpiredHint => '文件已不在 APP 临时目录中,请让 AI 重新下载。';
+
+  @override
+  String get editImageActionCompress => '压缩';
+
+  @override
+  String get editImageActionCrop => '裁剪';
+
+  @override
+  String get editImageActionResize => '调整分辨率';
+
+  @override
+  String get editImageActionRotate => '旋转';
+
+  @override
+  String get editImageActionConvert => '转换格式';
+
+  @override
+  String get editImageActionSave => '保存图片';
+
+  @override
+  String get editImagePickFolderTitle => '选择图片保存目录';
+
+  @override
+  String editImageSavedSnackbar(String path) {
+    return '已保存到 $path';
+  }
+
+  @override
+  String editImageSaveFailedSnackbar(String error) {
+    return '保存失败:$error';
+  }
+
+  @override
+  String get editImageExpired => '图片已不在 APP 临时目录中,请让 AI 重新编辑。';
+
+  @override
+  String editImageDeltaSaved(String percent) {
+    return '−$percent%';
+  }
+
+  @override
+  String editImageDeltaGrew(String percent) {
+    return '+$percent%';
+  }
 
   @override
   String get remindersPickerTitle => '选择待办日历';

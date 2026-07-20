@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/edited_image.dart';
 import '../models/file_attachment.dart';
 import '../models/message.dart';
 import '../providers/chat_provider.dart';
@@ -14,6 +15,7 @@ import '../services/tts_service.dart';
 import '../theme/app_theme.dart';
 import 'image_preview.dart';
 import 'download_card.dart';
+import 'edit_image_card.dart';
 import 'markdown_content.dart';
 
 class MessageBubble extends StatefulWidget {
@@ -538,6 +540,8 @@ class _MessageBubbleState extends State<MessageBubble> {
   Widget _buildAssistant(BuildContext context, ChatMessage m) {
     final hasThinking = m.thinking.isNotEmpty;
     final hasTools = m.toolCalls.isNotEmpty;
+    final hasEditedImages = m.toolCalls
+        .any((tc) => tc.editedImages.isNotEmpty);
     final isRetrying = m.isRetrying;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 48, 4),
@@ -547,6 +551,17 @@ class _MessageBubbleState extends State<MessageBubble> {
           if (isRetrying) _buildRetryBanner(context, m),
           if (hasThinking) _buildThinking(context, m),
           if (hasTools) _buildToolCallsSection(context, m),
+          // Edited-image gallery: rendered as a sibling of the
+          // tool-calls section, NOT inside the collapsed tool
+          // card. The user picked "directly visible in the
+          // bubble content area" over "collapsed with the rest
+          // of the tool call" — a 4-step chain of compress /
+          // resize / rotate / crop is most useful when the
+          // previews are all on screen at once, and the
+          // metadata captions (action · WxH · bytes) make the
+          // sequence self-explanatory even without the
+          // collapsed card's args panel.
+          if (hasEditedImages) _buildEditedImagesGallery(context, m),
           // Bubble + footer are sized together so the footer
           // [Spacer] can push chips flush against the bubble's
           // right edge. The [IntrinsicWidth] is scoped to JUST
@@ -780,7 +795,49 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-  /// Renders the auto-retry banner above the assistant bubble
+  /// Gallery of `edit_image` results for this assistant
+  /// message. Iterates over every tool call and concatenates
+  /// their `editedImages` lists, then renders them in a
+  /// `Wrap` so multiple cards (a 4-step chain) flow
+  /// naturally without forcing a 2-column grid on a 1-card
+  /// case.
+  ///
+  /// Each card is its own `EditImageCard` widget — they own
+  /// the download affordance + the "expired" hint when the
+  /// temp file is gone after an app restart.
+  Widget _buildEditedImagesGallery(BuildContext context, ChatMessage m) {
+    final entries = <_EditedImageEntry>[];
+    for (final tc in m.toolCalls) {
+      for (final img in tc.editedImages) {
+        entries.add(_EditedImageEntry(toolId: tc.id, image: img));
+      }
+    }
+    if (entries.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (final e in entries)
+            ConstrainedBox(
+              // Cap each card to a sensible phone-bubble width
+              // so a chain of N edits doesn't push the bubble
+              // to full-screen on the wide side of the
+              // phone-frame layout. The card's content is
+              // AspectRatio-driven, so this constraint controls
+              // the preview size rather than the caption.
+              constraints: const BoxConstraints(maxWidth: 260),
+              child: EditImageCard(
+                image: e.image,
+                assistantId: m.id,
+                toolId: e.toolId,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
   /// while the cloud provider path is waiting on the next
   /// attempt of the exponential-backoff schedule. Reads the live
   /// `m.nextRetryAt` on every rebuild so the countdown label
@@ -2220,4 +2277,15 @@ class _OptionChip extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Carries the [ToolCall.id] alongside each [EditedImage] so
+/// the gallery can route the user's Save tap back to the
+/// right tool call via `ChatProvider.saveEditedImage(...)`.
+/// Internal-only — defined at the bottom of this file because
+/// it's a 1:1 view-model for the gallery section above.
+class _EditedImageEntry {
+  const _EditedImageEntry({required this.toolId, required this.image});
+  final String toolId;
+  final EditedImage image;
 }

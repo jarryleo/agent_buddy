@@ -691,6 +691,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Delegate a self-contained research / information-gathering task to an isolated sub-agent that runs in its own context window and returns a compressed report. Keeps the main conversation clean and saves tokens.';
 
   @override
+  String get toolDescEditImage =>
+      'Compress, crop, resize, rotate, or convert the format of an image the user uploaded in this chat. Each call processes a copy in the temp directory — the original is never modified.';
+
+  @override
   String get toolNameFetchWeb => 'Fetch Web';
 
   @override
@@ -751,6 +755,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolNameSubAgent => 'Sub-Agent';
 
   @override
+  String get toolNameEditImage => 'Edit Image';
+
+  @override
   String get downloadStatusPending => 'Waiting…';
 
   @override
@@ -802,6 +809,52 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get downloadExpiredHint =>
       'This file is no longer in the app\'s temp directory. Ask the AI to re-download.';
+
+  @override
+  String get editImageActionCompress => 'Compress';
+
+  @override
+  String get editImageActionCrop => 'Crop';
+
+  @override
+  String get editImageActionResize => 'Resize';
+
+  @override
+  String get editImageActionRotate => 'Rotate';
+
+  @override
+  String get editImageActionConvert => 'Convert';
+
+  @override
+  String get editImageActionSave => 'Save image';
+
+  @override
+  String get editImagePickFolderTitle =>
+      'Choose a folder to save the edited image in';
+
+  @override
+  String editImageSavedSnackbar(String path) {
+    return 'Saved to $path';
+  }
+
+  @override
+  String editImageSaveFailedSnackbar(String error) {
+    return 'Save failed: $error';
+  }
+
+  @override
+  String get editImageExpired =>
+      'This image is no longer in the app\'s temp directory. Ask the AI to re-edit it.';
+
+  @override
+  String editImageDeltaSaved(String percent) {
+    return '−$percent%';
+  }
+
+  @override
+  String editImageDeltaGrew(String percent) {
+    return '+$percent%';
+  }
 
   @override
   String get remindersPickerTitle => 'Choose a todo calendar';

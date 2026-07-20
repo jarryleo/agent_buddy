@@ -24,6 +24,10 @@ dependencies:
   html: ^0.15.5
   url_launcher: ^6.3.1
   image_picker: ^1.1.2
+  # Pure-Dart image processing for the `edit_image` tool. Supports
+  # crop / resize / rotate / format-encode (incl. JPEG quality).
+  # No native code so it works on every Flutter target.
+  image: ^4.5.0
   path_provider: ^2.1.4
   path: ^1.9.0
   file_picker: ^8.1.4

@@ -151,6 +151,10 @@ class ToolsTab extends StatelessWidget {
 /// the locale has no entry. Returns an empty string for unknown
 /// ids, which the caller treats as "fall back to the tool's
 /// own name".
+@visibleForTesting
+String toolUserNameForTest(AppLocalizations l10n, String id) =>
+    _toolUserName(l10n, id);
+
 String _toolUserName(AppLocalizations l10n, String id) {
   switch (id) {
     case 'fetch_web':
@@ -193,6 +197,8 @@ String _toolUserName(AppLocalizations l10n, String id) {
       return l10n.toolNameCallMcp;
     case 'subagent':
       return l10n.toolNameSubAgent;
+    case 'edit_image':
+      return l10n.toolNameEditImage;
     default:
       return '';
   }
@@ -204,6 +210,10 @@ String _toolUserName(AppLocalizations l10n, String id) {
 /// because it's an authoritative API contract. Returns an empty
 /// string for unknown ids, which the caller treats as "fall back
 /// to the tool's own description".
+@visibleForTesting
+String toolUserDescriptionForTest(AppLocalizations l10n, String id) =>
+    _toolUserDescription(l10n, id);
+
 String _toolUserDescription(AppLocalizations l10n, String id) {
   switch (id) {
     case 'fetch_web':
@@ -246,6 +256,8 @@ String _toolUserDescription(AppLocalizations l10n, String id) {
       return l10n.toolDescCallMcp;
     case 'subagent':
       return l10n.toolDescSubAgent;
+    case 'edit_image':
+      return l10n.toolDescEditImage;
     default:
       return '';
   }

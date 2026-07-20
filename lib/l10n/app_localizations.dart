@@ -1308,6 +1308,12 @@ abstract class AppLocalizations {
   /// **'Delegate a self-contained research / information-gathering task to an isolated sub-agent that runs in its own context window and returns a compressed report. Keeps the main conversation clean and saves tokens.'**
   String get toolDescSubAgent;
 
+  /// No description provided for @toolDescEditImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Compress, crop, resize, rotate, or convert the format of an image the user uploaded in this chat. Each call processes a copy in the temp directory — the original is never modified.'**
+  String get toolDescEditImage;
+
   /// No description provided for @toolNameFetchWeb.
   ///
   /// In en, this message translates to:
@@ -1428,6 +1434,12 @@ abstract class AppLocalizations {
   /// **'Sub-Agent'**
   String get toolNameSubAgent;
 
+  /// No description provided for @toolNameEditImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit Image'**
+  String get toolNameEditImage;
+
   /// No description provided for @downloadStatusPending.
   ///
   /// In en, this message translates to:
@@ -1523,6 +1535,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This file is no longer in the app\'s temp directory. Ask the AI to re-download.'**
   String get downloadExpiredHint;
+
+  /// No description provided for @editImageActionCompress.
+  ///
+  /// In en, this message translates to:
+  /// **'Compress'**
+  String get editImageActionCompress;
+
+  /// No description provided for @editImageActionCrop.
+  ///
+  /// In en, this message translates to:
+  /// **'Crop'**
+  String get editImageActionCrop;
+
+  /// No description provided for @editImageActionResize.
+  ///
+  /// In en, this message translates to:
+  /// **'Resize'**
+  String get editImageActionResize;
+
+  /// No description provided for @editImageActionRotate.
+  ///
+  /// In en, this message translates to:
+  /// **'Rotate'**
+  String get editImageActionRotate;
+
+  /// No description provided for @editImageActionConvert.
+  ///
+  /// In en, this message translates to:
+  /// **'Convert'**
+  String get editImageActionConvert;
+
+  /// No description provided for @editImageActionSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save image'**
+  String get editImageActionSave;
+
+  /// No description provided for @editImagePickFolderTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a folder to save the edited image in'**
+  String get editImagePickFolderTitle;
+
+  /// No description provided for @editImageSavedSnackbar.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved to {path}'**
+  String editImageSavedSnackbar(String path);
+
+  /// No description provided for @editImageSaveFailedSnackbar.
+  ///
+  /// In en, this message translates to:
+  /// **'Save failed: {error}'**
+  String editImageSaveFailedSnackbar(String error);
+
+  /// No description provided for @editImageExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'This image is no longer in the app\'s temp directory. Ask the AI to re-edit it.'**
+  String get editImageExpired;
+
+  /// No description provided for @editImageDeltaSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'−{percent}%'**
+  String editImageDeltaSaved(String percent);
+
+  /// No description provided for @editImageDeltaGrew.
+  ///
+  /// In en, this message translates to:
+  /// **'+{percent}%'**
+  String editImageDeltaGrew(String percent);
 
   /// No description provided for @remindersPickerTitle.
   ///

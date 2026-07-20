@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'download.dart';
+import 'edited_image.dart';
 import 'file_attachment.dart';
 
 enum MessageRole { user, assistant, system, tool }
@@ -195,6 +196,17 @@ class ToolCall {
   /// survives an app restart.
   final bool awaitingUserAction;
 
+  /// Populated for the `edit_image` tool: each entry is one
+  /// processed-image snapshot produced by a single
+  /// compress / crop / resize / rotate step. The chat provider
+  /// appends to this list as the model chains successive edits
+  /// in a single tool call sequence; the bubble renders each
+  /// preview with a Save affordance. Persisted to JSON so the
+  /// gallery survives an app restart (the on-disk temp file
+  /// may be gone after that — the bubble checks `File.exists`
+  /// before offering Save).
+  final List<EditedImage> editedImages;
+
   ToolCall({
     required this.id,
     required this.name,
@@ -207,6 +219,7 @@ class ToolCall {
     this.multiSelect,
     this.downloads = const [],
     this.awaitingUserAction = false,
+    this.editedImages = const [],
     DateTime? startedAt,
     this.finishedAt,
   }) : startedAt = startedAt ?? DateTime.now();
@@ -229,6 +242,7 @@ class ToolCall {
     bool? multiSelect,
     List<DownloadItem>? downloads,
     bool? awaitingUserAction,
+    List<EditedImage>? editedImages,
   }) {
     return ToolCall(
       id: id,
@@ -242,6 +256,7 @@ class ToolCall {
       multiSelect: multiSelect ?? this.multiSelect,
       downloads: downloads ?? this.downloads,
       awaitingUserAction: awaitingUserAction ?? this.awaitingUserAction,
+      editedImages: editedImages ?? this.editedImages,
       startedAt: startedAt,
       finishedAt: finishedAt ?? this.finishedAt,
     );
@@ -263,10 +278,12 @@ class ToolCall {
     // Only serialize when true so v1 records (no `awaitingUserAction`
     // key) round-trip identically.
     if (awaitingUserAction) 'awaitingUserAction': true,
+    'editedImages': editedImages.map((e) => e.toJson()).toList(),
   };
 
   factory ToolCall.fromJson(Map<String, dynamic> json) {
     final rawDownloads = json['downloads'] as List?;
+    final rawEdited = json['editedImages'] as List?;
     return ToolCall(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -286,6 +303,11 @@ class ToolCall {
                 .map((e) => DownloadItem.fromJson(e as Map<String, dynamic>))
                 .toList(),
       awaitingUserAction: json['awaitingUserAction'] as bool? ?? false,
+      editedImages: rawEdited == null
+          ? const []
+          : rawEdited
+                .map((e) => EditedImage.fromJson(e as Map<String, dynamic>))
+                .toList(),
       startedAt:
           DateTime.tryParse(json['startedAt'] as String? ?? '') ??
           DateTime.now(),

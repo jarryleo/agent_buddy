@@ -19,6 +19,7 @@ import 'timer_tool.dart';
 import 'google_sheet_tool.dart';
 import 'search_tool.dart';
 import 'sub_agent_tool.dart';
+import 'edit_image_tool.dart';
 
 /// Central registry that maps tool [id] to [ToolBase] instances.
 ///
@@ -66,6 +67,7 @@ class ToolRegistry {
     FileTool(),
     SearchTool(),
     GetEnvironmentTool(),
+    EditImageTool(),
 
     // System (auto / not user-facing)
     LoadSkillTool(),

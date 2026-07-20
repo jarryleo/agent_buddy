@@ -222,6 +222,7 @@
   "toolDescGoogleSheet": "读写你账号下的 Google 表格(仅桌面端)。",
   "toolDescCallMcp": "调用外部 MCP 服务器上的工具。",
   "toolDescSubAgent": "把一个独立的调研/搜集任务交给子 AI 跑 —— 子 agent 在独立的上下文里执行,完成后只把压缩后的报告回给主对话,节省 token 并保持主对话整洁。",
+  "toolDescEditImage": "压缩、裁剪、调整分辨率、旋转或转换格式,处理用户上传的图片。每次调用都在临时目录处理副本,绝不修改原图。",
 
   "toolNameFetchWeb": "Fetch Web",
   "toolNameCurrentTime": "当前时间",
@@ -243,6 +244,7 @@
   "toolNameGoogleSheet": "Google Sheet",
   "toolNameCallMcp": "调用 MCP 工具",
   "toolNameSubAgent": "子 Agent",
+  "toolNameEditImage": "编辑图片",
 
 
   "downloadStatusPending": "等待中…",
@@ -261,6 +263,31 @@
   "downloadSaveFailedSnackbar": "保存失败:{error}",
   "downloadDiscardedSnackbar": "已丢弃",
   "downloadExpiredHint": "文件已不在 APP 临时目录中,请让 AI 重新下载。",
+
+  "editImageActionCompress": "压缩",
+  "editImageActionCrop": "裁剪",
+  "editImageActionResize": "调整分辨率",
+  "editImageActionRotate": "旋转",
+  "editImageActionConvert": "转换格式",
+  "editImageActionSave": "保存图片",
+  "editImagePickFolderTitle": "选择图片保存目录",
+  "editImageSavedSnackbar": "已保存到 {path}",
+  "editImageSaveFailedSnackbar": "保存失败:{error}",
+  "editImageExpired": "图片已不在 APP 临时目录中,请让 AI 重新编辑。",
+  "editImageDeltaSaved": "−{percent}%",
+  "editImageDeltaGrew": "+{percent}%",
+  "@editImageSavedSnackbar": {
+    "placeholders": { "path": { "type": "String" } }
+  },
+  "@editImageSaveFailedSnackbar": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "@editImageDeltaSaved": {
+    "placeholders": { "percent": { "type": "String" } }
+  },
+  "@editImageDeltaGrew": {
+    "placeholders": { "percent": { "type": "String" } }
+  },
 
   "remindersPickerTitle": "选择待办日历",
   "remindersPickerDescription": "Android 上的提醒会作为全天事件存放在你某个日历中。请选择 Agent Buddy 用于保存提醒事项与待办的日历。",

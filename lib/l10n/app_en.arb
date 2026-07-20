@@ -294,6 +294,7 @@
   "toolDescGoogleSheet": "Read and edit your Google Sheet (desktop only).",
   "toolDescCallMcp": "Call tools on a configured MCP server.",
   "toolDescSubAgent": "Delegate a self-contained research / information-gathering task to an isolated sub-agent that runs in its own context window and returns a compressed report. Keeps the main conversation clean and saves tokens.",
+  "toolDescEditImage": "Compress, crop, resize, rotate, or convert the format of an image the user uploaded in this chat. Each call processes a copy in the temp directory — the original is never modified.",
 
   "toolNameFetchWeb": "Fetch Web",
   "toolNameCurrentTime": "Current Time",
@@ -315,6 +316,7 @@
   "toolNameGoogleSheet": "Google Sheet",
   "toolNameCallMcp": "MCP Tools",
   "toolNameSubAgent": "Sub-Agent",
+  "toolNameEditImage": "Edit Image",
 
 
   "downloadStatusPending": "Waiting…",
@@ -338,6 +340,31 @@
   },
   "@downloadSaveFailedSnackbar": {
     "placeholders": { "error": { "type": "String" } }
+  },
+
+  "editImageActionCompress": "Compress",
+  "editImageActionCrop": "Crop",
+  "editImageActionResize": "Resize",
+  "editImageActionRotate": "Rotate",
+  "editImageActionConvert": "Convert",
+  "editImageActionSave": "Save image",
+  "editImagePickFolderTitle": "Choose a folder to save the edited image in",
+  "editImageSavedSnackbar": "Saved to {path}",
+  "editImageSaveFailedSnackbar": "Save failed: {error}",
+  "editImageExpired": "This image is no longer in the app's temp directory. Ask the AI to re-edit it.",
+  "editImageDeltaSaved": "−{percent}%",
+  "editImageDeltaGrew": "+{percent}%",
+  "@editImageSavedSnackbar": {
+    "placeholders": { "path": { "type": "String" } }
+  },
+  "@editImageSaveFailedSnackbar": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "@editImageDeltaSaved": {
+    "placeholders": { "percent": { "type": "String" } }
+  },
+  "@editImageDeltaGrew": {
+    "placeholders": { "percent": { "type": "String" } }
   },
 
   "remindersPickerTitle": "Choose a todo calendar",
