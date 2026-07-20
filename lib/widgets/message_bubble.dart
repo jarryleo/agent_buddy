@@ -540,8 +540,7 @@ class _MessageBubbleState extends State<MessageBubble> {
   Widget _buildAssistant(BuildContext context, ChatMessage m) {
     final hasThinking = m.thinking.isNotEmpty;
     final hasTools = m.toolCalls.isNotEmpty;
-    final hasEditedImages = m.toolCalls
-        .any((tc) => tc.editedImages.isNotEmpty);
+    final hasEditedImages = m.toolCalls.any((tc) => tc.editedImages.isNotEmpty);
     final isRetrying = m.isRetrying;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 48, 4),
@@ -838,6 +837,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       ),
     );
   }
+
   /// while the cloud provider path is waiting on the next
   /// attempt of the exponential-backoff schedule. Reads the live
   /// `m.nextRetryAt` on every rebuild so the countdown label

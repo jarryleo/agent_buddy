@@ -30,8 +30,7 @@ class VoiceServiceStub implements VoiceService {
     Duration listenFor = const Duration(seconds: 30),
     Duration pauseFor = const Duration(seconds: 5),
     String? localeId,
-  }) =>
-      Future.value(false);
+  }) => Future.value(false);
 
   @override
   Future<void> stopListening() async {}

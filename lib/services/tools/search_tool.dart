@@ -76,11 +76,12 @@ class SearchTool extends ToolBase {
   @override
   String get compactSchemaForModel => '''
 参数:
-- pattern (string, 必填): ECMAScript 正则(不需要 // 包裹)
+- pattern (string, 必填): ECMAScript 正则(不需要 // 包裹;^ 行首 \$ 行尾)
 - path (string, 可选): 起始目录;desktop 可绝对/相对;mobile 用 working:// 或 picker://;空=工作目录
 - files (string[], 可选): 直接列文件路径,会覆盖 path
 - case_sensitive (bool, 默认 false)
-- include_globs / exclude_globs (string[], 可选)
+- include_globs (string[], 可选): 例 "*.dart" / "**/*.dart" / "src/**" 限定类型
+- exclude_globs (string[], 可选): 例 "*.g.dart,*.freezed.dart"
 - max_results (int, 默认 200): 命中上限,达上限立即停
 - max_files (int, 默认 5000): 扫描文件数上限
 - max_file_size_mb (int, 默认 8): 单文件跳过阈值
@@ -88,8 +89,13 @@ class SearchTool extends ToolBase {
 返回: {matches:[{file,line,column,text}], total, scanned_files, skipped_files, truncated}
 
 约束:
-- 自动跳过 .git / node_modules / build / dist / Pods / target / 二进制
-- mobile 端 picker:// 单文件直接走 FileService,无工作目录时报错
+- 自动跳过 .git / node_modules / build / .dart_tool / Pods / target / dist / .idea / .vscode / __pycache__ / .next / .nuxt 等重目录,以及图片/视频/压缩包/可执行/.lock/.map 等二进制 —— 不用你排除,大仓库默认就快。
+- mobile 端 picker:// 单文件直接走 FileService,无工作目录时报错。
+
+最佳实践:
+- **首选用法**:搜符号/字符串/函数名,`search(pattern:"ToolException", include_globs:["*.dart"])` 一秒扫整个 lib/,比逐个 file read 省 token 太多。
+- 三道保护(max_results/max_files/max_file_size_mb):跑了半天还没结果就降低 max_files 或加 include_globs 收紧范围。
+- 命中行带 1-based 行号 + 列号 + 原文,**直接拿 line 字段当 file.read 的 offset_lines、或当 file.edit 的 old_text 锚点**(配合 file.read 的 "N|" 行号前缀,完美衔接)。
 ''';
 
   @override

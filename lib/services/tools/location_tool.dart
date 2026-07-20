@@ -51,6 +51,21 @@ class LocationTool extends ToolBase {
   }
 
   @override
+  String get compactSchemaForModel => '''
+参数:
+- action (string, 固定 "get"): 唯一操作
+- timeout_ms (int, 默认 10000): GPS 等待超时
+
+返回: {action, location:{latitude, longitude, accuracyMeters?, city?, region?, country?, countryCode?, timezone?, isp?, source:"gps"|"ip", fetchedAtMs}}
+
+最佳实践:
+- **别主动问用户城市**,已经有权限就直接调 —— 用户问"今天天气/我在哪"立刻调。
+- 桌面/Web 走 IP 路径,精度 city 级,够用。
+- iOS 路径不返回 city/region/country(避免 CLGeocoder 网络往返),此时用 `TimeZone.current.identifier` 推时区。
+- 移动端首次调用会触发系统权限弹窗,永久拒绝会抛 "open system settings" 软错误,告诉用户去设置开即可。
+''';
+
+  @override
   Future<String> execute(
     Map<String, dynamic> args,
     ToolService services,

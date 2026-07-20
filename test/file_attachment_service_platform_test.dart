@@ -35,9 +35,7 @@ void main() {
       // original path to the model — otherwise file.edit would
       // mutate a sandbox copy and the user wouldn't see the
       // change on disk.
-      final source = await File(
-        p.join(tempDir.path, 'real.txt'),
-      ).create();
+      final source = await File(p.join(tempDir.path, 'real.txt')).create();
       await source.writeAsString('hello');
 
       final svc = FileAttachmentService();
@@ -64,9 +62,7 @@ void main() {
       // prepare() the same way it was before — only the source
       // location changed. This is what the model sees when it
       // calls file.read on the attachment's path.
-      final source = await File(
-        p.join(tempDir.path, 'readme.md'),
-      ).create();
+      final source = await File(p.join(tempDir.path, 'readme.md')).create();
       await source.writeAsString('line one\nline two\n');
 
       final svc = FileAttachmentService();
@@ -99,14 +95,10 @@ void main() {
     });
 
     test('copies into <docs>/chat_files/<µs>_<index>__<safeName>', () async {
-      final source = await File(
-        p.join(tempDir.path, 'note.txt'),
-      ).create();
+      final source = await File(p.join(tempDir.path, 'note.txt')).create();
       await source.writeAsString('mobile');
 
-      final svc = FileAttachmentService(
-        docsDirResolver: () async => tempDir,
-      );
+      final svc = FileAttachmentService(docsDirResolver: () async => tempDir);
       final result = await svc.importPaths([source.path]);
 
       expect(result, hasLength(1));

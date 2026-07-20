@@ -30,6 +30,20 @@ class NotificationTool extends ToolBase {
   bool get isSupportedOnCurrentPlatform => true;
 
   @override
+  String get compactSchemaForModel => '''
+参数:
+- action (string, 必填): show
+- show: title (string, 必填), body (string, 可选), notification_id (string, 可选, 同 id 会替换)
+
+返回: {action, ok:true, notification_id}
+
+最佳实践:
+- 计时器到点时,如果用户正看着聊天,就由你来调它把提醒正式发出去 —— 不要等 ChatProvider 自动注入的合成消息,直接调。
+- notification_id 传固定字符串(如 "agent-buddy-reminder")可以让 tosat 槽位复用(覆盖式更新),不要每次都生成新 id 否则会堆一排。
+- 仅在程序运行时有效。
+''';
+
+  @override
   Map<String, dynamic> buildSchema() {
     return {
       'type': 'function',

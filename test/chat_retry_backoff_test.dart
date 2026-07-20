@@ -76,8 +76,7 @@ void main() {
     });
 
     test('TimeoutException is retryable', () {
-      const err =
-          'TimeoutException after 0:00:30.000000: Future not completed';
+      const err = 'TimeoutException after 0:00:30.000000: Future not completed';
       expect(ChatProvider.isRetryableNetworkError(err), isTrue);
     });
 

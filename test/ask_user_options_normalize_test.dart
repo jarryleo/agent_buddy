@@ -9,7 +9,10 @@ void main() {
       final Map<String, dynamic> json = {
         'id': 'tc1',
         'name': 'ask_user',
-        'arguments': {'question': 'Test', 'options': ['A', 'B']},
+        'arguments': {
+          'question': 'Test',
+          'options': ['A', 'B'],
+        },
         'status': 'running',
         'startedAt': DateTime.now().toIso8601String(),
         'downloads': [],
@@ -49,10 +52,7 @@ void main() {
     }
 
     test('passes through flat string options untouched', () {
-      expect(
-        normalize(['A', 'B', 'C']),
-        ['A', 'B', 'C'],
-      );
+      expect(normalize(['A', 'B', 'C']), ['A', 'B', 'C']);
     });
 
     test('extracts label from object-shaped options', () {
@@ -107,10 +107,7 @@ void main() {
       ];
       final lazy = raw.cast<String>();
       expect(lazy.length, 2); // safe
-      expect(
-        () => lazy.toList(),
-        throwsA(isA<TypeError>()),
-      );
+      expect(() => lazy.toList(), throwsA(isA<TypeError>()));
     });
   });
 }

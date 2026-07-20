@@ -123,18 +123,17 @@ void main() {
 
     setUp(() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel('agent_buddy/file'),
-        (call) async {
-          // All picker paths (picker://<id>) still route through
-          // the existing channel; tests below don't exercise
-          // them, so a default null response is fine.
-          if (call.method == 'pick') {
-            return {'cancelled': true};
-          }
-          return null;
-        },
-      );
+          .setMockMethodCallHandler(const MethodChannel('agent_buddy/file'), (
+            call,
+          ) async {
+            // All picker paths (picker://<id>) still route through
+            // the existing channel; tests below don't exercise
+            // them, so a default null response is fine.
+            if (call.method == 'pick') {
+              return {'cancelled': true};
+            }
+            return null;
+          });
       backend = _FakeWorkingDirBackend();
       svc = FileServiceImpl(
         workingDirectoryLookup: () => '/storage/emulated/0/Download/test',
@@ -146,16 +145,13 @@ void main() {
     tearDown(() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
-        const MethodChannel('agent_buddy/file'),
-        null,
-      );
+            const MethodChannel('agent_buddy/file'),
+            null,
+          );
     });
 
     test('write on a working://<rel> path routes to writeRel', () async {
-      await svc.write(
-        'working://foo/bar.txt',
-        'hello'.codeUnits,
-      );
+      await svc.write('working://foo/bar.txt', 'hello'.codeUnits);
       expect(backend.writes, hasLength(1));
       expect(backend.writes.single.relPath, 'foo/bar.txt');
       expect(backend.writes.single.append, isFalse);
@@ -180,20 +176,22 @@ void main() {
       expect(backend.reads.single.maxBytes, 4096);
     });
 
-    test('read surfaces FileTooLarge from the backend as a friendly error',
-        () async {
-      backend.nextReadResult = Uint8List(64 * 1024);
-      await expectLater(
-        svc.read('foo.bin', maxBytes: 1024),
-        throwsA(
-          isA<FileServiceError>().having(
-            (e) => e.message,
-            'message',
-            contains('file too large'),
+    test(
+      'read surfaces FileTooLarge from the backend as a friendly error',
+      () async {
+        backend.nextReadResult = Uint8List(64 * 1024);
+        await expectLater(
+          svc.read('foo.bin', maxBytes: 1024),
+          throwsA(
+            isA<FileServiceError>().having(
+              (e) => e.message,
+              'message',
+              contains('file too large'),
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
 
     test('listDir routes to listRel and returns working:// entries', () async {
       backend.nextListResult = const [
@@ -257,38 +255,38 @@ void main() {
       expect(backend.readAttrs.single, 'foo.txt');
     });
 
-    test('user cancelling re-auth throws a friendly FileServiceError',
-        () async {
-      backend.cancelledOnce = true;
-      try {
-        await svc.write('working://foo.txt', 'x'.codeUnits);
-        fail('expected FileServiceError');
-      } on FileServiceError catch (e) {
-        expect(e.message, contains('working directory access was denied'));
-        expect(e.message, contains('chat toolbar'));
-      }
-      // And the backend only saw the cancelled throw, not
-      // any retry — Dart side does NOT re-prompt; the
-      // native side does that transparently in production.
-      expect(backend.writes, hasLength(1));
-    });
+    test(
+      'user cancelling re-auth throws a friendly FileServiceError',
+      () async {
+        backend.cancelledOnce = true;
+        try {
+          await svc.write('working://foo.txt', 'x'.codeUnits);
+          fail('expected FileServiceError');
+        } on FileServiceError catch (e) {
+          expect(e.message, contains('working directory access was denied'));
+          expect(e.message, contains('chat toolbar'));
+        }
+        // And the backend only saw the cancelled throw, not
+        // any retry — Dart side does NOT re-prompt; the
+        // native side does that transparently in production.
+        expect(backend.writes, hasLength(1));
+      },
+    );
 
-    test('read on a picker://<id> still routes to the picker bridge',
-        () async {
+    test('read on a picker://<id> still routes to the picker bridge', () async {
       // Even on Android the picker://<id> path uses the
       // existing PickerFileBackend, NOT the SAF working-dir
       // backend. Verify by giving the channel a stub that
       // returns bytes for readPicker.
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-        const MethodChannel('agent_buddy/file'),
-        (call) async {
-          if (call.method == 'readPicker') {
-            return Uint8List.fromList('picked'.codeUnits);
-          }
-          return null;
-        },
-      );
+          .setMockMethodCallHandler(const MethodChannel('agent_buddy/file'), (
+            call,
+          ) async {
+            if (call.method == 'readPicker') {
+              return Uint8List.fromList('picked'.codeUnits);
+            }
+            return null;
+          });
       final got = await svc.read('picker://f-1', maxBytes: 4096);
       expect(String.fromCharCodes(got), 'picked');
       // Working-dir backend should NOT have been touched.
@@ -303,9 +301,9 @@ void main() {
     setUp(() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
-        const MethodChannel('agent_buddy/file'),
-        (call) async => null,
-      );
+            const MethodChannel('agent_buddy/file'),
+            (call) async => null,
+          );
       backend = _FakeWorkingDirBackend();
       svc = FileServiceImpl(
         workingDirectoryLookup: () => null,
@@ -317,15 +315,16 @@ void main() {
     tearDown(() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
-        const MethodChannel('agent_buddy/file'),
-        null,
-      );
+            const MethodChannel('agent_buddy/file'),
+            null,
+          );
     });
 
     test('returns the (path, treeUri) pair from the backend', () async {
       backend.nextPickResult = (
         path: '/storage/emulated/0/Download/x',
-        treeUri: 'content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fx',
+        treeUri:
+            'content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fx',
       );
       final got = await svc.pickWorkingDirectory();
       expect(got, isNotNull);

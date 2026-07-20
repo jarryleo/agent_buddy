@@ -69,6 +69,22 @@ class RunCommandTool extends ToolBase {
   bool get isSupportedOnCurrentPlatform => isDesktop();
 
   @override
+  String get compactSchemaForModel => '''
+参数:
+- command (string, 必填): 完整命令,通过系统 shell 运行(Windows 上用 cmd /c,macOS/Linux 用 sh -c)
+- cwd (string, 可选): 工作目录,默认用户工作目录
+- timeout_seconds (int, 默认 30, 上限 600): 超时自动 kill
+
+返回: {stdout, stderr, exit_code, duration_ms, timed_out}
+
+最佳实践:
+- 想看环境先 get_environment(免去 `uname -a` / `ver` 之类命令)。
+- 长任务前先估时间(timeout_seconds),别 600 秒到底,烧光用户耐心。
+- shell 不解释管道 / 重定向以外的语法(./script.sh 这种需要先 chmod +x 或直接 sh script.sh)。
+- macOS GUI 启动的 app PATH 很窄,本工具自动 prepend 标准路径(/usr/local/bin, /opt/homebrew/bin 等)。
+''';
+
+  @override
   Map<String, dynamic> buildSchema() {
     if (!isSupportedOnCurrentPlatform) return {};
     return {

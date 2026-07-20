@@ -137,114 +137,114 @@ class MarkdownContent extends StatelessWidget {
         selectable: false,
         shrinkWrap: true,
         styleSheet: styleSheet,
-      onTapLink: (text, href, title) async {
-        if (href == null || href.isEmpty) return;
-        final uri = Uri.tryParse(href);
-        if (uri == null) return;
-        if (uri.scheme == 'http' || uri.scheme == 'https') {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        }
-      },
-      imageBuilder: (uri, title, alt) {
-        final scheme = uri.scheme;
-        final isNetwork = scheme == 'http' || scheme == 'https';
-        final isFile = scheme == 'file';
-        final isData = scheme == 'data';
+        onTapLink: (text, href, title) async {
+          if (href == null || href.isEmpty) return;
+          final uri = Uri.tryParse(href);
+          if (uri == null) return;
+          if (uri.scheme == 'http' || uri.scheme == 'https') {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          }
+        },
+        imageBuilder: (uri, title, alt) {
+          final scheme = uri.scheme;
+          final isNetwork = scheme == 'http' || scheme == 'https';
+          final isFile = scheme == 'file';
+          final isData = scheme == 'data';
 
-        Widget image;
-        if (isNetwork) {
-          image = Image.network(
-            uri.toString(),
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.high,
-            cacheWidth: bubbleCacheWidth,
-            cacheHeight: bubbleCacheHeight,
-            loadingBuilder: (context, child, progress) {
-              if (progress == null) return child;
-              return Container(
-                constraints: const BoxConstraints(maxHeight: 200),
-                alignment: Alignment.center,
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    value: progress.expectedTotalBytes != null
-                        ? progress.cumulativeBytesLoaded /
-                              (progress.expectedTotalBytes ?? 1)
-                        : null,
+          Widget image;
+          if (isNetwork) {
+            image = Image.network(
+              uri.toString(),
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
+              cacheWidth: bubbleCacheWidth,
+              cacheHeight: bubbleCacheHeight,
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return Container(
+                  constraints: const BoxConstraints(maxHeight: 200),
+                  alignment: Alignment.center,
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      value: progress.expectedTotalBytes != null
+                          ? progress.cumulativeBytesLoaded /
+                                (progress.expectedTotalBytes ?? 1)
+                          : null,
+                    ),
                   ),
-                ),
-              );
-            },
-            errorBuilder: (context, error, stack) =>
-                _imageError(context, alt ?? uri.toString()),
-          );
-        } else if (isFile) {
-          final filePath = uri.toFilePath();
-          image = Image.file(
-            File(filePath),
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.high,
-            cacheWidth: bubbleCacheWidth,
-            cacheHeight: bubbleCacheHeight,
-            errorBuilder: (context, error, stack) =>
-                _imageError(context, alt ?? uri.toString()),
-          );
-        } else if (isData) {
-          image = _buildDataImage(
-            context,
-            uri,
-            alt,
-            cacheWidth: bubbleCacheWidth,
-            cacheHeight: bubbleCacheHeight,
-          );
-        } else {
-          // Fallback: try as a local file path or relative path.
-          final path = Uri.decodeComponent(uri.toString());
-          try {
+                );
+              },
+              errorBuilder: (context, error, stack) =>
+                  _imageError(context, alt ?? uri.toString()),
+            );
+          } else if (isFile) {
+            final filePath = uri.toFilePath();
             image = Image.file(
-              File(path),
+              File(filePath),
               fit: BoxFit.contain,
               filterQuality: FilterQuality.high,
               cacheWidth: bubbleCacheWidth,
               cacheHeight: bubbleCacheHeight,
               errorBuilder: (context, error, stack) =>
-                  _imageError(context, alt ?? path),
+                  _imageError(context, alt ?? uri.toString()),
             );
-          } catch (_) {
-            image = _imageError(context, alt ?? path);
-          }
-        }
-
-        return GestureDetector(
-          onTap: () {
-            if (isNetwork) {
-              ImagePreviewPage.showNetwork(
-                context,
-                uri.toString(),
-                title: title,
+          } else if (isData) {
+            image = _buildDataImage(
+              context,
+              uri,
+              alt,
+              cacheWidth: bubbleCacheWidth,
+              cacheHeight: bubbleCacheHeight,
+            );
+          } else {
+            // Fallback: try as a local file path or relative path.
+            final path = Uri.decodeComponent(uri.toString());
+            try {
+              image = Image.file(
+                File(path),
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+                cacheWidth: bubbleCacheWidth,
+                cacheHeight: bubbleCacheHeight,
+                errorBuilder: (context, error, stack) =>
+                    _imageError(context, alt ?? path),
               );
-            } else if (isFile) {
-              ImagePreviewPage.showLocal(
-                context,
-                uri.toFilePath(),
-                title: title,
-              );
+            } catch (_) {
+              image = _imageError(context, alt ?? path);
             }
-          },
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxHeight: 320,
-                maxWidth: double.infinity,
+          }
+
+          return GestureDetector(
+            onTap: () {
+              if (isNetwork) {
+                ImagePreviewPage.showNetwork(
+                  context,
+                  uri.toString(),
+                  title: title,
+                );
+              } else if (isFile) {
+                ImagePreviewPage.showLocal(
+                  context,
+                  uri.toFilePath(),
+                  title: title,
+                );
+              }
+            },
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxHeight: 320,
+                  maxWidth: double.infinity,
+                ),
+                child: image,
               ),
-              child: image,
             ),
-          ),
-        );
-      },
+          );
+        },
         builders: {'pre': _CodeBlockBuilder()},
       ),
     );

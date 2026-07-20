@@ -74,17 +74,15 @@ class _TurnOutcome {
 ///
 /// Kept as a top-level pure function (instead of a method on
 /// [ChatProvider]) so the prompt contents are directly unit-testable
-/// without spinning up the provider and its 8+ collaborators. The
-/// per-tool reminders used to live inline in this string; on a
-/// 4K-context local GGUF that ate ~1.5K tokens of every
-/// conversation before the model saw a single user word — a major
-/// source of the "降智" symptom on small contexts. The full content
-/// now lives behind the builtin `tool_usage` skill (see
-/// [BuiltinSkills.all]), which the model loads on demand via
-/// `load_skill`. This prompt only carries the short summary and a
-/// pointer to the skill, plus the two environment hints that
-/// genuinely need to be in every turn: the active working directory
-/// and the count of MCP servers the model can call.
+/// without spinning up the provider and its 8+ collaborators. Per-tool
+/// docs used to live in this string (eating ~1.5K tokens/turn on a
+/// 4K-context local GGUF), then behind a builtin `tool_usage` skill
+/// loaded via `load_skill` (extra round-trip per first touch). Now
+/// every per-tool tip lives inside the tool's own
+/// [ToolBase.compactSchemaForModel] — the model pulls it down with
+/// `load_tool(name)` and it's already in scope when the function
+/// call fires. This prompt only carries the cross-cutting rules
+/// that apply to every turn regardless of which tool is loaded.
 @visibleForTesting
 String buildBaseSystemPrompt({
   String? workingDirectory,
@@ -96,13 +94,14 @@ String buildBaseSystemPrompt({
   final mcpHint = enabledMcpServerCount > 0
       ? '\n'
             '- MCP 工具(名称以 mcp__ 开头):已启用 $enabledMcpServerCount 个 MCP 服务器,'
-            '工具的 schema 就是参数说明,按需调用即可。'
+            'load_tool("mcp__<server>__<tool>") 按需加载。'
       : '';
   return '你是一个有用、诚实的助手。\n'
       '\n'
       '## 核心规则\n'
       '1. 不知道就必须用工具查,禁止瞎编。必须真的发出 function_call,别装样子。\n'
-      '2. 同一轮可以连续调多个工具,等全部结果回来再统一回复。\n'
+      '2. 同一轮可以连续调多个工具,等全部结果回来再统一回复;'
+      '独立任务(尤其是调研类)优先并发调 subagent,别让主对话自己 fetch_web 一串。\n'
       '3. 工具报错了就跟用户说明原因,给个替代方案,别直接完事。\n'
       '4. 回复简洁,别啰嗦。\n'
       '\n'
@@ -113,10 +112,12 @@ String buildBaseSystemPrompt({
       '- 已经加载过的工具在同一会话内不需要重复加载,直接调用即可。\n'
       '- 工具调用失败返回的是软错误时(比如 cancelled / not_found / permission_denied),'
       '根据 message 给用户讲清楚,然后给个替代方案,不要直接放弃。\n'
-      '- 最佳实践、推荐用法、坑点统一放在技能"工具使用提示"里。'
-      '第一次涉及某个工具、或结果不像预期时,先 load_skill(skill_name: "工具使用提示") 看一眼。\n'
       '\n'
-      '完整用法和并发模式见 load_skill(skill_name: "工具使用提示")。'
+      '## 聊天附件\n'
+      '- 桌面端:附件 path = 用户原文件绝对路径,直接拿去调 file 工具就改用户磁盘上的文件,'
+      '别再 create 副本。\n'
+      '- 手机端:附件 path = app 沙盒副本,file 工具的 read/edit/write 不接受这种绝对路径,'
+      '改用 file.pick 拿 picker://<id>,或先 file.write 把内容落到工作目录。'
       '$workingDirectoryHint$mcpHint';
 }
 

@@ -296,8 +296,7 @@ class StorageService {
   /// `android/app/.../FileBridge.kt`) every time the user
   /// re-authorizes the working directory, so the two layers
   /// stay in sync.
-  String? get modelWorkingTreeUri =>
-      _prefs.getString(_kModelWorkingTreeUri);
+  String? get modelWorkingTreeUri => _prefs.getString(_kModelWorkingTreeUri);
 
   Future<void> setModelWorkingTreeUri(String? uri) async {
     if (uri == null || uri.isEmpty) {

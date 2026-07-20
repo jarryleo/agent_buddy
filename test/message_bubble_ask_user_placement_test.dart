@@ -75,73 +75,72 @@ void main() {
   }
 
   group('ask_user question card placement', () {
-    testWidgets(
-      'renders the question + options BELOW the bubble content '
-      '(not inside the tool call section)',
-      (tester) async {
-        final m = _assistantWithAskUser(
-          question: 'Which option do you prefer?',
-          options: ['Option A', 'Option B', 'Option C'],
-        );
-        await pumpWithProvider(tester, m, provider: _emptyProvider());
+    testWidgets('renders the question + options BELOW the bubble content '
+        '(not inside the tool call section)', (tester) async {
+      final m = _assistantWithAskUser(
+        question: 'Which option do you prefer?',
+        options: ['Option A', 'Option B', 'Option C'],
+      );
+      await pumpWithProvider(tester, m, provider: _emptyProvider());
 
-        // The question text shows up.
-        expect(find.text('Which option do you prefer?'), findsOneWidget);
-        // Every option shows up as a chip.
-        expect(find.text('Option A'), findsOneWidget);
-        expect(find.text('Option B'), findsOneWidget);
-        expect(find.text('Option C'), findsOneWidget);
-        // The "Model asks:" header is the new affordance that
-        // distinguishes this card from a generic content block.
-        expect(find.text('Model asks:'), findsOneWidget);
+      // The question text shows up.
+      expect(find.text('Which option do you prefer?'), findsOneWidget);
+      // Every option shows up as a chip.
+      expect(find.text('Option A'), findsOneWidget);
+      expect(find.text('Option B'), findsOneWidget);
+      expect(find.text('Option C'), findsOneWidget);
+      // The "Model asks:" header is the new affordance that
+      // distinguishes this card from a generic content block.
+      expect(find.text('Model asks:'), findsOneWidget);
 
-        // Layout sanity: the question card sits *after* the
-        // assistant bubble content in the Column. We assert this
-        // by walking the Column's children and confirming the
-        // question card is the last rendered child. Reading the
-        // y-coordinate via `getCenter` is more robust against
-        // small layout tweaks than pinning pixel positions.
-        final contentCenter = tester.getCenter(find.text('I need to check something with you first.'));
-        final questionCenter = tester.getCenter(find.text('Which option do you prefer?'));
-        expect(
-          questionCenter.dy > contentCenter.dy,
-          isTrue,
-          reason: 'question card should be rendered below the bubble content',
-        );
-      },
-    );
+      // Layout sanity: the question card sits *after* the
+      // assistant bubble content in the Column. We assert this
+      // by walking the Column's children and confirming the
+      // question card is the last rendered child. Reading the
+      // y-coordinate via `getCenter` is more robust against
+      // small layout tweaks than pinning pixel positions.
+      final contentCenter = tester.getCenter(
+        find.text('I need to check something with you first.'),
+      );
+      final questionCenter = tester.getCenter(
+        find.text('Which option do you prefer?'),
+      );
+      expect(
+        questionCenter.dy > contentCenter.dy,
+        isTrue,
+        reason: 'question card should be rendered below the bubble content',
+      );
+    });
 
-    testWidgets(
-      'renders NOTHING extra when no ask_user tool call is present',
-      (tester) async {
-        // An assistant message without any tool calls — used to
-        // be the default state for every turn before ask_user
-        // landed. The question card must stay out of the way.
-        final m = ChatMessage(
-          id: 'm_plain',
-          role: MessageRole.assistant,
-          content: 'Just a plain reply, no questions.',
-        );
-        await pumpWithProvider(tester, m, provider: _emptyProvider());
+    testWidgets('renders NOTHING extra when no ask_user tool call is present', (
+      tester,
+    ) async {
+      // An assistant message without any tool calls — used to
+      // be the default state for every turn before ask_user
+      // landed. The question card must stay out of the way.
+      final m = ChatMessage(
+        id: 'm_plain',
+        role: MessageRole.assistant,
+        content: 'Just a plain reply, no questions.',
+      );
+      await pumpWithProvider(tester, m, provider: _emptyProvider());
 
-        expect(find.text('Model asks:'), findsNothing);
-        expect(find.text('Which option do you prefer?'), findsNothing);
-      },
-    );
+      expect(find.text('Model asks:'), findsNothing);
+      expect(find.text('Which option do you prefer?'), findsNothing);
+    });
 
-    testWidgets(
-      'shows the Chinese prompt header under the zh locale',
-      (tester) async {
-        final m = _assistantWithAskUser();
-        await pumpWithProvider(
-          tester,
-          m,
-          provider: _emptyProvider(),
-          locale: const Locale('zh'),
-        );
-        expect(find.text('模型询问:'), findsOneWidget);
-      },
-    );
+    testWidgets('shows the Chinese prompt header under the zh locale', (
+      tester,
+    ) async {
+      final m = _assistantWithAskUser();
+      await pumpWithProvider(
+        tester,
+        m,
+        provider: _emptyProvider(),
+        locale: const Locale('zh'),
+      );
+      expect(find.text('模型询问:'), findsOneWidget);
+    });
   });
 }
 

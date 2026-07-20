@@ -92,46 +92,43 @@ void main() {
     return chat;
   }
 
-  testWidgets(
-    'a ClientException from the cloud provider triggers the retry '
-    'loop instead of a hard error',
-    (tester) async {
-      final storage = StorageService();
-      await storage.init();
-      final chat = await buildProvider(
-        storage: storage,
-        failWithClientException: true,
-      );
+  testWidgets('a ClientException from the cloud provider triggers the retry '
+      'loop instead of a hard error', (tester) async {
+    final storage = StorageService();
+    await storage.init();
+    final chat = await buildProvider(
+      storage: storage,
+      failWithClientException: true,
+    );
 
-      // Drive sendMessage without awaiting (it loops forever on
-      // retryable errors). We just need to observe the in-flight
-      // state flip to "retrying".
-      final ctx = tester.element(find.byType(Container));
-      unawaited(chat.sendMessage(ctx, 'hello'));
+    // Drive sendMessage without awaiting (it loops forever on
+    // retryable errors). We just need to observe the in-flight
+    // state flip to "retrying".
+    final ctx = tester.element(find.byType(Container));
+    unawaited(chat.sendMessage(ctx, 'hello'));
 
-      // Give the first attempt + error classification a tick.
-      await tester.pump(const Duration(milliseconds: 500));
+    // Give the first attempt + error classification a tick.
+    await tester.pump(const Duration(milliseconds: 500));
 
-      final assistant = storage.sessions
-          .get(chat.activeSessionId)
-          ?.messages
-          .where((m) => m.role == MessageRole.assistant)
-          .lastOrNull;
-      expect(assistant, isNotNull, reason: 'assistant bubble exists');
-      expect(
-        assistant!.isRetrying,
-        isTrue,
-        reason: 'bubble should be in retry state, not a hard error',
-      );
-      expect(
-        assistant.content,
-        isNot(contains('出错了')),
-        reason: 'should NOT show the hard-error prefix',
-      );
+    final assistant = storage.sessions
+        .get(chat.activeSessionId)
+        ?.messages
+        .where((m) => m.role == MessageRole.assistant)
+        .lastOrNull;
+    expect(assistant, isNotNull, reason: 'assistant bubble exists');
+    expect(
+      assistant!.isRetrying,
+      isTrue,
+      reason: 'bubble should be in retry state, not a hard error',
+    );
+    expect(
+      assistant.content,
+      isNot(contains('出错了')),
+      reason: 'should NOT show the hard-error prefix',
+    );
 
-      // Clean up so the lingering retry wait does not bleed into
-      // other tests.
-      chat.stopGeneration();
-    },
-  );
+    // Clean up so the lingering retry wait does not bleed into
+    // other tests.
+    chat.stopGeneration();
+  });
 }

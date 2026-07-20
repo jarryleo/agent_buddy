@@ -208,17 +208,20 @@ void main() {
       expect(result.height, 150);
     });
 
-    test('resize: keep_aspect_ratio true with only width derives height', () async {
-      final svc = ImageEditService(tempDir: tempDir);
-      // 800x600 → 4:3 aspect → width=400 → height=300.
-      final result = await svc.edit(
-        sourcePath: sourceJpeg.path,
-        action: EditImageAction.resize,
-        params: {'width': 400, 'keep_aspect_ratio': true},
-      );
-      expect(result.width, 400);
-      expect(result.height, 300);
-    });
+    test(
+      'resize: keep_aspect_ratio true with only width derives height',
+      () async {
+        final svc = ImageEditService(tempDir: tempDir);
+        // 800x600 → 4:3 aspect → width=400 → height=300.
+        final result = await svc.edit(
+          sourcePath: sourceJpeg.path,
+          action: EditImageAction.resize,
+          params: {'width': 400, 'keep_aspect_ratio': true},
+        );
+        expect(result.width, 400);
+        expect(result.height, 300);
+      },
+    );
 
     test('rotate 90: swaps width and height for a non-square image', () async {
       final svc = ImageEditService(tempDir: tempDir);
@@ -271,9 +274,8 @@ void main() {
   });
 
   group('EditImageTool', () {
-    EditImageTool makeTool() => EditImageTool(
-      imageEditService: ImageEditService(tempDir: tempDir),
-    );
+    EditImageTool makeTool() =>
+        EditImageTool(imageEditService: ImageEditService(tempDir: tempDir));
 
     test('buildSchema returns a function schema with all five actions', () {
       final tool = makeTool();
@@ -308,86 +310,80 @@ void main() {
       final tool = makeTool();
       final fakeService = _FakeToolService();
       expect(
-        () => tool.execute(
-          {'action': 'wat', 'image_path': '/tmp/x.jpg'},
-          fakeService,
-        ),
+        () => tool.execute({
+          'action': 'wat',
+          'image_path': '/tmp/x.jpg',
+        }, fakeService),
         throwsA(isA<ToolException>()),
       );
     });
 
-    test('execute runs compress end-to-end and returns a parseable envelope',
-        () async {
-      final tool = makeTool();
-      final result = await tool.execute(
-        {
+    test(
+      'execute runs compress end-to-end and returns a parseable envelope',
+      () async {
+        final tool = makeTool();
+        final result = await tool.execute({
           'action': 'compress',
           'image_path': sourceJpeg.path,
           'quality': 50,
-        },
-        _FakeToolService(),
-      );
-      final decoded = jsonDecode(result) as Map<String, dynamic>;
-      expect(decoded['ok'], isTrue);
-      expect(decoded['action'], 'compress');
-      expect(decoded['format'], 'jpeg');
-      expect(decoded['width'], 800);
-      expect(decoded['height'], 600);
-      expect(decoded['path'], isA<String>());
-      expect(File(decoded['path'] as String).existsSync(), isTrue);
-      expect(decoded['source_size'], greaterThan(decoded['size']));
-    });
+        }, _FakeToolService());
+        final decoded = jsonDecode(result) as Map<String, dynamic>;
+        expect(decoded['ok'], isTrue);
+        expect(decoded['action'], 'compress');
+        expect(decoded['format'], 'jpeg');
+        expect(decoded['width'], 800);
+        expect(decoded['height'], 600);
+        expect(decoded['path'], isA<String>());
+        expect(File(decoded['path'] as String).existsSync(), isTrue);
+        expect(decoded['source_size'], greaterThan(decoded['size']));
+      },
+    );
 
-    test('execute runs crop with rect args and reports new dimensions',
-        () async {
-      final tool = makeTool();
-      final result = await tool.execute(
-        {
+    test(
+      'execute runs crop with rect args and reports new dimensions',
+      () async {
+        final tool = makeTool();
+        final result = await tool.execute({
           'action': 'crop',
           'image_path': sourceJpeg.path,
           'x': 50,
           'y': 50,
           'width': 200,
           'height': 150,
-        },
-        _FakeToolService(),
-      );
-      final decoded = jsonDecode(result) as Map<String, dynamic>;
-      expect(decoded['ok'], isTrue);
-      expect(decoded['width'], 200);
-      expect(decoded['height'], 150);
-    });
+        }, _FakeToolService());
+        final decoded = jsonDecode(result) as Map<String, dynamic>;
+        expect(decoded['ok'], isTrue);
+        expect(decoded['width'], 200);
+        expect(decoded['height'], 150);
+      },
+    );
 
-    test('convert PNG → JPEG: writes a .jpg file with the right format',
-        () async {
-      final tool = makeTool();
-      final result = await tool.execute(
-        {
+    test(
+      'convert PNG → JPEG: writes a .jpg file with the right format',
+      () async {
+        final tool = makeTool();
+        final result = await tool.execute({
           'action': 'convert',
           'image_path': sourcePng.path,
           'target_format': 'jpg',
           'quality': 90,
-        },
-        _FakeToolService(),
-      );
-      final decoded = jsonDecode(result) as Map<String, dynamic>;
-      expect(decoded['ok'], isTrue);
-      expect(decoded['action'], 'convert');
-      expect(decoded['format'], 'jpeg');
-      expect(decoded['filename'], endsWith('.jpg'));
-      expect(File(decoded['path'] as String).existsSync(), isTrue);
-    });
+        }, _FakeToolService());
+        final decoded = jsonDecode(result) as Map<String, dynamic>;
+        expect(decoded['ok'], isTrue);
+        expect(decoded['action'], 'convert');
+        expect(decoded['format'], 'jpeg');
+        expect(decoded['filename'], endsWith('.jpg'));
+        expect(File(decoded['path'] as String).existsSync(), isTrue);
+      },
+    );
 
     test('convert PNG → WebP: writes a .webp file', () async {
       final tool = makeTool();
-      final result = await tool.execute(
-        {
-          'action': 'convert',
-          'image_path': sourcePng.path,
-          'target_format': 'webp',
-        },
-        _FakeToolService(),
-      );
+      final result = await tool.execute({
+        'action': 'convert',
+        'image_path': sourcePng.path,
+        'target_format': 'webp',
+      }, _FakeToolService());
       final decoded = jsonDecode(result) as Map<String, dynamic>;
       expect(decoded['format'], 'webp');
       expect(decoded['filename'], endsWith('.webp'));
@@ -396,14 +392,11 @@ void main() {
 
     test('convert accepts the jpg alias for jpeg', () async {
       final tool = makeTool();
-      final result = await tool.execute(
-        {
-          'action': 'convert',
-          'image_path': sourcePng.path,
-          'target_format': 'jpg',
-        },
-        _FakeToolService(),
-      );
+      final result = await tool.execute({
+        'action': 'convert',
+        'image_path': sourcePng.path,
+        'target_format': 'jpg',
+      }, _FakeToolService());
       final decoded = jsonDecode(result) as Map<String, dynamic>;
       expect(decoded['format'], 'jpeg');
     });
@@ -411,27 +404,21 @@ void main() {
     test('convert throws on an unsupported target_format', () async {
       final tool = makeTool();
       expect(
-        () => tool.execute(
-          {
-            'action': 'convert',
-            'image_path': sourcePng.path,
-            'target_format': 'xyz',
-          },
-          _FakeToolService(),
-        ),
+        () => tool.execute({
+          'action': 'convert',
+          'image_path': sourcePng.path,
+          'target_format': 'xyz',
+        }, _FakeToolService()),
         throwsA(isA<ToolException>()),
       );
     });
 
     test('convert without target_format keeps the source format', () async {
       final tool = makeTool();
-      final result = await tool.execute(
-        {
-          'action': 'convert',
-          'image_path': sourcePng.path,
-        },
-        _FakeToolService(),
-      );
+      final result = await tool.execute({
+        'action': 'convert',
+        'image_path': sourcePng.path,
+      }, _FakeToolService());
       final decoded = jsonDecode(result) as Map<String, dynamic>;
       // PNG → PNG (re-encoded losslessly).
       expect(decoded['format'], 'png');
@@ -441,8 +428,10 @@ void main() {
     test('buildSchema enum now includes convert', () {
       final tool = makeTool();
       final schema = tool.buildSchema();
-      final actionProp = (schema['function']['parameters']['properties']
-          as Map<String, dynamic>)['action'] as Map<String, dynamic>;
+      final actionProp =
+          (schema['function']['parameters']['properties']
+                  as Map<String, dynamic>)['action']
+              as Map<String, dynamic>;
       expect(actionProp['enum'], [
         'compress',
         'crop',
@@ -455,18 +444,15 @@ void main() {
 
   group('ChatProvider._augmentContentWithImagePaths', () {
     test('returns the original content unchanged when no images', () {
-      final out = ChatProvider.augmentContentWithImagePaths(
-        'hello',
-        const [],
-      );
+      final out = ChatProvider.augmentContentWithImagePaths('hello', const []);
       expect(out, 'hello');
     });
 
     test('appends a path list when images are present', () {
-      final out = ChatProvider.augmentContentWithImagePaths(
-        'summarize this',
-        ['/tmp/a.jpg', '/tmp/b.png'],
-      );
+      final out = ChatProvider.augmentContentWithImagePaths('summarize this', [
+        '/tmp/a.jpg',
+        '/tmp/b.png',
+      ]);
       expect(out, contains('summarize this'));
       expect(out, contains('Attached images'));
       expect(out, contains('- /tmp/a.jpg'));
@@ -474,10 +460,7 @@ void main() {
     });
 
     test('returns just the path list when content is empty', () {
-      final out = ChatProvider.augmentContentWithImagePaths(
-        '',
-        ['/tmp/a.jpg'],
-      );
+      final out = ChatProvider.augmentContentWithImagePaths('', ['/tmp/a.jpg']);
       expect(out.startsWith('Attached images'), isTrue);
       expect(out, contains('- /tmp/a.jpg'));
     });

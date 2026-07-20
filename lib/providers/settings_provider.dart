@@ -285,6 +285,26 @@ class SettingsProvider extends ChangeNotifier {
         await _storage.saveSkills(_skills);
       }
     }
+    // Drop built-ins that have been removed in a newer build
+    // (e.g. `tool_usage` was merged into per-tool
+    // `compactSchemaForModel` — its persisted row should not
+    // linger in the user's skill list or show up in
+    // `_activeSkillIds`). User-added skills are never touched.
+    final builtinIds = BuiltinSkills.all.map((s) => s.id).toSet();
+    final beforeDrop = _skills.length;
+    _skills = _skills
+        .where((s) => !s.isBuiltin || builtinIds.contains(s.id))
+        .toList();
+    if (_skills.length != beforeDrop) {
+      // Also drop the now-orphan id from the active set so it
+      // doesn't keep surfacing in the active-skill count.
+      _activeSkillIds.removeWhere(
+        (id) =>
+            id.startsWith(Skill.builtinIdPrefix) && !builtinIds.contains(id),
+      );
+      await _storage.saveSkills(_skills);
+      await _storage.setActiveSkillIds(_activeSkillIds.toList());
+    }
 
     // Auto-enable any new built-in (and re-enable any existing
     // built-in the user previously toggled on). Built-ins start

@@ -19,55 +19,52 @@ void main() {
 
   group('ApiService surfaces network errors that the retry classifier '
       'recognizes', () {
-    test(
-      'ClientException from the underlying transport flows through as '
-      'an `error` event with the retryable substring intact',
-      () async {
-        // The chat retry loop classifies errors by substring match
-        // against the `error` event's `text` field. If the
-        // protocol layer ever rewrote a ClientException into a
-        // different shape (e.g. replaced it with HTTP 502), the
-        // retry chain would never start. This test guards the
-        // wire contract: the verbatim ClientException toString
-        // — which the user reported in the bug — must reach the
-        // chat provider's listener unchanged.
-        final api = ApiService(
-          client: MockClient((request) async {
-            throw http.ClientException(
-              'Connection closed before full header was received',
-              request.url,
-            );
-          }),
-        );
+    test('ClientException from the underlying transport flows through as '
+        'an `error` event with the retryable substring intact', () async {
+      // The chat retry loop classifies errors by substring match
+      // against the `error` event's `text` field. If the
+      // protocol layer ever rewrote a ClientException into a
+      // different shape (e.g. replaced it with HTTP 502), the
+      // retry chain would never start. This test guards the
+      // wire contract: the verbatim ClientException toString
+      // — which the user reported in the bug — must reach the
+      // chat provider's listener unchanged.
+      final api = ApiService(
+        client: MockClient((request) async {
+          throw http.ClientException(
+            'Connection closed before full header was received',
+            request.url,
+          );
+        }),
+      );
 
-        final events = await api
-            .streamChat(
-              provider: provider(),
-              model: 'any',
-              messages: const [
-                ChatRequestMessage(role: MessageRole.user, content: 'hi'),
-              ],
-            )
-            .toList();
+      final events = await api
+          .streamChat(
+            provider: provider(),
+            model: 'any',
+            messages: const [
+              ChatRequestMessage(role: MessageRole.user, content: 'hi'),
+            ],
+          )
+          .toList();
 
-        final errors = events.where((e) => e.type == 'error').toList();
-        expect(errors, hasLength(1));
+      final errors = events.where((e) => e.type == 'error').toList();
+      expect(errors, hasLength(1));
 
-        final errorText = errors.single.error ?? '';
-        expect(
-          errorText,
-          contains('ClientException'),
-          reason:
-              'subclass prefix must be preserved so the retry '
-              'classifier can match it',
-        );
-        expect(
-          errorText,
-          contains('Connection closed before full header was received'),
-          reason: 'verbatim message text must be preserved',
-        );
-      },
-    );
+      final errorText = errors.single.error ?? '';
+      expect(
+        errorText,
+        contains('ClientException'),
+        reason:
+            'subclass prefix must be preserved so the retry '
+            'classifier can match it',
+      );
+      expect(
+        errorText,
+        contains('Connection closed before full header was received'),
+        reason: 'verbatim message text must be preserved',
+      );
+    });
 
     test('HTTP 4xx errors still surface (non-retryable hard errors)', () async {
       final api = ApiService(

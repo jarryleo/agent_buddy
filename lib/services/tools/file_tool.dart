@@ -107,6 +107,16 @@ read 返回:
 - edit 默认 old_text 必须唯一;批量改名传 global_replace=true
 - new_text="" 等价于删除匹配块
 - 所有路径禁止 .. 跳出工作目录
+
+最佳实践:
+- **改代码必须用 action=edit**(精确文本替换,默认 old_text 唯一),不要 read+write 整文件。
+  edit 一次可传多个 edits 原子应用;old_text 不存在/不唯一时会返回诊断(error_code + near_matches/candidates + 候选行号),照着改即可。
+- 空 new_text = 删除该块;global_replace=true 改全部匹配(改名/批量替换用)。
+- **大文件先 pattern 当 grep**:`file(action:"read", pattern:"xxx")` 只返回命中行+前后 2 行上下文,避免 read 整文件烧 token;再用 offset_lines 分页读全文。
+- desktop 相对路径基于用户工作目录(若设置);绝对路径也支持。
+- mobile 走 SAF / UIDocumentPickerViewController,**不需要任何 Android 权限**(SAF 自动按 URI 授权)。用户取消选择器返回 {ok:false, cancelled:true},不是错误,改用工作目录即可。
+- Android 工作目录写入失败(用户清掉存储授权)时,系统会自动弹 SAF 重新授权,授权后会自动重试;用户取消则 {ok:false, cancelled:true},让用户通过聊天工具栏重选工作目录。
+- delete / rename / list_dir 只对 working:// 起作用;picker 路径只支持 read/write/edit/release(系统授权是按 URI 的)。
 ''';
   }
 

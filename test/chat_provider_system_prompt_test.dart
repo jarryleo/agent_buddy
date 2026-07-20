@@ -4,39 +4,34 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('buildBaseSystemPrompt', () {
     test(
-      'returns the short system prompt that points at the tool_usage skill',
+      'returns the short system prompt that points at load_tool (no tool_usage skill)',
       () {
         // The whole point of the refactor: the always-on system prompt
         // must be small enough to leave room for a 4K-context local
-        // model. The previous version was ~700 chars of inline
-        // per-tool docs; the new one must NOT carry any of that
-        // content — the model loads it on demand via
-        // `load_skill(skill_name: "工具使用提示")` instead.
+        // model. Per-tool docs now live in each tool's
+        // `compactSchemaForModel` (returned by `load_tool`), not in
+        // the system prompt and not in any skill.
         final prompt = buildBaseSystemPrompt();
 
         // Hard size cap. ~600 chars ≈ 200 tokens for a Chinese
         // tokenizer, leaving the rest of a 4K context for the
-        // user's messages. The cap was bumped from 800 to 1100
-        // when the chat-attachment-path hint was added — the new
-        // line is one short rule, not a per-tool doc dump, so
-        // ~1KB is still well under the 4K-context budget. If a
-        // future edit accidentally re-inlines any per-tool docs,
-        // this test will fire.
+        // user's messages. The cap was bumped to ~1500 to fit the
+        // chat-attachment-path cross-cutting rule, which is the
+        // one rule that genuinely needs to be in every turn (it
+        // affects every chat input). If a future edit accidentally
+        // re-inlines any per-tool docs, this test will fire.
         expect(
           prompt.length,
-          lessThan(1100),
+          lessThan(1500),
           reason:
-              'base system prompt must stay small; per-tool docs belong in the '
-              '`tool_usage` skill, not inline',
+              'base system prompt must stay small; per-tool docs belong in '
+              'the tool compactSchemaForModel, not inline',
         );
 
-        // The pointer to the on-demand skill must survive.
-        expect(
-          prompt,
-          contains('工具使用提示'),
-          reason: 'system prompt must point the model at the tool_usage skill',
-        );
-        expect(prompt, contains('load_skill'));
+        // The pointer to load_tool must survive.
+        expect(prompt, contains('load_tool'));
+        // No more tool_usage skill reference.
+        expect(prompt, isNot(contains('工具使用提示')));
       },
     );
 
@@ -68,7 +63,7 @@ void main() {
           isNot(contains(fragment)),
           reason:
               'fragment "$fragment" is a per-tool doc that must live in '
-              'the tool_usage skill, not in the always-on system prompt',
+              'the tool compactSchemaForModel, not in the always-on system prompt',
         );
       }
     });
@@ -84,17 +79,31 @@ void main() {
       expect(prompt, isNot(contains('默认工作目录')));
     });
 
-    test('includes the MCP count only when at least one server is enabled', () {
-      final nonePrompt = buildBaseSystemPrompt(enabledMcpServerCount: 0);
-      expect(nonePrompt, isNot(contains('MCP 工具')));
-      expect(nonePrompt, isNot(contains('MCP 服务器')));
+    test(
+      'includes the MCP load_tool pointer when at least one server is enabled',
+      () {
+        final nonePrompt = buildBaseSystemPrompt(enabledMcpServerCount: 0);
+        expect(nonePrompt, isNot(contains('MCP 工具')));
 
-      final withOne = buildBaseSystemPrompt(enabledMcpServerCount: 1);
-      expect(withOne, contains('1 个 MCP 服务器'));
-      expect(withOne, contains('mcp__'));
+        final withOne = buildBaseSystemPrompt(enabledMcpServerCount: 1);
+        expect(withOne, contains('1 个 MCP 服务器'));
+        expect(withOne, contains('mcp__'));
 
-      final withSeveral = buildBaseSystemPrompt(enabledMcpServerCount: 5);
-      expect(withSeveral, contains('5 个 MCP 服务器'));
+        final withSeveral = buildBaseSystemPrompt(enabledMcpServerCount: 5);
+        expect(withSeveral, contains('5 个 MCP 服务器'));
+      },
+    );
+
+    test('always carries the chat-attachment cross-cutting rule', () {
+      // The desktop-vs-mobile path distinction for chat attachments
+      // is the one cross-tool rule the model needs every turn (it
+      // affects every chat input, not a specific tool). It MUST
+      // survive even when no tools are loaded yet.
+      final prompt = buildBaseSystemPrompt();
+      expect(prompt, contains('聊天附件'));
+      expect(prompt, contains('桌面端'));
+      expect(prompt, contains('手机端'));
+      expect(prompt, contains('picker://'));
     });
   });
 }

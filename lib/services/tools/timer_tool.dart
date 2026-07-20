@@ -30,7 +30,11 @@ class TimerTool extends ToolBase {
   String get compactSchemaForModel => '''
 参数:
 - action (string, 必填): create | list | update | cancel | delete | get
-- create / update: label, delay_seconds (或 fire_at_ms 二选一), prompt (回调时的 user 消息内容), action_hint
+- create / update:
+  - label (string, 必填): 简短标签,通知/列表里都显示
+  - delay_seconds (int) 或 fire_at_ms (int): 二选一
+  - prompt (string): 到点时合成 user 消息的内容,模型就是看着这个 prompt 决定做什么
+  - action_hint (string, 可选): 提示模型到点该调什么(如"调用 notification 通知用户…")
 - list: include_terminal (bool, 默认 false);max
 - get / cancel / delete: id
 - update 字段可单独传
@@ -40,9 +44,10 @@ class TimerTool extends ToolBase {
 - list: {action, count, tasks:[...]}
 - cancel: {action, id, cancelled:true}
 
-约束:
-- **仅在程序运行时有效**,app 退出/被杀则丢失
-- 触发时会自动调 notification.show,系统提示已说明
+约束 + 最佳实践:
+- **仅在程序运行时有效**,app 退出/被杀则丢失 → 用户说"X 分钟后提醒我 Y"时,长时段务必先告知用户。
+- 触发时:ChatProvider 收到 onTimerFired → 注入合成 user 消息 → 模型新轮 → 由模型调 `notification.show` 把提醒正式发给用户(避免僵硬预设)。
+- prompt/action_hint 写好,模型到点才知道做什么;否则会乱答。
 ''';
 
   @override

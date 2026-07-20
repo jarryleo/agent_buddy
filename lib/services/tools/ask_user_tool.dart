@@ -43,6 +43,21 @@ class AskUserTool extends ToolBase {
   }
 
   @override
+  String get compactSchemaForModel => '''
+参数:
+- question (string, 必填): 给用户的问题(简短,一句话)
+- options (string[], 必填, 至少 2 个): 互斥/可选的选项,2~6 个最好
+- multi_select (bool, 默认 false): true=多选(选 N 个);false=单选
+
+返回: 用户选中的选项字符串(单选)或 [字符串, ...](多选)。
+
+最佳实践:
+- 给 2~6 个互斥选项,不要列 10 个以上 —— 用户会懵。
+- 选项文本不要太长(< 30 字/项)。
+- 只有确实需要用户决策时才用,别没事找事问。
+''';
+
+  @override
   Future<String> execute(
     Map<String, dynamic> args,
     ToolService services,

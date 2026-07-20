@@ -70,8 +70,8 @@ class SubAgentTool extends ToolBase {
 - action (string, 必填): delegate | list | get | cancel
 - delegate 三件套:
   - task (string): 要子 agent 完成的调研任务,**必须与主对话上下文无关**
-  - want (string): 你想要的最终报告形状(越具体越好)
-  - context (string, 可选): 主对话里抽出的关键事实,别把整个对话塞进去
+  - want (string): 你想要的最终报告形状(越具体越好,例如"200 字结论 + 3 条事实 + 来源 URL")
+  - context (string, 可选): 主对话里抽出的关键事实,**不要把整段对话都塞进去**
 - id (string): get / cancel 用
 - include_terminal (bool, 默认 true): list 时是否包含已结束任务
 - max (int, 默认 20): list 最多返回条数
@@ -79,12 +79,25 @@ class SubAgentTool extends ToolBase {
 子 agent 工具集(只读):
 - 可用: fetch_web / search / current_time / location / memory / run_command
 - 不可用: ask_user / notification / timer / download / file(写) / google_sheet(写) / mcp__*
+  → 想做这些等子 agent 报告回来后主对话自己做
+
+适用场景(基本上"任务结果不依赖本次对话前文 + 主对话不需要看到中间过程"就用):
+- 查新闻 / 查天气 / 查最新资讯
+- 查 API 文档 / 调研某个主题
+- 批量搜索本地文件 / 跑只读命令拿系统信息
+- 查 long-term memory 里的某条旧信息
+
+并发模式: 多个独立任务可**同轮发多个** delegate function_call,最后一起用结果 —— 
+子 agent 各跑各的,中间过程都在子上下文里,主对话只收 N 份压缩报告。
 
 返回:
 - delegate: {action, id, status, report, tool_call_count, duration_ms}
 - list: {action, tasks:[{id,status,summary,duration_ms,created_at}]}
 - get: {action, id, status, report, tool_calls, error?}
 - cancel: {action, id, cancelled:true}
+
+收益提示: 主对话不再烧 N 轮 system prompt + 历史 token,改为只烧子 agent 的精简上下文 —— 
+大块 token 节省 + 主对话上下文更整洁。**大量用,不要省。**
 ''';
 
   @override

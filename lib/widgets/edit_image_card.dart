@@ -105,9 +105,7 @@ class EditImageCard extends StatelessWidget {
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(
-          content: Text(l10n.editImageSaveFailedSnackbar(e.toString())),
-        ),
+        SnackBar(content: Text(l10n.editImageSaveFailedSnackbar(e.toString()))),
       );
     }
   }
@@ -151,8 +149,7 @@ class EditImageCard extends StatelessWidget {
             child: GestureDetector(
               onTap: expired
                   ? null
-                  : () =>
-                        ImagePreviewPage.showLocal(context, image.path),
+                  : () => ImagePreviewPage.showLocal(context, image.path),
               child: Stack(
                 fit: StackFit.expand,
                 children: [

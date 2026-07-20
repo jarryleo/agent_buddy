@@ -41,11 +41,7 @@ abstract class WorkingDirBackend {
   /// parent directories. Throws [WorkingDirCancelledException]
   /// when the re-auth prompt is dismissed; otherwise returns
   /// normally or throws an [Exception] for non-auth errors.
-  Future<void> writeRel(
-    String relPath,
-    Uint8List bytes, {
-    bool append = false,
-  });
+  Future<void> writeRel(String relPath, Uint8List bytes, {bool append = false});
 
   /// Read raw bytes from `<relPath>` inside the working
   /// directory, capped at [maxBytes]. Throws
@@ -61,10 +57,7 @@ abstract class WorkingDirBackend {
   /// `FileEntry` records whose `path` is a model-friendly
   /// `working://<rel>` form. Caps at 200 entries to match the
   /// desktop `file` tool's behaviour.
-  Future<List<FileEntry>> listRel(
-    String relPath, {
-    bool recursive = false,
-  });
+  Future<List<FileEntry>> listRel(String relPath, {bool recursive = false});
 
   /// Delete a file or directory. Throws
   /// [WorkingDirCancelledException] on a dismissed re-auth.
@@ -92,7 +85,7 @@ abstract class WorkingDirBackend {
 ///   * `{ok: false, code, message}` - normal error
 class MethodChannelWorkingDirBackend implements WorkingDirBackend {
   MethodChannelWorkingDirBackend([MethodChannel? channel])
-      : _channel = channel ?? const MethodChannel('agent_buddy/file');
+    : _channel = channel ?? const MethodChannel('agent_buddy/file');
 
   final MethodChannel _channel;
 
@@ -126,12 +119,11 @@ class MethodChannelWorkingDirBackend implements WorkingDirBackend {
     String relPath,
     Uint8List bytes, {
     bool append = false,
-  }) =>
-      _invokeVoid('writeWorking', {
-        'rel_path': relPath,
-        'bytes': bytes,
-        'append': append,
-      });
+  }) => _invokeVoid('writeWorking', {
+    'rel_path': relPath,
+    'bytes': bytes,
+    'append': append,
+  });
 
   @override
   Future<Uint8List> readRel(String relPath, {required int maxBytes}) async {
@@ -157,10 +149,10 @@ class MethodChannelWorkingDirBackend implements WorkingDirBackend {
   }) async {
     Map<String, dynamic>? raw;
     try {
-      raw = await _channel.invokeMapMethod<String, dynamic>(
-        'listWorking',
-        {'rel_path': relPath, 'recursive': recursive},
-      );
+      raw = await _channel.invokeMapMethod<String, dynamic>('listWorking', {
+        'rel_path': relPath,
+        'recursive': recursive,
+      });
     } on PlatformException catch (e) {
       _translatePlatformException(e);
     }
@@ -183,19 +175,15 @@ class MethodChannelWorkingDirBackend implements WorkingDirBackend {
 
   @override
   Future<void> renameRel(String from, String to) =>
-      _invokeVoid('renameWorking', {
-        'from': from,
-        'to': to,
-      });
+      _invokeVoid('renameWorking', {'from': from, 'to': to});
 
   @override
   Future<FileAttrs> readAttrRel(String relPath) async {
     Map<String, dynamic>? raw;
     try {
-      raw = await _channel.invokeMapMethod<String, dynamic>(
-        'readAttrWorking',
-        {'rel_path': relPath},
-      );
+      raw = await _channel.invokeMapMethod<String, dynamic>('readAttrWorking', {
+        'rel_path': relPath,
+      });
     } on PlatformException catch (e) {
       _translatePlatformException(e);
     }
@@ -207,11 +195,14 @@ class MethodChannelWorkingDirBackend implements WorkingDirBackend {
       path: 'working://$relPath',
       type: raw['type'] as String? ?? 'file',
       size: (raw['size'] as num?)?.toInt() ?? -1,
-      modifiedMs: (raw['modified_ms'] as num?)?.toInt() ??
+      modifiedMs:
+          (raw['modified_ms'] as num?)?.toInt() ??
           DateTime.now().millisecondsSinceEpoch,
-      accessedMs: (raw['accessed_ms'] as num?)?.toInt() ??
+      accessedMs:
+          (raw['accessed_ms'] as num?)?.toInt() ??
           DateTime.now().millisecondsSinceEpoch,
-      changedMs: (raw['changed_ms'] as num?)?.toInt() ??
+      changedMs:
+          (raw['changed_ms'] as num?)?.toInt() ??
           DateTime.now().millisecondsSinceEpoch,
       isDirectory: raw['is_directory'] as bool? ?? false,
       isFile: raw['is_file'] as bool? ?? true,
@@ -219,7 +210,10 @@ class MethodChannelWorkingDirBackend implements WorkingDirBackend {
     );
   }
 
-  Future<dynamic> _invokeDynamic(String method, Map<String, dynamic> args) async {
+  Future<dynamic> _invokeDynamic(
+    String method,
+    Map<String, dynamic> args,
+  ) async {
     try {
       return await _channel.invokeMethod(method, args);
     } on PlatformException catch (e) {
@@ -271,7 +265,8 @@ class MethodChannelWorkingDirBackend implements WorkingDirBackend {
       path: raw['path'] as String? ?? '',
       isDirectory: raw['is_directory'] as bool? ?? false,
       size: (raw['size'] as num?)?.toInt() ?? 0,
-      modifiedMs: (raw['modified_ms'] as num?)?.toInt() ??
+      modifiedMs:
+          (raw['modified_ms'] as num?)?.toInt() ??
           DateTime.now().millisecondsSinceEpoch,
     );
   }
@@ -280,6 +275,7 @@ class MethodChannelWorkingDirBackend implements WorkingDirBackend {
 class NotImplementedWorkingDirOp implements Exception {
   const NotImplementedWorkingDirOp();
   @override
-  String toString() => 'working directory backend is not available '
+  String toString() =>
+      'working directory backend is not available '
       'on this platform (expected Android)';
 }

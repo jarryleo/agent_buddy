@@ -43,6 +43,11 @@ class FetchWebTool extends ToolBase {
 - 同一 URL + max_length 会本地缓存(16 条)
 - 4xx/5xx/超时自动重试 3 次,指数退避
 - 仅 http/https scheme,空响应抛 empty page content
+
+最佳实践:
+- link_text 只返回 URL,**必须再调一次 fetch_web** 抓那个链接的页面。
+- 一路深入直到找到答案,别只看首页。
+- 抓不到就换 UA(内置旋转)/ 换源 / 改 query,或告诉用户搜不到。
 ''';
 
   @override

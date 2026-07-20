@@ -24,16 +24,20 @@ void main() {
       expect(base.isRetrying, isFalse);
 
       // retryAttempt with no nextRetryAt → not retrying.
-      final attemptOnly =
-          base.copyWith(retryAttempt: 3, clearNextRetryAt: true);
+      final attemptOnly = base.copyWith(
+        retryAttempt: 3,
+        clearNextRetryAt: true,
+      );
       expect(attemptOnly.isRetrying, isFalse);
 
       // nextRetryAt with no retryAttempt → not retrying
       // (the user cleared retryAttempt but the timestamp
       // was left over from before clearNextRetryAt kicked
       // in — defensive guard).
-      final timeOnly =
-          base.copyWith(retryAttempt: 0, nextRetryAt: DateTime(2030));
+      final timeOnly = base.copyWith(
+        retryAttempt: 0,
+        nextRetryAt: DateTime(2030),
+      );
       expect(timeOnly.isRetrying, isFalse);
 
       // Both set → retrying.

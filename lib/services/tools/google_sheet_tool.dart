@@ -63,9 +63,14 @@ class GoogleSheetTool extends ToolBase {
 - format: {action, range, applied_fields:[]}
 
 约束:
-- spreadsheet_id 隐式从 settings 读,模型不传
+- spreadsheet_id 隐式从 settings 读,模型不传 —— 单 token 节省大头。
 - 401 → "Google 授权已过期,请重新测试连接"
-- valueInputOption=USER_ENTERED(=A1+1 会算成公式)
+- valueInputOption=USER_ENTERED,**字符串以 = 开头会被当公式**(如 "=A1+1"),日期会自动 parse。
+
+最佳实践:
+- **首次进入新表先 action=list_tabs** 拿表名,再用 read/update/append/clear 操作。
+- format 只动你传的字段,未传的不变(自动 mask),不会吹掉无关格式。
+- range 模糊时(tab 不存在等)会报 StateError,给清楚路径即可。
 ''';
 
   @override

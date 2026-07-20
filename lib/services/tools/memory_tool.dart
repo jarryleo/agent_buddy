@@ -23,7 +23,7 @@ class MemoryTool extends ToolBase {
 - list: max (int, 默认 20)
 - search: keywords (string[], 首选) 或 keyword (string);tags (string[]);max
 - get / update / delete: id (string)
-- create: content (string);tags (string[], 推荐 3~6 个)
+- create: content (string);tags (string[], 推荐 3~6 个关键词,future search 才快)
 - update: id;content?;tags?(不传则保留)
 - delete_batch: ids (string[], 非空)
 
@@ -32,6 +32,11 @@ class MemoryTool extends ToolBase {
 约束:
 - search 用 OR 语义: keywords[] 任一命中(content 或 tags)即返回
 - source 默认 "ai"(create),UI 写入的才是 "user"
+
+最佳实践:
+- 写入时**必须带 tags**(3~6 个关键词),否则 future search 只能搜 content 全文,贵。
+- 查询时**首选 keywords[] 给多个相关词**(OR 覆盖 content + tags),比 keyword 单字符串命中率高。
+- 没头绪就先 list 看看有什么,别瞎猜 id。
 ''';
 
   @override

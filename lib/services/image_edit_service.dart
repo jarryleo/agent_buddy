@@ -12,13 +12,7 @@ import 'tool_service.dart' show ToolException;
 /// Actions the `edit_image` tool exposes. Mirrors the schema
 /// `enum` and is used by [ImageEditService.edit] as a routing
 /// key.
-enum EditImageAction {
-  compress,
-  crop,
-  resize,
-  rotate,
-  convert,
-}
+enum EditImageAction { compress, crop, resize, rotate, convert }
 
 /// Snapshot of the source image the model passed in. Captured
 /// in [ImageEditService.edit] so the resulting [EditedImage] can
@@ -233,10 +227,14 @@ class ImageEditService {
     }
     // TIFF: II*\0 or MM\0*
     if (bytes.length >= 4 &&
-        ((bytes[0] == 0x49 && bytes[1] == 0x49 && bytes[2] == 0x2A &&
-              bytes[3] == 0x00) ||
-            (bytes[0] == 0x4D && bytes[1] == 0x4D &&
-                bytes[2] == 0x00 && bytes[3] == 0x2A))) {
+        ((bytes[0] == 0x49 &&
+                bytes[1] == 0x49 &&
+                bytes[2] == 0x2A &&
+                bytes[3] == 0x00) ||
+            (bytes[0] == 0x4D &&
+                bytes[1] == 0x4D &&
+                bytes[2] == 0x00 &&
+                bytes[3] == 0x2A))) {
       return 'tiff';
     }
     // Fallback: JPEG (FF D8 FF) and the catch-all case.
@@ -261,20 +259,14 @@ class ImageEditService {
     }
   }
 
-  String _composeFilename(
-    File source,
-    String ext,
-    EditImageAction action,
-  ) {
+  String _composeFilename(File source, String ext, EditImageAction action) {
     final base = p.basenameWithoutExtension(source.path);
     final safeBase = base.isEmpty ? 'image' : base;
     // Truncate the base to keep the total filename under 80
     // chars — some filesystems (older FAT) cap to 8.3 but we
     // don't go that low; just stop the model-generated long
     // names from blowing up the temp dir listing.
-    final trimmed = safeBase.length > 40
-        ? safeBase.substring(0, 40)
-        : safeBase;
+    final trimmed = safeBase.length > 40 ? safeBase.substring(0, 40) : safeBase;
     final id = _uuid.v4().substring(0, 8);
     return '${trimmed}_${action.name}_$id$ext';
   }
@@ -320,9 +312,7 @@ class ImageEditService {
     final keepAspect = params['keep_aspect_ratio'] as bool? ?? true;
 
     if (width <= 0 || height <= 0) {
-      throw ToolException(
-        'resize: width and height must be positive integers',
-      );
+      throw ToolException('resize: width and height must be positive integers');
     }
 
     int targetW = width;
@@ -331,10 +321,10 @@ class ImageEditService {
       final ratio = src.width / src.height;
       // If the caller passed only one dimension, derive the
       // other so the aspect ratio is preserved exactly.
-      final onlyWidth = params.containsKey('width') &&
-          !params.containsKey('height');
-      final onlyHeight = params.containsKey('height') &&
-          !params.containsKey('width');
+      final onlyWidth =
+          params.containsKey('width') && !params.containsKey('height');
+      final onlyHeight =
+          params.containsKey('height') && !params.containsKey('width');
       if (onlyWidth) {
         targetH = (targetW / ratio).round();
       } else if (onlyHeight) {
@@ -394,9 +384,7 @@ class ImageEditService {
         return Uint8List.fromList(img.WebPEncoder().encode(image));
       case 'jpeg':
       default:
-        return Uint8List.fromList(
-          img.encodeJpg(image, quality: quality),
-        );
+        return Uint8List.fromList(img.encodeJpg(image, quality: quality));
     }
   }
 
