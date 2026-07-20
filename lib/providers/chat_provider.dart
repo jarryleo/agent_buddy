@@ -60,13 +60,17 @@ enum _TurnOutcomeKind { success, hardError, retryable }
 class _TurnOutcome {
   final _TurnOutcomeKind kind;
   final String? error;
+
   const _TurnOutcome._(this.kind, this.error);
+
   static const _TurnOutcome success = _TurnOutcome._(
     _TurnOutcomeKind.success,
     null,
   );
+
   factory _TurnOutcome.hardError(String err) =>
       _TurnOutcome._(_TurnOutcomeKind.hardError, err);
+
   factory _TurnOutcome.retryable(String err) =>
       _TurnOutcome._(_TurnOutcomeKind.retryable, err);
 }
@@ -79,6 +83,7 @@ class _TurnOutcome {
 class _LoadOneResult {
   const _LoadOneResult.success({required this.manual, required this.justAdded})
     : error = null;
+
   const _LoadOneResult.error(this.error) : manual = null, justAdded = false;
 
   final String? manual;
@@ -112,23 +117,25 @@ String buildBaseSystemPrompt({
             '- MCP 工具(名称以 mcp__ 开头):已启用 $enabledMcpServerCount 个 MCP 服务器,'
             'load_tool("mcp__<server>__<tool>") 按需加载。'
       : '';
-  return '你是一个有用、诚实的助手。\n'
+  return '你是一个聪明且细心的助理,诚实又可靠.\n'
       '\n'
       '## 核心规则\n'
-      '1. 不知道就必须用工具查,禁止瞎编。必须真的发出 function_call,别装样子。\n'
-      '2. 同一轮可以连续调多个工具,等全部结果回来再统一回复;'
-      '独立任务(尤其是调研类)优先并发调 subagent,别让主对话自己 fetch_web 一串。\n'
-      '3. 工具报错了就跟用户说明原因,给个替代方案,别直接完事。\n'
-      '4. 回复简洁,别啰嗦。\n'
+      '处理任务严格按固定三步，不许打乱顺序：\n'
+      '【阶段1 工具判断】拆解任务，列出所有需要的工具，无工具则只分析不调用工具。\n'
+      '【阶段2 批量加载工具规则】把阶段1所有工具使用`load_tool(tool_names=["a","b","c"])`一次性加载。无工具直接跳过。\n'
+      '【阶段3 执行任务】根据工具规则分步调用工具，完成任务并汇总结果。\n'
+      '同一轮可以连续调多个工具,等全部结果回来再统一回复;'
+      '独立任务优先使用 subagent 工具,这样能减少你的工作负担和保持简洁的上下文。\n'
+      '工具报错尝试根据错误信息用别的方法解决,无法解决则求助用户,不要编造内容,你是诚实的助手。\n'
+      '回复需要简洁明快,不要内容冗长.\n'
       '\n'
       '## 工具使用\n'
       '- 可用工具一览见下面的"可用工具"列表(只有 id + 一句话用途)。\n'
-      '- 想用某个工具时先 `load_tool(tool_names=["a","b","c"])` '
-      '**一次加载多个**完整 schema + 约束手册(更省 round-trip 和 token),'
+      '**可以一次加载多个工具**,'
       '之后这些工具就会出现在本轮的 function 列表里,可直接调用。\n'
-      '- 同一会话内已经加载的工具不需要重复加载,直接调用即可。\n'
+      '- 同一会话内已经加载的工具不要重复加载,直接调用即可。\n'
       '- 工具调用失败返回的是软错误时(比如 cancelled / not_found / permission_denied),'
-      '根据 message 给用户讲清楚,然后给个替代方案,不要直接放弃。\n'
+      '根据 message 尝试别的解决方案,不要直接放弃。\n'
       '\n'
       '## 聊天附件\n'
       '- 桌面端:附件 path = 用户原文件绝对路径,直接拿去调 file 工具就改用户磁盘上的文件,'
