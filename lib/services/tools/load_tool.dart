@@ -14,11 +14,15 @@ import 'tool_base.dart';
 /// array for the rest of the session so the model can call it
 /// directly without re-loading.
 ///
-/// **Batch loading.** [toolNames] accepts a list so the model can
-/// unlock several related tools in one round-trip — important on
+/// **Batch only — array required.** The schema accepts a single
+/// `tool_names: string[]` parameter (no scalar fallback) so the
+/// model is pushed toward unlocking every tool it might need
+/// for the current task in one round-trip. This matters on
 /// per-request-billed providers (some Anthropic / OpenRouter
-/// endpoints), and on the local GGUF where each turn costs a
-/// full prompt re-eval. A single
+/// endpoints) where each call is a separate billable request,
+/// and on the local GGUF where each turn is a full prompt re-eval
+/// — both amplify the cost of the legacy "load one tool per call"
+/// pattern. A single
 /// `load_tool(tool_names=["search","file","memory"])` returns
 /// three manuals in one response (~one round-trip, one response
 /// token block) instead of three separate calls.
@@ -38,7 +42,7 @@ class LoadTool extends ToolBase {
 
   @override
   String get description =>
-      '按需加载指定工具的完整使用说明,**支持一次加载多个**。'
+      '按需加载指定工具的完整使用说明,**只接受数组**(一次加载多个)。'
       '返回这些工具的精简 markdown 手册(actions / 参数 / 约束),'
       '合并到同一次响应里。加载后这些工具的 schema 会进入 tools 数组,'
       '本会话内可一直直接调用,无需重复加载。';
@@ -68,38 +72,23 @@ class LoadTool extends ToolBase {
         'parameters': {
           'type': 'object',
           'properties': {
-            // Preferred form: a list. The model can unlock every
-            // tool it might need for the current task in a single
-            // round-trip — one of the biggest savings on per-request
-            // providers and on the local GGUF.
+            // **Array only.** The model is pushed toward
+            // batching — passing one element is technically
+            // allowed but wasteful. The resolver dedupes the
+            // list, so a nervous model that re-emits an id it
+            // already knows about won't blow up.
             'tool_names': {
               'type': 'array',
               'items': {'type': 'string', 'enum': allowedToolIds},
+              'minItems': 1,
               'description':
                   '要加载的工具 id 列表,与系统提示"工具索引"里的 id 完全一致。'
                   'MCP 工具填 mcp__<server>__<tool>。'
-                  '一次传多个 = 一次 round-trip 拿到所有手册。',
-            },
-            // Legacy single-name form. Kept for backwards
-            // compatibility with the few model providers whose
-            // pre-trained behaviour still emits a scalar; the
-            // runtime resolver normalises both shapes to a list
-            // before walking the registry.
-            'tool_name': {
-              'type': 'string',
-              'description': '(单数,向后兼容;优先用 tool_names)。工具 id。',
-              'enum': allowedToolIds,
+                  '一次传多个 = 一次 round-trip 拿到所有手册 '
+                  '(per-request-billed provider 上的核心省钱点)。',
             },
           },
-          // Either field is enough — the resolver accepts both.
-          'anyOf': [
-            {
-              'required': ['tool_names'],
-            },
-            {
-              'required': ['tool_name'],
-            },
-          ],
+          'required': ['tool_names'],
         },
       },
     };

@@ -208,20 +208,32 @@ class ChatProvider extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> debugBuildToolsSchema() =>
       _buildToolsSchema();
 
+  /// Convenience single-name wrapper for tests that just want to
+  /// load one tool. Production callers should always go through
+  /// [debugLoadTools] (the array form) to mirror what the model
+  /// actually emits, but for terse assertions the scalar-style
+  /// helper saves a `[ ]` ceremony.
+  @visibleForTesting
+  Future<String> debugLoadTool(String name) => debugLoadTools([name]);
+
   /// Drives the private `_loadTool(Map)` for tests, no
   /// `BuildContext` required (the production path is reached via
   /// `_onToolCall` which has a context, but the schema-build side
-  /// effects we care about here are the same).
-  @visibleForTesting
-  Future<String> debugLoadTool(String name) => _loadTool({'tool_name': name});
-
-  /// Batch variant of [debugLoadTool]; mirrors the production
-  /// `tool_names` array shape so tests can exercise the
-  /// combined-response path that production goes through for any
-  /// model that wants multiple manuals in one round-trip.
+  /// effects we care about here are the same). Mirrors the
+  /// production `tool_names` array shape — the array is the only
+  /// accepted form, so tests use it for single-tool loads too.
   @visibleForTesting
   Future<String> debugLoadTools(List<String> names) =>
       _loadTool({'tool_names': names});
+
+  /// Raw-form variant of [debugLoadTools]. Lets tests feed an
+  /// arbitrary args map straight to the private resolver so they
+  /// can pin down what happens when a model emits the legacy
+  /// `tool_name` scalar (the production schema no longer
+  /// declares it, so the resolver must fall through to the
+  /// empty-list error path).
+  @visibleForTesting
+  Future<String> debugLoadToolRaw(Map<String, dynamic> args) => _loadTool(args);
 
   /// Pure helper used by [_loadTool] to keep the per-tool
   /// resolution branch readable. Exposed for tests so the
@@ -633,8 +645,9 @@ class ChatProvider extends ChangeNotifier {
 
     // 1. load_tool is the always-on entrypoint — emit it first so the
     //    model sees it even when nothing else is loaded yet. Its
-    //    `tool_name` enum is rebuilt every turn from the active
-    //    settings so disabled / unsupported tools never appear.
+    //    `tool_names` items.enum is rebuilt every turn from the
+    //    active settings so disabled / unsupported tools never
+    //    appear.
     final loadTool = ToolRegistry.byId('load_tool');
     if (loadTool != null) {
       final lt = loadTool as dynamic;
@@ -739,8 +752,10 @@ class ChatProvider extends ChangeNotifier {
     sb.writeln();
     sb.writeln(
       '用法: `load_tool(tool_names=["fetch_web","memory","file"])` '
-      '→ 一次返回所有手册 + 把 schema 一起加入 tools 数组(一次 round-trip);'
-      '单数 `tool_name="x"` 也兼容。同一会话内已加载的不需重复加载。',
+      '→ 一次返回所有手册 + 把 schema 一起加入 tools 数组 '
+      '(per-request-billed provider 上每个 tool 单独 load 都是一次计费,'
+      '**尽量一次把本轮要用到的工具全列上**)。'
+      '同一会话内已加载的不需重复加载。',
     );
     sb.writeln(
       '当前已加载: ${_loadedToolIds.isEmpty ? "无" : _loadedToolIds.toList().join(", ")}',
@@ -1342,10 +1357,12 @@ class ChatProvider extends ChangeNotifier {
     });
   }
 
-  /// Handles a `load_tool(...)` call. Accepts both the legacy
-  /// scalar form (`tool_name: "fetch_web"`) and the preferred
-  /// batch form (`tool_names: ["fetch_web", "memory", "file"]`)
-  /// and returns the combined cheat-sheets in a single response.
+  /// Handles a `load_tool(...)` call. Only the array form is
+  /// accepted (`tool_names: ["a","b","c"]`) — by design, to push
+  /// the model toward batching. Single-element arrays are allowed
+  /// but wasteful; the resolver dedupes so a re-emit of an id
+  /// the model already knows about won't blow up.
+  ///
   /// Batch loading is the headline optimisation: on per-request
   /// billing (some Anthropic / OpenRouter endpoints) it cuts the
   /// model round-trips for unlocking N tools from N to 1, and on
@@ -1372,7 +1389,9 @@ class ChatProvider extends ChangeNotifier {
     // order it'll call them in).
     final names = _extractLoadToolNames(args);
     if (names.isEmpty) {
-      throw ToolException('请指定 tool_names(数组)或 tool_name(单个)');
+      throw ToolException(
+        'load_tool 只接受 tool_names(数组),请改成 load_tool(tool_names=["id1","id2"])',
+      );
     }
 
     final manuals = <String>[];
@@ -1413,35 +1432,23 @@ class ChatProvider extends ChangeNotifier {
   }
 
   /// Extracts and deduplicates the requested tool ids from
-  /// [args], accepting both the legacy `tool_name` (scalar) and
-  /// the new `tool_names` (list) shapes. Empty / non-string
-  /// entries are silently dropped — the empty-list error path
-  /// lives one level up.
+  /// [args]. The schema only declares `tool_names: string[]`
+  /// — there's no scalar fallback on purpose, so the model is
+  /// pushed toward batching. Empty / non-string entries are
+  /// silently dropped; the empty-list error path lives one
+  /// level up.
   static List<String> _extractLoadToolNames(Map<String, dynamic> args) {
+    final raw = args['tool_names'];
+    if (raw is! List) return const [];
+
     final seen = <String>{};
     final out = <String>[];
-    void add(String? s) {
-      if (s == null) return;
-      final t = s.trim();
-      if (t.isEmpty) return;
+    for (final e in raw) {
+      if (e is! String) continue;
+      final t = e.trim();
+      if (t.isEmpty) continue;
       if (seen.add(t)) out.add(t);
     }
-
-    final multi = args['tool_names'];
-    if (multi is List) {
-      for (final e in multi) {
-        if (e is String) add(e);
-        // Non-string entries are ignored (the resolver will
-        // also report the same id as unknown if it shows up
-        // via tool_name below — no need to double-error).
-      }
-    } else if (multi is String) {
-      // Some models serialise a single-element list as a bare
-      // string. Be tolerant.
-      add(multi);
-    }
-
-    add(args['tool_name'] as String?);
     return out;
   }
 

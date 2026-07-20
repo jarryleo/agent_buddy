@@ -100,7 +100,7 @@ void main() {
         );
         final enumList =
             (loadToolSchema['function']?['parameters']?['properties']
-                    as Map?)?['tool_name']?['enum']
+                    as Map?)?['tool_names']?['items']?['enum']
                 as List?;
         expect(enumList, isNotNull);
         expect(enumList, isNotEmpty);
@@ -227,11 +227,25 @@ void main() {
       );
     });
 
-    test('legacy scalar form still works (back-compat)', () async {
-      // Models that were trained on the old single-name form
-      // should keep working without the provider enforcing a
-      // breaking schema change.
-      final response = await chat.debugLoadTool('fetch_web');
+    test('legacy scalar tool_name no longer works (back-compat removed '
+        'to push models toward batching)', () async {
+      // The production schema no longer declares a `tool_name`
+      // field. If a model still emits the old shape, the
+      // resolver lands on the empty-list error path and the
+      // loaded set stays empty — no surprise side effects.
+      expect(
+        () => chat.debugLoadToolRaw({'tool_name': 'fetch_web'}),
+        throwsA(isA<ToolException>()),
+      );
+      expect(chat.loadedToolIds, isEmpty);
+    });
+
+    test('a single-element array is allowed but documented as wasteful '
+        'in the system prompt', () async {
+      // The schema accepts minItems=1 so a single id still works
+      // (we'd rather load something than throw on edge cases),
+      // but the model is steered toward batching.
+      final response = await chat.debugLoadTools(['fetch_web']);
       expect(response, contains('## fetch_web'));
       expect(chat.loadedToolIds, contains('fetch_web'));
     });

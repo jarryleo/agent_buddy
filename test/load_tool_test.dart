@@ -121,17 +121,22 @@ void main() {
   });
 
   group('LoadTool schema', () {
-    test('buildSchema exposes BOTH tool_names (preferred) and tool_name', () {
+    test('buildSchema exposes ONLY tool_names (array only, no scalar '
+        'fallback)', () {
       final tool = ToolRegistry.byId('load_tool')!;
       final schema = tool.buildSchema();
-      final props = schema['function']['parameters']['properties'] as Map;
-      expect(props, contains('tool_names'));
-      expect(props, contains('tool_name'));
-      expect(props['tool_names']['type'], 'array');
-      expect(props['tool_name']['type'], 'string');
-      // Either field satisfies the schema (anyOf).
       final params = schema['function']['parameters'] as Map;
-      expect(params['anyOf'], isA<List>());
+      final props = params['properties'] as Map;
+      // The only declared property is tool_names.
+      expect(props.keys.toList(), ['tool_names']);
+      expect(props['tool_names']['type'], 'array');
+      expect(props['tool_names']['minItems'], 1);
+      // tool_name is GONE — the scalar fallback was removed to
+      // push the model toward batching.
+      expect(props, isNot(contains('tool_name')));
+      expect(params['required'], ['tool_names']);
+      // No more anyOf either — a single required field is enough.
+      expect(params, isNot(contains('anyOf')));
     });
 
     test('buildSchema reflects the current active-tools whitelist', () {
@@ -142,11 +147,7 @@ void main() {
       final multiEnum =
           (schema['function']['parameters']['properties']['tool_names']['items']['enum'])
               as List;
-      final singleEnum =
-          (schema['function']['parameters']['properties']['tool_name']['enum'])
-              as List;
       expect(multiEnum, containsAll(['fetch_web', 'memory', 'file']));
-      expect(singleEnum, containsAll(['fetch_web', 'memory', 'file']));
     });
   });
 
@@ -156,19 +157,6 @@ void main() {
         'tool_names': ['a', 'b', 'c'],
       });
       expect(out, ['a', 'b', 'c']);
-    });
-
-    test('reads the legacy scalar tool_name', () {
-      final out = ChatProvider.debugExtractLoadToolNames({'tool_name': 'x'});
-      expect(out, ['x']);
-    });
-
-    test('prefers tool_names[] when both shapes are present', () {
-      final out = ChatProvider.debugExtractLoadToolNames({
-        'tool_names': ['multi'],
-        'tool_name': 'single',
-      });
-      expect(out, ['multi', 'single']);
     });
 
     test('deduplicates while preserving order', () {
@@ -185,31 +173,43 @@ void main() {
       expect(out, ['a', 'b']);
     });
 
-    test('returns an empty list when both fields are missing/empty', () {
-      expect(ChatProvider.debugExtractLoadToolNames(const {}), isEmpty);
+    test('returns an empty list when tool_names is missing/empty', () {
       expect(
-        ChatProvider.debugExtractLoadToolNames({
-          'tool_names': <String>[],
-          'tool_name': '',
-        }),
+        ChatProvider.debugExtractLoadToolNames(const {}),
+        isEmpty,
+        reason: 'missing tool_names must NOT fall back to anything',
+      );
+      expect(
+        ChatProvider.debugExtractLoadToolNames({'tool_names': <String>[]}),
         isEmpty,
       );
-    });
-
-    test('tolerates a bare string under tool_names (some model '
-        'serialisations)', () {
-      final out = ChatProvider.debugExtractLoadToolNames({
-        'tool_names': 'lone',
-      });
-      expect(out, ['lone']);
+      // A bare string or non-list value is silently treated as
+      // missing — the production error path fires a clean
+      // ToolException.
+      expect(
+        ChatProvider.debugExtractLoadToolNames({'tool_names': 'lone'}),
+        isEmpty,
+        reason:
+            'a bare string is no longer a recognised shape; strict array-only',
+      );
+      expect(
+        ChatProvider.debugExtractLoadToolNames({'tool_names': 42}),
+        isEmpty,
+      );
     });
 
     test('trims whitespace around each name', () {
       final out = ChatProvider.debugExtractLoadToolNames({
         'tool_names': ['  alpha  ', 'beta'],
-        'tool_name': ' gamma ',
       });
-      expect(out, ['alpha', 'beta', 'gamma']);
+      expect(out, ['alpha', 'beta']);
+    });
+
+    test('ignores the legacy tool_name scalar (back-compat is gone)', () {
+      // If a model still emits the old shape, it lands in the
+      // empty bucket — the resolver never reads tool_name.
+      final out = ChatProvider.debugExtractLoadToolNames({'tool_name': 'x'});
+      expect(out, isEmpty);
     });
   });
 
