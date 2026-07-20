@@ -38,8 +38,7 @@ class EditImageTool extends ToolBase {
       '`image_path` 必须是当前对话中已上传的图片文件路径。';
 
   @override
-  String get shortDescription =>
-      '编辑图片(压缩/裁剪/旋转/转格式)';
+  String get shortDescription => '编辑图片(压缩/裁剪/旋转/转格式)';
   @override
   bool get isSupportedOnCurrentPlatform => notWeb();
 
@@ -98,14 +97,12 @@ class EditImageTool extends ToolBase {
             'width': {
               'type': 'integer',
               'minimum': 1,
-              'description':
-                  'crop 专用:裁剪宽度;resize 专用:目标宽度。',
+              'description': 'crop 专用:裁剪宽度;resize 专用:目标宽度。',
             },
             'height': {
               'type': 'integer',
               'minimum': 1,
-              'description':
-                  'crop 专用:裁剪高度;resize 专用:目标高度。',
+              'description': 'crop 专用:裁剪高度;resize 专用:目标高度。',
             },
             'keep_aspect_ratio': {
               'type': 'boolean',

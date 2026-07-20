@@ -12,8 +12,7 @@ class MemoryTool extends ToolBase {
   String get description =>
       '管理长期记忆。写入时多给 tags 关键词;查找时用 keywords[] 给多个相关词,命中一个就返回。';
   @override
-  String get shortDescription =>
-      '长期记忆(写入带 tags,搜索用 keywords[])';
+  String get shortDescription => '长期记忆(写入带 tags,搜索用 keywords[])';
   @override
   bool get isSupportedOnCurrentPlatform => true;
 

@@ -67,8 +67,7 @@ class SearchTool extends ToolBase {
   }
 
   @override
-  String get shortDescription =>
-      '按正则搜目录/文件,返回匹配 (file,line,col,text)';
+  String get shortDescription => '按正则搜目录/文件,返回匹配 (file,line,col,text)';
 
   @override
   bool get isSupportedOnCurrentPlatform =>

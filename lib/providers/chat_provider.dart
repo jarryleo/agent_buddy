@@ -176,6 +176,31 @@ class ChatProvider extends ChangeNotifier {
   /// page can render the session picker without a Hive round-trip.
   List<ChatSession> _sessionSummaries = const [];
 
+  // -------- Test seams --------
+  //
+  // The lazy-loading layer is a behavioural change that we want
+  // to lock down from outside the provider. These `@visibleForTesting`
+  // pass-throughs let integration tests assert on the wire shape
+  // without spinning up the streaming pipeline.
+
+  /// Drives the private `_buildToolsSchema()` for tests. The
+  /// shape of the returned list is exactly what `ApiService` /
+  /// `LocalLlmService` would consume on the next turn.
+  @visibleForTesting
+  Future<List<Map<String, dynamic>>> debugBuildToolsSchema() =>
+      _buildToolsSchema();
+
+  /// Drives the private `_loadTool(Map)` for tests, no
+  /// `BuildContext` required (the production path is reached via
+  /// `_onToolCall` which has a context, but the schema-build side
+  /// effects we care about here are the same).
+  @visibleForTesting
+  Future<String> debugLoadTool(String name) => _loadTool({'tool_name': name});
+
+  /// Returns the system-prompt blocks the next turn would use.
+  @visibleForTesting
+  List<String> debugBuildSystemPrompts() => _buildSystemPrompts();
+
   /// True while a request is in flight on the active session.
   bool _sending = false;
   bool _disposed = false;
@@ -560,7 +585,8 @@ class ChatProvider extends ChangeNotifier {
 
     return [
       if (baseSystem != null && baseSystem.isNotEmpty) baseSystem,
-      if (toolIndexPrompt != null && toolIndexPrompt.isNotEmpty) toolIndexPrompt,
+      if (toolIndexPrompt != null && toolIndexPrompt.isNotEmpty)
+        toolIndexPrompt,
       if (thinkingPrompt.isNotEmpty) thinkingPrompt,
       if (rolePrompt != null && rolePrompt.isNotEmpty) rolePrompt,
       if (skillsPrompt != null && skillsPrompt.isNotEmpty) skillsPrompt,
@@ -677,9 +703,13 @@ class ChatProvider extends ChangeNotifier {
       sb.writeln('- `$marker ${tool.id}`: ${tool.shortDescription}');
     }
     sb.writeln();
-    sb.writeln('用法: `load_tool(tool_name="fetch_web")` → 返回该工具的精简手册,'
-        '之后即可在本会话内直接调用,schema 会进入 tools 数组。');
-    sb.writeln('当前已加载: ${_loadedToolIds.isEmpty ? "无" : _loadedToolIds.toList().join(", ")}');
+    sb.writeln(
+      '用法: `load_tool(tool_name="fetch_web")` → 返回该工具的精简手册,'
+      '之后即可在本会话内直接调用,schema 会进入 tools 数组。',
+    );
+    sb.writeln(
+      '当前已加载: ${_loadedToolIds.isEmpty ? "无" : _loadedToolIds.toList().join(", ")}',
+    );
     return sb.toString().trim();
   }
 
@@ -1077,7 +1107,9 @@ class ChatProvider extends ChangeNotifier {
     // model still sees the tool output.
     try {
       final decoded = jsonDecode(resultStr);
-      if (decoded is Map && decoded['ok'] == true && decoded['path'] is String) {
+      if (decoded is Map &&
+          decoded['ok'] == true &&
+          decoded['path'] is String) {
         final edited = EditedImage(
           path: decoded['path'] as String,
           filename: decoded['filename'] as String? ?? 'image',
@@ -1091,9 +1123,7 @@ class ChatProvider extends ChangeNotifier {
           sourceSize: (decoded['source_size'] as num?)?.toInt(),
         );
         _mutateToolCall(assistantId, toolId, (tc) {
-          return tc.copyWith(
-            editedImages: [...tc.editedImages, edited],
-          );
+          return tc.copyWith(editedImages: [...tc.editedImages, edited]);
         });
         notifyListeners();
       }
@@ -1320,9 +1350,9 @@ class ChatProvider extends ChangeNotifier {
       }
       sb
         ..writeln()
-        ..writeln(alreadyLoaded
-            ? '_(该工具此前已加载,可直接调用)_'
-            : '_(已加入 tools 数组,本会话内可直接调用)_');
+        ..writeln(
+          alreadyLoaded ? '_(该工具此前已加载,可直接调用)_' : '_(已加入 tools 数组,本会话内可直接调用)_',
+        );
       notifyListeners();
       return sb.toString().trim();
     }
@@ -1350,13 +1380,12 @@ class ChatProvider extends ChangeNotifier {
       } catch (e) {
         throw ToolException('无法连接 MCP 服务器 "$serverName": $e');
       }
-      final match = mcpTools
-          .where((t) => t.name == toolName)
-          .firstOrNull;
+      final match = mcpTools.where((t) => t.name == toolName).firstOrNull;
       if (match == null) {
         final names = mcpTools.map((t) => t.name).join(', ');
         throw ToolException(
-            'MCP 服务器 "$serverName" 上找不到工具 "$toolName"。可用: $names');
+          'MCP 服务器 "$serverName" 上找不到工具 "$toolName"。可用: $names',
+        );
       }
       final alreadyLoaded = !_loadedToolIds.add(raw);
       final sb = StringBuffer()
@@ -1364,13 +1393,19 @@ class ChatProvider extends ChangeNotifier {
         ..writeln(match.description)
         ..writeln()
         ..writeln('### 详细 schema')
-        ..writeln(jsonEncode(match.inputSchema.isNotEmpty
-            ? match.inputSchema
-            : {'type': 'object', 'properties': <String, dynamic>{}}))
+        ..writeln(
+          jsonEncode(
+            match.inputSchema.isNotEmpty
+                ? match.inputSchema
+                : {'type': 'object', 'properties': <String, dynamic>{}},
+          ),
+        )
         ..writeln()
-        ..writeln(alreadyLoaded
-            ? '_(该 MCP 工具此前已加载,可直接调用)_'
-            : '_(已加入 tools 数组,本会话内可直接调用)_');
+        ..writeln(
+          alreadyLoaded
+              ? '_(该 MCP 工具此前已加载,可直接调用)_'
+              : '_(已加入 tools 数组,本会话内可直接调用)_',
+        );
       notifyListeners();
       return sb.toString().trim();
     }
@@ -1390,8 +1425,9 @@ class ChatProvider extends ChangeNotifier {
       final parts = toolId.split('__');
       if (parts.length < 3) return false;
       final serverName = parts[1];
-      return _settings.mcpProviders
-          .any((m) => m.enabled && m.name == serverName);
+      return _settings.mcpProviders.any(
+        (m) => m.enabled && m.name == serverName,
+      );
     }
     if (!activeIds.contains(toolId)) return false;
     final tool = ToolRegistry.byId(toolId);
@@ -2124,8 +2160,10 @@ class ChatProvider extends ChangeNotifier {
       buf.write(content);
       buf.write('\n\n');
     }
-    buf.write('Attached images (local file paths — pass to `edit_image.image_path` '
-        'or `file.read` when needed):');
+    buf.write(
+      'Attached images (local file paths — pass to `edit_image.image_path` '
+      'or `file.read` when needed):',
+    );
     for (final p in imagePaths) {
       buf.write('\n- $p');
     }
@@ -2142,8 +2180,7 @@ class ChatProvider extends ChangeNotifier {
   static String augmentContentWithImagePaths(
     String content,
     List<String> imagePaths,
-  ) =>
-      _augmentContentWithImagePaths(content, imagePaths);
+  ) => _augmentContentWithImagePaths(content, imagePaths);
 
   /// Runs ONE streaming turn attempt. Returns the [_TurnOutcome]
   /// so the orchestrator can decide whether to retry on the

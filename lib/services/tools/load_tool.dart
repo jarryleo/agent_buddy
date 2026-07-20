@@ -34,8 +34,7 @@ class LoadTool extends ToolBase {
       '本会话内可一直直接调用,无需重复加载。';
 
   @override
-  String get shortDescription =>
-      '按需加载工具的详细使用手册(schema + 约束)';
+  String get shortDescription => '按需加载工具的详细使用手册(schema + 约束)';
 
   @override
   bool get isSupportedOnCurrentPlatform => true;

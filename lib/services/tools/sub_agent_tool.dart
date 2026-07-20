@@ -59,8 +59,7 @@ class SubAgentTool extends ToolBase {
       'google_sheet(写) / mcp__* 等需要用户交互或改用户数据的工具。';
 
   @override
-  String get shortDescription =>
-      '把独立调研任务交给子 agent,只拿回压缩报告';
+  String get shortDescription => '把独立调研任务交给子 agent,只拿回压缩报告';
 
   @override
   bool get isSupportedOnCurrentPlatform => true;

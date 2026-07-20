@@ -179,13 +179,18 @@ String _prettyJson(Object? value, [int depth = 0]) {
   if (value is String) return jsonEncode(value);
   if (value is List) {
     if (value.isEmpty) return '[]';
-    final items = value.map((e) => '$next${_prettyJson(e, depth + 1)}').join(',\n');
+    final items = value
+        .map((e) => '$next${_prettyJson(e, depth + 1)}')
+        .join(',\n');
     return '[\n$items\n$indent]';
   }
   if (value is Map) {
     if (value.isEmpty) return '{}';
     final entries = value.entries
-        .map((e) => '$next${jsonEncode(e.key.toString())}: ${_prettyJson(e.value, depth + 1)}')
+        .map(
+          (e) =>
+              '$next${jsonEncode(e.key.toString())}: ${_prettyJson(e.value, depth + 1)}',
+        )
         .join(',\n');
     return '{\n$entries\n$indent}';
   }
