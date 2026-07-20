@@ -111,37 +111,38 @@ String buildBaseSystemPrompt({
 }) {
   final workingDirectoryHint = workingDirectory == null
       ? ''
-      : '\n- 默认工作目录: $workingDirectory。file / run_command 的相对路径都基于此目录。';
+      : '\n- 默认工作目录: $workingDirectory;file / run_command 的相对路径都基于此目录;';
   final mcpHint = enabledMcpServerCount > 0
       ? '\n'
             '- MCP 工具(名称以 mcp__ 开头):已启用 $enabledMcpServerCount 个 MCP 服务器,'
-            'load_tool("mcp__<server>__<tool>") 按需加载。'
+            'load_tool("mcp__<server>__<tool>") 按需加载;'
       : '';
   return '你是一个聪明且细心的助理,诚实又可靠.\n'
       '\n'
       '## 核心规则\n'
-      '处理任务严格按固定三步，不许打乱顺序：\n'
-      '【阶段1 工具判断】拆解任务，列出所有需要的工具，无工具则只分析不调用工具。\n'
-      '【阶段2 批量加载工具规则】把阶段1所有工具使用`load_tool(tool_names=["a","b","c"])`一次性加载。无工具直接跳过。\n'
-      '【阶段3 执行任务】根据工具规则分步调用工具，完成任务并汇总结果。\n'
+      '处理任务严格按固定四步,不许打乱顺序:\n'
+      '【阶段1 工具判断】分析任务目标,拆解任务,列出所有需要的技能和工具,有需要的技能先加载技能,无工具则只分析不调用工具;\n'
+      '【阶段2 批量加载工具规则】把阶段1所有工具使用`load_tool(tool_names=["a","b","c"])`一次性加载;无工具直接跳过;\n'
+      '【阶段3 执行任务】根据工具规则分步调用工具,完成任务并汇总结果;\n'
+      '【阶段4 完成任务目标】根据任务结果判断是否完成任务目标,若没有达到目标则再次规划任务,回到阶段1;\n'
       '同一轮可以连续调多个工具,等全部结果回来再统一回复;'
-      '独立任务优先使用 subagent 工具,这样能减少你的工作负担和保持简洁的上下文。\n'
-      '工具报错尝试根据错误信息用别的方法解决,无法解决则求助用户,不要编造内容,你是诚实的助手。\n'
-      '回复需要简洁明快,不要内容冗长.\n'
+      '独立任务(例如搜集信息,查询网站内容,查找文件内容等)优先使用 subagent 工具,这样能减少你的工作负担和保持简洁的上下文;\n'
+      '工具报错尝试根据错误信息用别的方法解决,无法解决则求助用户,不要编造内容,你是诚实的助手;\n'
+      '禁止输出大量无关内心想法,回复需要简洁明了,不要复述工作内容和执行步骤,只汇报结果即可.\n'
       '\n'
       '## 工具使用\n'
-      '- 可用工具一览见下面的"可用工具"列表(只有 id + 一句话用途)。\n'
-      '**可以一次加载多个工具**,'
-      '之后这些工具就会出现在本轮的 function 列表里,可直接调用。\n'
-      '- 同一会话内已经加载的工具不要重复加载,直接调用即可。\n'
+      '- 可用工具一览见下面的"可用工具"列表(只有 id + 一句话用途);\n'
+      '**可以一次加载多个工具**;'
+      '之后这些工具就会出现在本轮的 function 列表里,可直接调用;\n'
+      '- 同一会话内已经加载的工具不要重复加载,直接调用即可;\n'
       '- 工具调用失败返回的是软错误时(比如 cancelled / not_found / permission_denied),'
-      '根据 message 尝试别的解决方案,不要直接放弃。\n'
+      '根据 message 尝试别的解决方案,不要直接放弃;\n'
       '\n'
       '## 聊天附件\n'
       '- 桌面端:附件 path = 用户原文件绝对路径,直接拿去调 file 工具就改用户磁盘上的文件,'
-      '别再 create 副本。\n'
+      '别再 create 副本;\n'
       '- 手机端:附件 path = app 沙盒副本,file 工具的 read/edit/write 不接受这种绝对路径,'
-      '改用 file.pick 拿 picker://<id>,或先 file.write 把内容落到工作目录。'
+      '改用 file.pick 拿 picker://<id>,或先 file.write 把内容落到工作目录;'
       '$workingDirectoryHint$mcpHint';
 }
 
@@ -584,7 +585,7 @@ class ChatProvider extends ChangeNotifier {
   /// Returns the active system prompt parts.
   List<String> _buildSystemPrompts() {
     final thinkingPrompt = _settings.thinkingModeEnabled
-        ? '当前已开启思考模式。请在回答前进行更充分的分析与推理，再给出准确、清晰的结论。'
+        ? '当前已开启思考模式;请在回答前进行更充分的分析与推理,再给出准确、清晰的结论;'
         : '';
     String? rolePrompt;
     final role = _settings.activeRole;
@@ -761,8 +762,8 @@ class ChatProvider extends ChangeNotifier {
       '用法: `load_tool(tool_names=["fetch_web","memory","file"])` '
       '→ 一次返回所有手册 + 把 schema 一起加入 tools 数组 '
       '(per-request-billed provider 上每个 tool 单独 load 都是一次计费,'
-      '**尽量一次把本轮要用到的工具全列上**)。'
-      '同一会话内已加载的不需重复加载。',
+      '**尽量一次把本轮要用到的工具全列上**);'
+      '同一会话内已加载的不需重复加载;',
     );
     sb.writeln(
       '当前已加载: ${_loadedToolIds.isEmpty ? "无" : _loadedToolIds.toList().join(", ")}',
@@ -1547,7 +1548,7 @@ class ChatProvider extends ChangeNotifier {
     if (match == null) {
       final names = mcpTools.map((t) => t.name).join(', ');
       return _LoadOneResult.error(
-        'MCP 服务器 "$serverName" 上找不到工具 "$toolName"。可用: $names',
+        'MCP 服务器 "$serverName" 上找不到工具 "$toolName";可用: $names',
       );
     }
     final justAdded = _loadedToolIds.add(raw);
@@ -1616,7 +1617,7 @@ class ChatProvider extends ChangeNotifier {
     }
     if (match == null) {
       final names = skills.map((s) => '"${s.name}"').join(', ');
-      throw ToolException('未找到技能"$name"。可用技能: $names');
+      throw ToolException('未找到技能"$name";可用技能: $names');
     }
     final sb = StringBuffer();
     sb.writeln('## ${match.name}');
@@ -1643,7 +1644,7 @@ class ChatProvider extends ChangeNotifier {
       orElse: () => null,
     );
     if (server == null) {
-      throw ToolException('MCP 服务器 "$serverName" 不可用(未找到或未启用)。');
+      throw ToolException('MCP 服务器 "$serverName" 不可用(未找到或未启用);');
     }
 
     return await _tools.mcp.callTool(
@@ -1963,7 +1964,7 @@ class ChatProvider extends ChangeNotifier {
     final lines = <String>[
       '[系统计时触发] ${task.label}',
       if (prompt.isNotEmpty) '原提示:$prompt',
-      if (hint.isNotEmpty) '建议操作:$hint' else '建议操作:调用 notification 工具通知用户。',
+      if (hint.isNotEmpty) '建议操作:$hint' else '建议操作:调用 notification 工具通知用户;',
     ];
     return lines.join('\n');
   }
