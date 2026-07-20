@@ -40,6 +40,16 @@ void main() {
     ).writeAsBytesSync(const [0x25, 0x50, 0x44, 0x46]);
     // Hidden file should be filtered out by the scanner.
     File(p.join(workDir.path, '.hidden')).writeAsStringSync('x');
+    Directory(
+      p.join(workDir.path, 'src', 'features'),
+    ).createSync(recursive: true);
+    File(
+      p.join(workDir.path, 'src', 'features', 'nested.dart'),
+    ).writeAsStringSync('void nested() {}');
+    Directory(p.join(workDir.path, 'assets')).createSync();
+    File(
+      p.join(workDir.path, 'assets', 'portrait.png'),
+    ).writeAsBytesSync(const [0x89, 0x50, 0x4E, 0x47]);
   });
 
   tearDown(() async {
@@ -89,6 +99,15 @@ void main() {
     expect(find.text('report.pdf'), findsOneWidget);
     // Hidden file shouldn't show up.
     expect(find.text('.hidden'), findsNothing);
+  });
+
+  testWidgets('recursive files are listed with relative paths', (tester) async {
+    await pumpInput(tester, onSend: (_, _, _) {});
+
+    await tester.enterText(find.byType(TextField), '@nested');
+    await tester.pump();
+
+    expect(find.text('src/features/nested.dart'), findsOneWidget);
   });
 
   testWidgets('no working directory surfaces the "pick one" hint', (
@@ -174,6 +193,38 @@ void main() {
     // can't easily inspect the internal list from outside the
     // widget; the controller text assertion is the strongest
     // observable signal here.
+  });
+
+  testWidgets('Arrow Down selects the next file', (tester) async {
+    await pumpInput(tester, onSend: (_, _, _) {});
+
+    await tester.enterText(find.byType(TextField), '@.png');
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    final controller = tester
+        .widget<TextField>(find.byType(TextField))
+        .controller!;
+    expect(controller.text, 'photo.png ');
+  });
+
+  testWidgets('Arrow Up wraps to the last file', (tester) async {
+    await pumpInput(tester, onSend: (_, _, _) {});
+
+    await tester.enterText(find.byType(TextField), '@.png');
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    final controller = tester
+        .widget<TextField>(find.byType(TextField))
+        .controller!;
+    expect(controller.text, 'photo.png ');
   });
 
   testWidgets('Enter when popup is closed sends the message normally', (

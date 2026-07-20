@@ -77,6 +77,7 @@ class ChatInput extends StatefulWidget {
 
 const int _kMaxLinesCollapsed = 1;
 const int _kMaxLinesExpanded = 10;
+const double _kMentionRowExtent = 40;
 
 /// Thrown when the SAF `pickTree` channel is missing — i.e.
 /// the user is somehow on a build that has no Android
@@ -112,6 +113,8 @@ class _ChatInputState extends State<ChatInput> {
   // best-match first. Empty when the working directory is unset
   // or doesn't yield any matches.
   List<_MentionCandidate> _mentionCandidates = const [];
+  int _mentionSelectedIndex = 0;
+  final ScrollController _mentionScrollController = ScrollController();
   // In-memory cache of the working directory listing, keyed by
   // the working-directory path. Avoids re-scanning on every
   // keystroke when the user is just narrowing their query.
@@ -210,6 +213,7 @@ class _ChatInputState extends State<ChatInput> {
     _voiceLevelDecayTimer?.cancel();
     _voiceLevelDecayTimer = null;
     _voiceLevelNotifier.dispose();
+    _mentionScrollController.dispose();
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -217,13 +221,13 @@ class _ChatInputState extends State<ChatInput> {
 
   void _send() {
     // The Enter key routes here from [_InputField._onKey]. If the
-    // @-mention popup is open, Enter should attach the first
-    // matching file instead of sending the message — that matches
-    // the explicit "直接回车表示引用第一个匹配的文件" requirement
-    // and avoids surprising users who pressed Enter expecting
-    // "complete the mention", not "send the half-typed query".
+    // @-mention popup is open, Enter should attach the highlighted
+    // matching file instead of sending the message.
     if (_mentionActive && _mentionCandidates.isNotEmpty) {
-      _attachMention(_mentionCandidates.first);
+      final index = _mentionSelectedIndex < _mentionCandidates.length
+          ? _mentionSelectedIndex
+          : 0;
+      _attachMention(_mentionCandidates[index]);
       return;
     }
     final text = _controller.text.trim();
@@ -259,8 +263,8 @@ class _ChatInputState extends State<ChatInput> {
   // UX summary: typing `@` in the input field opens a popup above
   // the input listing the files in the current working directory.
   // Subsequent characters narrow the list (substring / prefix /
-  // fuzzy match against the file basename — see
-  // [_MentionCandidate.score]). Pressing Enter attaches the top
+  // fuzzy match against the relative path or basename — see
+  // [_MentionCandidate.score]). Pressing Enter attaches the highlighted
   // match (resolved into either the image list or the file
   // attachment list, mirroring the existing `_pickFile` /
   // `_pickImage` split). Clicking a row in the popup does the same
@@ -305,6 +309,7 @@ class _ChatInputState extends State<ChatInput> {
         _mentionQuery = query;
         _mentionStart = hit.atSign;
         _mentionCandidates = const [];
+        _mentionSelectedIndex = 0;
       });
       return;
     }
@@ -314,6 +319,43 @@ class _ChatInputState extends State<ChatInput> {
       _mentionQuery = query;
       _mentionStart = hit.atSign;
       _mentionCandidates = candidates;
+      _mentionSelectedIndex = 0;
+    });
+    _scrollMentionSelectionIntoView();
+  }
+
+  void _moveMentionSelection(int delta) {
+    if (!_mentionActive || _mentionCandidates.isEmpty) return;
+    setState(() {
+      _mentionSelectedIndex =
+          (_mentionSelectedIndex + delta) % _mentionCandidates.length;
+    });
+    _scrollMentionSelectionIntoView();
+  }
+
+  void _scrollMentionSelectionIntoView() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_mentionScrollController.hasClients) return;
+      final position = _mentionScrollController.position;
+      final itemTop = _mentionSelectedIndex * _kMentionRowExtent;
+      final itemBottom = itemTop + _kMentionRowExtent;
+      final viewportTop = position.pixels;
+      final viewportBottom = viewportTop + position.viewportDimension;
+      var target = viewportTop;
+      if (itemTop < viewportTop) {
+        target = itemTop;
+      } else if (itemBottom > viewportBottom) {
+        target = itemBottom - position.viewportDimension;
+      }
+      target = target
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if (target == viewportTop) return;
+      _mentionScrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+      );
     });
   }
 
@@ -328,7 +370,7 @@ class _ChatInputState extends State<ChatInput> {
   ///     builders).
   Future<void> _attachMention(_MentionCandidate candidate) async {
     final path = candidate.path;
-    final name = candidate.name;
+    final name = candidate.relativePath;
     final l10n = AppLocalizations.of(context);
     try {
       if (candidate.isImage) {
@@ -407,67 +449,83 @@ class _ChatInputState extends State<ChatInput> {
       _mentionQuery = '';
       _mentionStart = -1;
       _mentionCandidates = const [];
+      _mentionSelectedIndex = 0;
     });
   }
 
   /// Scan the working directory (cached per path) and return the
   /// list of files matching [query], sorted best-match first.
   ///
-  /// The scan only looks at top-level entries — we deliberately
-  /// don't recurse, so users can `@project/src/foo.dart` style
-  /// references only after they type enough of the path. The
-  /// matching score prefers:
-  ///   * exact basename match → 1.0
+  /// The matching score prefers:
+  ///   * exact relative path or basename match → 1.0
   ///   * prefix match → 0.9
   ///   * substring (case-insensitive) → 0.7
   ///   * everything else → 0 (filtered out)
   List<_MentionCandidate> _scanWorkingDirectory(String dir, String query) {
     final all = _mentionScanCache.putIfAbsent(dir, () => _listDir(dir));
     if (query.isEmpty) {
-      // No query — return alphabetical (case-insensitive).
       final sorted = [...all]
-        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        ..sort(
+          (a, b) => a.relativePath.toLowerCase().compareTo(
+            b.relativePath.toLowerCase(),
+          ),
+        );
       return sorted;
     }
-    final q = query.toLowerCase();
+    final q = query.replaceAll('\\', '/').toLowerCase();
     final scored = <_MentionCandidate>[];
     for (final c in all) {
-      final score = matchScore(c.name.toLowerCase(), q);
+      final pathScore = matchScore(c.relativePath.toLowerCase(), q);
+      final nameScore = matchScore(c.name.toLowerCase(), q);
+      final score = math.max(pathScore, nameScore);
       if (score > 0) scored.add(c.copyWith(score: score));
     }
     scored.sort((a, b) {
       final cmp = b.score.compareTo(a.score);
       if (cmp != 0) return cmp;
-      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      return a.relativePath.toLowerCase().compareTo(
+        b.relativePath.toLowerCase(),
+      );
     });
     return scored;
   }
 
-  /// Top-level scan of [dir] → list of regular-file candidates.
-  /// Skips dotfiles, subdirectories, and symlinks (keeps the
-  /// popup predictable — `@` shouldn't drag in `node_modules/`
-  /// or `..`).
+  /// Recursive scan of [dir] → list of regular-file candidates.
+  /// Hidden entries and symlinks are skipped.
   List<_MentionCandidate> _listDir(String dir) {
-    try {
-      final entity = Directory(dir);
-      if (!entity.existsSync()) return const [];
-      final out = <_MentionCandidate>[];
-      for (final child in entity.listSync(followLinks: false)) {
-        final name = p.basename(child.path);
-        if (name.startsWith('.')) continue;
+    final root = Directory(dir);
+    if (!root.existsSync()) return const [];
+    final out = <_MentionCandidate>[];
+
+    void visit(Directory directory) {
+      late final List<FileSystemEntity> children;
+      try {
+        children = directory.listSync(followLinks: false);
+      } catch (_) {
+        return;
+      }
+      for (final child in children) {
+        final relative = p.relative(child.path, from: dir);
+        if (p.split(relative).any((part) => part.startsWith('.'))) continue;
+        if (child is Directory) {
+          visit(child);
+          continue;
+        }
         if (child is! File) continue;
+        final name = p.basename(child.path);
         out.add(
           _MentionCandidate(
             name: name,
+            relativePath: p.split(relative).join('/'),
             path: child.path,
             isImage: _isImageFile(name),
           ),
         );
       }
-      return out;
-    } catch (_) {
-      return const [];
     }
+
+    visit(root);
+    return out;
   }
 
   // ---- Voice input -------------------------------------------------------
@@ -1429,6 +1487,10 @@ class _ChatInputState extends State<ChatInput> {
                       sending: widget.sending,
                       onSubmit: _send,
                       onPaste: _handlePaste,
+                      onMoveMentionSelection:
+                          _mentionActive && _mentionCandidates.isNotEmpty
+                          ? _moveMentionSelection
+                          : null,
                       voiceLevelNotifier: _voiceLevelNotifier,
                       voiceActive: _voiceListening,
                       voiceDragCancelled: _voiceCancelledByDrag,
@@ -1731,7 +1793,7 @@ class _ChatInputState extends State<ChatInput> {
 
   /// Popup that lists the working-directory files when the user
   /// types `@` in the input. Anchored above the input row; the
-  /// first row is keyboard-attachable via Enter (handled in
+  /// selected row is keyboard-attachable via Enter (handled in
   /// [_send]). The header shows the current filter query (or an
   /// empty-state message when the working directory is unset).
   Widget _buildMentionPopup(AppLocalizations l10n) {
@@ -1816,6 +1878,8 @@ class _ChatInputState extends State<ChatInput> {
                         Icons.search_off_outlined,
                       )
                     : ListView.builder(
+                        controller: _mentionScrollController,
+                        itemExtent: _kMentionRowExtent,
                         shrinkWrap: true,
                         padding: EdgeInsets.zero,
                         itemCount: _mentionCandidates.length,
@@ -1823,7 +1887,7 @@ class _ChatInputState extends State<ChatInput> {
                           final c = _mentionCandidates[index];
                           return _MentionCandidateRow(
                             candidate: c,
-                            highlight: index == 0,
+                            highlight: index == _mentionSelectedIndex,
                             onTap: () => _attachMention(c),
                           );
                         },
@@ -1958,6 +2022,7 @@ class _InputField extends StatefulWidget {
     required this.sending,
     required this.onSubmit,
     this.onPaste,
+    this.onMoveMentionSelection,
     this.voiceLevelNotifier,
     this.voiceActive = false,
     this.voiceDragCancelled = false,
@@ -1969,6 +2034,7 @@ class _InputField extends StatefulWidget {
   final bool sending;
   final VoidCallback onSubmit;
   final VoidCallback? onPaste;
+  final ValueChanged<int>? onMoveMentionSelection;
 
   /// Live 0..1 amplitude sample (or a synthetic pulse) emitted by
   /// the parent while a voice session is active. The input listens
@@ -2023,9 +2089,21 @@ class _InputFieldState extends State<_InputField> {
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (!_isDesktop) return KeyEventResult.ignored;
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
+
+    if (widget.onMoveMentionSelection != null) {
+      if (key == LogicalKeyboardKey.arrowUp) {
+        widget.onMoveMentionSelection!(-1);
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowDown) {
+        widget.onMoveMentionSelection!(1);
+        return KeyEventResult.handled;
+      }
+    }
+
+    if (!_isDesktop) return KeyEventResult.ignored;
 
     // Intercept Ctrl+V / Cmd+V to handle image paste alongside text.
     if (key == LogicalKeyboardKey.keyV) {
@@ -2207,25 +2285,27 @@ class _InputFieldState extends State<_InputField> {
 /// "live" mode between phrases.
 
 /// One entry in the @-mention file popup. Carries the file's
-/// on-disk path, its basename (used both in the popup row and
-/// when splicing back into the input box), the pre-computed
+/// on-disk path, basename, relative display path, the pre-computed
 /// image flag (so [_MentionCandidateRow] can render the right
 /// icon), and the current match score for sort ordering.
 class _MentionCandidate {
   const _MentionCandidate({
     required this.name,
+    required this.relativePath,
     required this.path,
     required this.isImage,
     this.score = 0,
   });
 
   final String name;
+  final String relativePath;
   final String path;
   final bool isImage;
   final double score;
 
   _MentionCandidate copyWith({double? score}) => _MentionCandidate(
     name: name,
+    relativePath: relativePath,
     path: path,
     isImage: isImage,
     score: score ?? this.score,
@@ -2233,9 +2313,9 @@ class _MentionCandidate {
 }
 
 /// Single row in the @-mention popup. Renders the file's
-/// basename with an icon hinting at its category, plus a
+/// relative path with an icon hinting at its category, plus a
 /// right-aligned affordance chip that says whether attaching it
-/// will land it in the image list or the file list. The first
+/// will land it in the image list or the file list. The selected
 /// row gets a brand-color background so the user can see what
 /// Enter would attach.
 class _MentionCandidateRow extends StatelessWidget {
@@ -2277,7 +2357,7 @@ class _MentionCandidateRow extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  candidate.name,
+                  candidate.relativePath,
                   style: TextStyle(
                     fontSize: 13,
                     color: fg,
