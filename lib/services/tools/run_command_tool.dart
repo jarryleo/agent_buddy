@@ -27,14 +27,22 @@ import 'tool_base.dart';
 /// function — entries keep the same dedupe + ordering rules as the
 /// built-in standard paths.
 ///
+/// [extraEnv] lets callers merge per-shell environment variables on
+/// top of the base env (e.g. `LANG=C.UTF-8` + `LC_ALL=C.UTF-8` for
+/// Git Bash so MSYS2 emits UTF-8 instead of inheriting the active
+/// Windows code page, which on Chinese hosts is CP936 and mangles
+/// Chinese output into mojibake).
+///
 /// Exposed for testing via [visibleForTesting]; not part of the
 /// public API.
 @visibleForTesting
 Map<String, String> buildShellEnvironment({
   Map<String, String>? baseEnv,
   List<String> extraPaths = const <String>[],
+  Map<String, String> extraEnv = const <String, String>{},
 }) {
   final env = Map<String, String>.from(baseEnv ?? Platform.environment);
+  env.addAll(extraEnv);
   final pathKey = Platform.isWindows ? 'Path' : 'PATH';
   final separator = Platform.isWindows ? ';' : ':';
   final stdPaths = Platform.isWindows
@@ -224,21 +232,35 @@ class RunCommandTool extends ToolBase {
     final List<String> shellArgs;
     final String? resolvedShellLabel;
     final List<String> extraEnvPaths;
+    final Map<String, String> extraEnvVars;
+    final String commandPrefix;
     if (Platform.isWindows) {
       final shell = await _resolveWindowsShell();
       shellExecutable = shell.executable;
-      shellArgs = shell.buildArgv(command);
+      // The shell may need a UTF-8 nudge BEFORE the user command
+      // runs (PowerShell: `[Console]::OutputEncoding = …; chcp
+      // 65001 | Out-Null; `, cmd: `chcp 65001 >nul & `). Git Bash
+      // doesn't need a prefix because its `LANG` / `LC_ALL`
+      // additions (in `shell.envAdditions`) are enough.
+      commandPrefix = shell.commandPrefix;
+      shellArgs = shell.buildArgv('$commandPrefix$command');
       resolvedShellLabel = shell.flagLabel;
       extraEnvPaths = shell.pathAdditions;
+      extraEnvVars = shell.envAdditions;
     } else {
       shellExecutable = '/bin/sh';
       shellArgs = ['-c', command];
       resolvedShellLabel = null;
       extraEnvPaths = const <String>[];
+      extraEnvVars = const <String, String>{};
+      commandPrefix = '';
     }
 
     final stopwatch = Stopwatch()..start();
-    final env = buildShellEnvironment(extraPaths: extraEnvPaths);
+    final env = buildShellEnvironment(
+      extraPaths: extraEnvPaths,
+      extraEnv: extraEnvVars,
+    );
     // NOTE: we deliberately do NOT use `runInShell: true` here.
     // On macOS that wrapper spawns `/bin/sh -c <command>` via
     // `posix_spawn` in a way that drops the inherited environment
@@ -259,7 +281,7 @@ class RunCommandTool extends ToolBase {
       throw ToolException('failed to start command: $e');
     }
 
-    final decoder = systemEncoding.decoder;
+    final decoder = _stdoutDecoder();
     final stdoutFuture = process.stdout.transform(decoder).toList();
     final stderrFuture = process.stderr.transform(decoder).toList();
 
@@ -303,4 +325,26 @@ class RunCommandTool extends ToolBase {
     }
     return encoded;
   }
+}
+
+/// Picks the byte → String decoder for `run_command`'s stdout /
+/// stderr streams.
+///
+/// On Windows we always use UTF-8 (`allowMalformed=true` so a
+/// stray non-UTF-8 byte from a misconfigured child becomes `?`
+/// instead of throwing). The child shell is forced to emit UTF-8
+/// per [WindowsShell.envAdditions] / [WindowsShell.commandPrefix],
+/// so the bytes we get should be valid UTF-8 even on hosts where
+/// the active code page is CP936 / GBK — without this, every
+/// Chinese character from `git log`, `npm`, `python3`, … would
+/// decode to `????`.
+///
+/// On macOS / Linux the system encoding is already UTF-8 in
+/// practice, so the system codec is fine and we keep it for
+/// backwards-compat with older test fixtures that depend on it.
+Converter<List<int>, String> _stdoutDecoder() {
+  if (Platform.isWindows) {
+    return const Utf8Decoder(allowMalformed: true);
+  }
+  return systemEncoding.decoder;
 }

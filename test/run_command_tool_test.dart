@@ -124,6 +124,21 @@ void main() {
       // No duplicates — `extraPaths` overlaps with a standard.
       expect(parts.where((p) => p == r'C:\Windows\System32').length, 1);
     });
+
+    test('extraEnv overrides the base env (per-shell UTF-8 vars)', () {
+      final result = buildShellEnvironment(
+        baseEnv: <String, String>{'LANG': 'C', 'OTHER': 'keep'},
+        extraEnv: const <String, String>{
+          'LANG': 'C.UTF-8',
+          'LC_ALL': 'C.UTF-8',
+        },
+      );
+      expect(result['LANG'], 'C.UTF-8',
+          reason: 'extraEnv must win over the inherited env');
+      expect(result['LC_ALL'], 'C.UTF-8');
+      // Untouched keys pass through.
+      expect(result['OTHER'], 'keep');
+    });
   });
 
   group('RunCommandTool.execute', () {
@@ -240,6 +255,41 @@ void main() {
           r'C:\Program Files\Git\bin',
         ]),
       );
+    });
+
+    test(
+        'Windows Git Bash: echo with Chinese returns Chinese (no mojibake) '
+        'when LANG=C.UTF-8 is set', () async {
+      // On Chinese Windows, the active code page is CP936 / GBK
+      // but MSYS2 (Git Bash) defaults to emitting UTF-8. Without
+      // the LANG=LC_ALL=C.UTF-8 env additions and the UTF-8
+      // decoder, `echo 你好` would come back as `????`. This
+      // test pins the round-trip end-to-end so a future change
+      // can't silently regress it.
+      if (!Platform.isWindows) return;
+      final tool = RunCommandTool();
+      // Let the default resolver find whatever real Git Bash
+      // the host has (or skip if none).
+      final shell = await tool.debugResolveWindowsShell();
+      if (shell.kind != WindowsShellKind.gitBash) {
+        // No Git Bash on this host — can't exercise the path.
+        return;
+      }
+      if (!File(shell.executable).existsSync()) return;
+      final out = await tool.execute({
+        'command': 'echo 你好世界',
+        'timeout_seconds': 10,
+      }, toolService);
+      final payload = jsonDecode(out) as Map<String, dynamic>;
+      expect(payload['exit_code'], 0);
+      final stdout = '${payload['stdout']}';
+      expect(stdout, contains('你好世界'),
+          reason: 'stdout must contain the original Chinese, '
+              'not mojibake. Got: $stdout');
+      // Must NOT contain the GBK-decoded replacement chars.
+      expect(stdout, isNot(contains('?好')),
+          reason: 'looks like GBK-decoded UTF-8 mojibake: $stdout');
+      expect(payload['shell'], 'bash');
     });
   });
 }

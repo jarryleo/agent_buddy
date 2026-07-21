@@ -174,6 +174,56 @@ void main() {
     });
   });
 
+  group('WindowsShell UTF-8 setup', () {
+    test('gitBash pins LANG=LC_ALL=C.UTF-8 so MSYS2 emits UTF-8', () {
+      final shell = WindowsShell(
+        kind: WindowsShellKind.gitBash,
+        executable: r'D:\Git\bin\bash.exe',
+        flagArg: '-c',
+        flagLabel: 'bash',
+        envAdditions: const <String, String>{
+          'LANG': 'C.UTF-8',
+          'LC_ALL': 'C.UTF-8',
+        },
+      );
+      expect(shell.envAdditions, <String, String>{
+        'LANG': 'C.UTF-8',
+        'LC_ALL': 'C.UTF-8',
+      });
+      // Git Bash doesn't need a command prefix — LANG alone
+      // forces UTF-8 output from MSYS2 programs.
+      expect(shell.commandPrefix, isEmpty);
+    });
+
+    test('powershell sets Console.OutputEncoding + chcp 65001', () {
+      final shell = WindowsShell(
+        kind: WindowsShellKind.powershell,
+        executable: r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe',
+        flagArg: '-Command',
+        flagLabel: 'powershell',
+        commandPrefix:
+            '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; '
+            'chcp 65001 | Out-Null; ',
+      );
+      expect(shell.commandPrefix, startsWith('[Console]::OutputEncoding'));
+      expect(shell.commandPrefix, contains('chcp 65001'));
+      expect(shell.commandPrefix, contains('Out-Null'));
+      expect(shell.envAdditions, isEmpty);
+    });
+
+    test('cmd prefixes chcp 65001 >nul & so cmd children emit UTF-8', () {
+      final shell = WindowsShell(
+        kind: WindowsShellKind.cmd,
+        executable: r'C:\Windows\System32\cmd.exe',
+        flagArg: '/c',
+        flagLabel: 'cmd',
+        commandPrefix: 'chcp 65001 >nul & ',
+      );
+      expect(shell.commandPrefix, 'chcp 65001 >nul & ');
+      expect(shell.envAdditions, isEmpty);
+    });
+  });
+
   group('WindowsShellResolver (synthetic probe)', () {
     Future<WindowsShell> resolve({
       Map<String, String> probeMap = const <String, String>{},

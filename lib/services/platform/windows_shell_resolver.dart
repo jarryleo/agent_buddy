@@ -32,6 +32,8 @@ class WindowsShell {
     required this.flagArg,
     required this.flagLabel,
     this.pathAdditions = const <String>[],
+    this.envAdditions = const <String, String>{},
+    this.commandPrefix = '',
   });
 
   /// High-level bucket (`gitBash` / `powershell` / `cmd`).
@@ -59,6 +61,21 @@ class WindowsShell {
   /// so `ls`, `cat`, etc. resolve without re-launching the shell
   /// just to source `/etc/profile`.
   final List<String> pathAdditions;
+
+  /// Extra environment variables to set on the spawned process so
+  /// the shell + its children emit UTF-8 instead of inheriting the
+  /// active Windows code page (typically CP936 / GBK on a Chinese
+  /// Windows host, which mangles anything Git Bash / PowerShell 7
+  /// / modern CLI tools produce as UTF-8). See [buildUtf8Setup].
+  final Map<String, String> envAdditions;
+
+  /// Shell-specific prefix prepended to [buildArgv]'s command
+  /// argument. Empty for shells that already default to UTF-8
+  /// once the environment is set; populated for PowerShell
+  /// (`[Console]::OutputEncoding = ...; chcp 65001 | Out-Null; `)
+  /// and `cmd.exe` (`chcp 65001 >nul & `) so their child output
+  /// is forced to UTF-8 regardless of the active code page.
+  final String commandPrefix;
 
   /// Builds the argv list to spawn this shell with [command].
   ///
@@ -253,9 +270,31 @@ class WindowsShellResolver {
         flagArg: '-c',
         flagLabel: 'bash',
         pathAdditions: gitBashPathAdditionsFor(executable),
+        // MSYS2 programs (`ls`, `cat`, `git`, `npm`, …) emit UTF-8
+        // to stdout/stderr when `LANG` / `LC_ALL` is a UTF-8
+        // locale. Pin it explicitly because the inherited
+        // Windows-side LANG is often empty (or worse, a
+        // system-codepage variant on hosts with the
+        // "Beta: Use Unicode UTF-8" toggle off) — in those
+        // cases MSYS2 falls back to CP936 and UTF-8 decoding in
+        // Dart turns every Chinese character into `?`.
+        envAdditions: const <String, String>{
+          'LANG': 'C.UTF-8',
+          'LC_ALL': 'C.UTF-8',
+        },
       );
 
   Future<WindowsShell?> _probePwsh() async {
+    // PowerShell 7 defaults to UTF-8 for `[Console]::OutputEncoding`
+    // but Windows PowerShell 5 defaults to the active code page
+    // (CP936 on Chinese hosts), and either way external .exe
+    // children still respect the Windows code page. Force UTF-8
+    // for both PowerShell's own output AND the code page so
+    // downstream Win32 tools (`ipconfig`, `systeminfo`, …) emit
+    // UTF-8 too.
+    const pwshPrefix =
+        '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; '
+        'chcp 65001 | Out-Null; ';
     for (final name in <String>['pwsh.exe', 'powershell.exe']) {
       final resolved = await _resolveByProbe(name);
       if (resolved != null) {
@@ -264,6 +303,7 @@ class WindowsShellResolver {
           executable: resolved,
           flagArg: '-Command',
           flagLabel: 'powershell',
+          commandPrefix: pwshPrefix,
         );
       }
     }
@@ -277,6 +317,7 @@ class WindowsShellResolver {
           executable: fallback,
           flagArg: '-Command',
           flagLabel: 'powershell',
+          commandPrefix: pwshPrefix,
         );
       }
     }
@@ -293,6 +334,15 @@ class WindowsShellResolver {
         executable: r'C:\Windows\System32\cmd.exe',
         flagArg: '/c',
         flagLabel: 'cmd',
+        // `chcp 65001` switches the active code page to UTF-8
+        // for the current `cmd.exe` session, so `dir`, `type`,
+        // `ipconfig`, etc. — which all write to the console via
+        // Win32 — emit UTF-8 bytes to the pipe that Dart reads.
+        // `>nul` suppresses `chcp`'s "Active code page: 65001."
+        // line; `&` is cmd's unconditional sequence so the
+        // user's command still runs even on the (vanishingly
+        // rare) host where `chcp 65001` errors out.
+        commandPrefix: 'chcp 65001 >nul & ',
       );
 }
 
