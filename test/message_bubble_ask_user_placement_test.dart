@@ -21,6 +21,9 @@ void main() {
   ChatMessage _assistantWithAskUser({
     String question = 'Which option do you prefer?',
     List<String> options = const ['Option A', 'Option B', 'Option C'],
+    List<AskUserQuestion> questions = const [],
+    int questionIndex = 0,
+    List<List<String>> answers = const [],
   }) {
     final tc = ToolCall(
       id: 'tc_ask',
@@ -29,6 +32,9 @@ void main() {
       status: ToolCallStatus.running,
       question: question,
       options: options,
+      questions: questions,
+      askUserQuestionIndex: questionIndex,
+      askUserAnswers: answers,
     );
     return ChatMessage(
       id: 'm_ask',
@@ -141,6 +147,53 @@ void main() {
       );
       expect(find.text('模型询问:'), findsOneWidget);
     });
+
+    testWidgets('shows one batch question at a time with total progress', (
+      tester,
+    ) async {
+      final m = _assistantWithAskUser(
+        questions: const [
+          AskUserQuestion(question: 'First question?', options: ['A', 'B']),
+          AskUserQuestion(question: 'Second question?', options: ['C', 'D']),
+          AskUserQuestion(question: 'Third question?'),
+        ],
+        questionIndex: 1,
+        answers: const [
+          ['A'],
+        ],
+      );
+
+      await pumpWithProvider(tester, m, provider: _emptyProvider());
+
+      expect(find.text('First question?'), findsNothing);
+      expect(find.text('Second question?'), findsOneWidget);
+      expect(find.text('Third question?'), findsNothing);
+      expect(find.text('Question 2 of 3'), findsOneWidget);
+      expect(find.text('Or type your own answer'), findsOneWidget);
+    });
+
+    testWidgets('submits a manually entered answer', (tester) async {
+      final provider = _NoopChatProviderShim();
+      final m = _assistantWithAskUser(
+        questions: const [
+          AskUserQuestion(question: 'First question?', options: ['A', 'B']),
+          AskUserQuestion(question: 'Second question?'),
+        ],
+      );
+
+      await pumpWithProvider(tester, m, provider: provider);
+      await tester.enterText(find.byType(TextField), 'My own answer');
+      await tester.pump();
+      final button = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Next'),
+      );
+      expect(button.onPressed, isNotNull);
+      button.onPressed!();
+      await tester.pump();
+
+      expect(provider.lastToolId, 'tc_ask');
+      expect(provider.lastSelection, '{"selection":"My own answer"}');
+    });
   });
 }
 
@@ -150,6 +203,15 @@ void main() {
 /// while still satisfying `context.read<ChatProvider>()`'s
 /// type lookup.
 class _NoopChatProviderShim extends ChangeNotifier implements ChatProvider {
+  String? lastToolId;
+  String? lastSelection;
+
+  @override
+  void resolveAskUser(String toolId, String selection) {
+    lastToolId = toolId;
+    lastSelection = selection;
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -608,7 +608,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolDescCurrentTime => '获取当前的日期与时间。';
 
   @override
-  String get toolDescAskUser => '让模型在对话中向你提问或请你做选择。';
+  String get toolDescAskUser => '让模型在对话中一次询问一个或多个问题,支持选项和手动输入。';
 
   @override
   String get toolDescRunCommand => '在电脑上执行命令行指令(仅桌面端)。';
@@ -1094,6 +1094,20 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get askUserQuestionPrompt => '模型询问:';
+
+  @override
+  String askUserQuestionProgress(int current, int total) {
+    return '问题 $current/$total';
+  }
+
+  @override
+  String get askUserManualAnswerHint => '或手动输入答案';
+
+  @override
+  String get askUserNext => '下一题';
+
+  @override
+  String get askUserSubmit => '提交';
 
   @override
   String toolCallRetryNote(String tool, String result) {

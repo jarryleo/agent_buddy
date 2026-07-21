@@ -206,7 +206,7 @@
 
   "toolDescFetchWeb": "抓取并解析网页内容。",
   "toolDescCurrentTime": "获取当前的日期与时间。",
-  "toolDescAskUser": "让模型在对话中向你提问或请你做选择。",
+  "toolDescAskUser": "让模型在对话中一次询问一个或多个问题,支持选项和手动输入。",
   "toolDescRunCommand": "在电脑上执行命令行指令(仅桌面端)。",
   "toolDescGetEnvironment": "查看电脑的操作系统与运行环境(仅桌面端)。",
   "toolDescCalendar": "管理系统日历事件(仅手机,需要授权)。",
@@ -377,6 +377,10 @@
   "toolCallAwaitingUser": "等待用户在系统选择器中操作…",
   "toolGroupSummary": "调用了 {count} 个工具",
   "askUserQuestionPrompt": "模型询问:",
+  "askUserQuestionProgress": "问题 {current}/{total}",
+  "askUserManualAnswerHint": "或手动输入答案",
+  "askUserNext": "下一题",
+  "askUserSubmit": "提交",
   "@toolGroupSummary": {
     "placeholders": {
       "count": { "type": "int" }

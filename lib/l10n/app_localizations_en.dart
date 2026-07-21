@@ -628,7 +628,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolDescAskUser =>
-      'Let the model ask you a question or pick from options mid-chat.';
+      'Let the model ask one or more questions with options or free-text answers mid-chat.';
 
   @override
   String get toolDescRunCommand =>
@@ -1141,6 +1141,20 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get askUserQuestionPrompt => 'Model asks:';
+
+  @override
+  String askUserQuestionProgress(int current, int total) {
+    return 'Question $current of $total';
+  }
+
+  @override
+  String get askUserManualAnswerHint => 'Or type your own answer';
+
+  @override
+  String get askUserNext => 'Next';
+
+  @override
+  String get askUserSubmit => 'Submit';
 
   @override
   String toolCallRetryNote(String tool, String result) {

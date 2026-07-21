@@ -233,6 +233,38 @@ int estimateTokens(String text) {
   return cjk + ((ascii + 3) ~/ 4) + ((other + 1) ~/ 2);
 }
 
+class AskUserQuestion {
+  const AskUserQuestion({
+    required this.question,
+    this.options = const [],
+    this.multiSelect = false,
+  });
+
+  final String question;
+  final List<String> options;
+  final bool multiSelect;
+
+  Map<String, dynamic> toJson() => {
+    'question': question,
+    'options': options,
+    if (multiSelect) 'multiSelect': true,
+  };
+
+  factory AskUserQuestion.fromJson(Map<String, dynamic> json) {
+    final rawOptions = json['options'];
+    return AskUserQuestion(
+      question: json['question'] as String? ?? '',
+      options: rawOptions is List
+          ? [
+              for (final option in rawOptions)
+                if (option is String && option.isNotEmpty) option,
+            ]
+          : const [],
+      multiSelect: json['multiSelect'] as bool? ?? false,
+    );
+  }
+}
+
 class ToolCall {
   final String id;
   final String name;
@@ -250,6 +282,9 @@ class ToolCall {
   final String? question;
   final List<String>? options;
   final bool? multiSelect;
+  final List<AskUserQuestion> questions;
+  final int askUserQuestionIndex;
+  final List<List<String>> askUserAnswers;
 
   // Populated for the `download` tool: a live list of
   // [DownloadItem]s in flight under this tool call. The chat
@@ -292,6 +327,9 @@ class ToolCall {
     this.question,
     this.options,
     this.multiSelect,
+    this.questions = const [],
+    this.askUserQuestionIndex = 0,
+    this.askUserAnswers = const [],
     this.downloads = const [],
     this.awaitingUserAction = false,
     this.editedImages = const [],
@@ -315,6 +353,9 @@ class ToolCall {
     String? question,
     List<String>? options,
     bool? multiSelect,
+    List<AskUserQuestion>? questions,
+    int? askUserQuestionIndex,
+    List<List<String>>? askUserAnswers,
     List<DownloadItem>? downloads,
     bool? awaitingUserAction,
     List<EditedImage>? editedImages,
@@ -329,6 +370,9 @@ class ToolCall {
       question: question ?? this.question,
       options: options ?? this.options,
       multiSelect: multiSelect ?? this.multiSelect,
+      questions: questions ?? this.questions,
+      askUserQuestionIndex: askUserQuestionIndex ?? this.askUserQuestionIndex,
+      askUserAnswers: askUserAnswers ?? this.askUserAnswers,
       downloads: downloads ?? this.downloads,
       awaitingUserAction: awaitingUserAction ?? this.awaitingUserAction,
       editedImages: editedImages ?? this.editedImages,
@@ -349,6 +393,10 @@ class ToolCall {
     if (question != null) 'question': question,
     if (options != null) 'options': options,
     if (multiSelect != null) 'multiSelect': multiSelect,
+    if (questions.isNotEmpty)
+      'questions': questions.map((question) => question.toJson()).toList(),
+    if (questions.isNotEmpty) 'askUserQuestionIndex': askUserQuestionIndex,
+    if (askUserAnswers.isNotEmpty) 'askUserAnswers': askUserAnswers,
     'downloads': downloads.map((d) => d.toJson()).toList(),
     // Only serialize when true so v1 records (no `awaitingUserAction`
     // key) round-trip identically.
@@ -357,6 +405,8 @@ class ToolCall {
   };
 
   factory ToolCall.fromJson(Map<String, dynamic> json) {
+    final rawQuestions = json['questions'];
+    final rawAnswers = json['askUserAnswers'];
     final rawDownloads = json['downloads'] as List?;
     final rawEdited = json['editedImages'] as List?;
     return ToolCall(
@@ -372,6 +422,25 @@ class ToolCall {
       question: json['question'] as String?,
       options: (json['options'] as List?)?.cast<String>(),
       multiSelect: json['multiSelect'] as bool?,
+      questions: rawQuestions is List
+          ? [
+              for (final entry in rawQuestions)
+                if (entry is Map)
+                  AskUserQuestion.fromJson(Map<String, dynamic>.from(entry)),
+            ]
+          : const [],
+      askUserQuestionIndex:
+          (json['askUserQuestionIndex'] as num?)?.toInt() ?? 0,
+      askUserAnswers: rawAnswers is List
+          ? [
+              for (final answer in rawAnswers)
+                if (answer is List)
+                  [
+                    for (final value in answer)
+                      if (value is String) value,
+                  ],
+            ]
+          : const [],
       downloads: rawDownloads == null
           ? const []
           : rawDownloads

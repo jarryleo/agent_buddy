@@ -7,9 +7,9 @@ class AskUserTool extends ToolBase {
   @override
   String get name => '询问用户';
   @override
-  String get description => '向用户提问,用户回答后把结果给你。需要用户确认或选择时用。';
+  String get description => '一次向用户询问一个或多个问题,用户可选择选项或手动输入答案。';
   @override
-  String get shortDescription => '向用户提问(选项式)';
+  String get shortDescription => '向用户提问(支持多问题、选项或手输)';
   @override
   bool get isSupportedOnCurrentPlatform => true;
 
@@ -23,20 +23,31 @@ class AskUserTool extends ToolBase {
         'parameters': {
           'type': 'object',
           'properties': {
-            'question': {'type': 'string', 'description': '要问用户的问题'},
-            'options': {
+            'questions': {
               'type': 'array',
-              'items': {'type': 'string'},
-              'description': '给用户选的选项,至少 2 个',
-              'minItems': 2,
-            },
-            'multi_select': {
-              'type': 'boolean',
-              'description': '允许多选?默认 false(单选)',
-              'default': false,
+              'description': '按顺序询问的问题,用户回答一个后才显示下一个',
+              'minItems': 1,
+              'maxItems': 8,
+              'items': {
+                'type': 'object',
+                'properties': {
+                  'question': {'type': 'string', 'description': '问题内容'},
+                  'options': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'description': '可选答案;可省略以只让用户手动输入',
+                  },
+                  'multi_select': {
+                    'type': 'boolean',
+                    'description': '是否允许多选,默认 false',
+                    'default': false,
+                  },
+                },
+                'required': ['question'],
+              },
             },
           },
-          'required': ['question', 'options'],
+          'required': ['questions'],
         },
       },
     };
@@ -45,16 +56,18 @@ class AskUserTool extends ToolBase {
   @override
   String get compactSchemaForModel => '''
 参数:
-- question (string, 必填): 给用户的问题(简短,一句话)
-- options (string[], 必填, 至少 2 个): 互斥/可选的选项,2~6 个最好
-- multi_select (bool, 默认 false): true=多选(选 N 个);false=单选
+- questions (array, 必填, 1~8 项): 按顺序询问的问题。
+  - question (string, 必填): 简短问题。
+  - options (string[], 可选): 供用户选择的答案;即使提供选项,用户也能手动输入其他答案。
+  - multi_select (bool, 默认 false): true=可选多个选项并附加手动答案;false=单选或手动输入。
 
-返回: 用户选中的选项字符串(单选)或 [字符串, ...](多选)。
+交互: 界面一次只展示一个问题,用户回答后自动展示下一个。
+返回: {"answers":[{"question":"...","answer":"..."}, ...]};多选答案为字符串数组。只有一个问题时兼容返回 {"selection": ...}。
 
 最佳实践:
-- 给 2~6 个互斥选项,不要列 10 个以上 —— 用户会懵。
-- 选项文本不要太长(< 30 字/项)。
-- 只有确实需要用户决策时才用,别没事找事问。
+- 有多个相关问题时放在同一次调用里,不要连续调用多次 ask_user。
+- 每题给 2~6 个简短选项;开放题可省略 options。
+- 一次不要超过 5 个问题,只有确实需要用户决策或补充信息时才用。
 ''';
 
   @override

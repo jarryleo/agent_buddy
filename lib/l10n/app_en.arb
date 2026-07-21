@@ -278,7 +278,7 @@
 
   "toolDescFetchWeb": "Fetch and parse web pages.",
   "toolDescCurrentTime": "Get the current date and time.",
-  "toolDescAskUser": "Let the model ask you a question or pick from options mid-chat.",
+  "toolDescAskUser": "Let the model ask one or more questions with options or free-text answers mid-chat.",
   "toolDescRunCommand": "Run shell commands on the computer (desktop only).",
   "toolDescGetEnvironment": "Inspect the host OS and runtime (desktop only).",
   "toolDescCalendar": "Manage system calendar events (mobile only, needs permission).",
@@ -515,6 +515,16 @@
   "toolCallAwaitingUser": "Waiting for the user in the system picker…",
   "toolGroupSummary": "{count} tool calls",
   "askUserQuestionPrompt": "Model asks:",
+  "askUserQuestionProgress": "Question {current} of {total}",
+  "@askUserQuestionProgress": {
+    "placeholders": {
+      "current": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "askUserManualAnswerHint": "Or type your own answer",
+  "askUserNext": "Next",
+  "askUserSubmit": "Submit",
   "@toolGroupSummary": {
     "placeholders": {
       "count": { "type": "int" }

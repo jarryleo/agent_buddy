@@ -1373,7 +1373,8 @@ class _MessageBubbleState extends State<MessageBubble> {
     // call doesn't run on every unrelated rebuild).
     final asks = <ToolCall>[];
     for (final tc in m.toolCalls) {
-      if (tc.question != null && tc.options != null) {
+      if (tc.questions.isNotEmpty ||
+          (tc.question != null && tc.options != null)) {
         asks.add(tc);
       }
     }
@@ -2221,6 +2222,7 @@ class _AskUserQuestionCard extends StatefulWidget {
 
 class _AskUserQuestionCardState extends State<_AskUserQuestionCard> {
   final Set<String> _localSelected = <String>{};
+  final TextEditingController _manualAnswerController = TextEditingController();
   bool _submitted = false;
 
   /// Coerce the persisted ask_user options list to `List<String>`.
@@ -2249,19 +2251,65 @@ class _AskUserQuestionCardState extends State<_AskUserQuestionCard> {
     return out;
   }
 
-  bool get _isMulti => widget.toolCall.multiSelect ?? false;
+  List<AskUserQuestion> get _questions {
+    if (widget.toolCall.questions.isNotEmpty) {
+      return widget.toolCall.questions;
+    }
+    return [
+      AskUserQuestion(
+        question: widget.toolCall.question ?? '',
+        options: _coerceOptions(widget.toolCall.options),
+        multiSelect: widget.toolCall.multiSelect ?? false,
+      ),
+    ];
+  }
+
+  int get _questionIndex => widget.toolCall.askUserQuestionIndex
+      .clamp(0, _questions.length - 1)
+      .toInt();
+
+  AskUserQuestion get _currentQuestion => _questions[_questionIndex];
+
+  bool get _isMulti => _currentQuestion.multiSelect;
 
   bool get _isInteractive =>
       widget.toolCall.status == ToolCallStatus.running && !_submitted;
 
-  /// Once the tool call has succeeded, derive the final pick(s) from
-  /// the persisted result JSON. While still running, fall back to the
-  /// in-progress multi-select state.
+  bool get _canSubmit {
+    final typed = _manualAnswerController.text.trim();
+    return _isMulti
+        ? _localSelected.isNotEmpty || typed.isNotEmpty
+        : typed.isNotEmpty;
+  }
+
   Set<String> get _effectiveSelected {
+    if (widget.toolCall.questions.isNotEmpty &&
+        widget.toolCall.askUserAnswers.length > _questionIndex) {
+      return widget.toolCall.askUserAnswers[_questionIndex].toSet();
+    }
     if (widget.toolCall.status == ToolCallStatus.success) {
       return _parseSelection(widget.toolCall.result ?? '');
     }
     return _localSelected;
+  }
+
+  @override
+  void didUpdateWidget(covariant _AskUserQuestionCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.toolCall.askUserQuestionIndex !=
+            widget.toolCall.askUserQuestionIndex ||
+        (oldWidget.toolCall.status != widget.toolCall.status &&
+            widget.toolCall.status == ToolCallStatus.running)) {
+      _localSelected.clear();
+      _manualAnswerController.clear();
+      _submitted = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _manualAnswerController.dispose();
+    super.dispose();
   }
 
   void _onPick(String option) {
@@ -2280,10 +2328,19 @@ class _AskUserQuestionCardState extends State<_AskUserQuestionCard> {
     }
   }
 
-  void _submitMulti() {
-    if (_localSelected.isEmpty) return;
+  void _submitAnswer() {
+    if (!_isInteractive || !_canSubmit) return;
+    final typed = _manualAnswerController.text.trim();
+    final dynamic selection;
+    if (_isMulti) {
+      final values = _localSelected.toList();
+      if (typed.isNotEmpty && !values.contains(typed)) values.add(typed);
+      selection = values;
+    } else {
+      selection = typed;
+    }
     setState(() => _submitted = true);
-    widget.onSubmit(jsonEncode({'selection': _localSelected.toList()}));
+    widget.onSubmit(jsonEncode({'selection': selection}));
   }
 
   static Set<String> _parseSelection(String result) {
@@ -2301,17 +2358,17 @@ class _AskUserQuestionCardState extends State<_AskUserQuestionCard> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final questions = _questions;
+    final questionIndex = _questionIndex;
+    final currentQuestion = questions[questionIndex];
     final selected = _effectiveSelected;
-    // Defensive: if a stale ToolCall (persisted before the
-    // ask_user options normalizer existed) loaded from disk has
-    // object-shaped entries, `for (final opt in options)` would
-    // throw `type 'Map<String, dynamic>' is not a subtype of
-    // type 'String' in type cast` mid-render. Coerce eagerly
-    // here so the bubble never crashes on a non-string entry;
-    // new tool calls go through `_normalizeAskUserOptions` in
-    // ChatProvider._onToolCall and arrive as `List<String>`.
-    final options = _coerceOptions(widget.toolCall.options);
-    final question = widget.toolCall.question ?? '';
+    final options = currentQuestion.options;
+    final displayOptions = [
+      ...options,
+      for (final answer in selected)
+        if (!options.contains(answer)) answer,
+    ];
+    final question = currentQuestion.question;
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       decoration: BoxDecoration(
@@ -2347,6 +2404,18 @@ class _AskUserQuestionCardState extends State<_AskUserQuestionCard> {
                   color: context.textSecondary,
                 ),
               ),
+              const Spacer(),
+              Text(
+                l10n.askUserQuestionProgress(
+                  questionIndex + 1,
+                  questions.length,
+                ),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: context.textSecondary,
+                ),
+              ),
             ],
           ),
           if (question.isNotEmpty) ...[
@@ -2361,31 +2430,60 @@ class _AskUserQuestionCardState extends State<_AskUserQuestionCard> {
               ),
             ),
           ],
-          if (options.isNotEmpty) ...[
+          if (displayOptions.isNotEmpty) ...[
             const SizedBox(height: 8),
             Wrap(
               spacing: 6,
               runSpacing: 6,
               children: [
-                for (final opt in options)
+                for (final opt in displayOptions)
                   _OptionChip(
                     label: opt,
                     selected: selected.contains(opt),
-                    enabled: _isInteractive,
+                    enabled: _isInteractive && options.contains(opt),
                     onTap: () => _onPick(opt),
                   ),
               ],
             ),
-            if (_isMulti && _isInteractive) ...[
-              const SizedBox(height: 6),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton(
-                  onPressed: _localSelected.isEmpty ? null : _submitMulti,
-                  child: Text(l10n.commonConfirm),
+          ],
+          if (_isInteractive) ...[
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: ValueKey(
+                      'ask_user_input_${widget.toolCall.id}_$questionIndex',
+                    ),
+                    controller: _manualAnswerController,
+                    textInputAction: questionIndex < questions.length - 1
+                        ? TextInputAction.next
+                        : TextInputAction.done,
+                    onChanged: (_) => setState(() {}),
+                    onSubmitted: (_) => _submitAnswer(),
+                    decoration: InputDecoration(
+                      hintText: l10n.askUserManualAnswerHint,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: _canSubmit ? _submitAnswer : null,
+                  child: Text(
+                    questionIndex < questions.length - 1
+                        ? l10n.askUserNext
+                        : l10n.askUserSubmit,
+                  ),
+                ),
+              ],
+            ),
           ],
         ],
       ),

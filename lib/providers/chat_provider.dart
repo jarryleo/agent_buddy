@@ -93,6 +93,13 @@ class _LoadOneResult {
   final bool justAdded;
 }
 
+class _PendingAskUser {
+  const _PendingAskUser({required this.assistantId, required this.completer});
+
+  final String assistantId;
+  final Completer<String> completer;
+}
+
 /// Builds the always-on base system prompt for a chat turn.
 ///
 /// Kept as a top-level pure function (instead of a method on
@@ -335,7 +342,7 @@ class ChatProvider extends ChangeNotifier {
   /// message bubble's inline options call [resolveAskUser] when the
   /// user picks, which completes the future and unblocks the
   /// streaming `await`.
-  final Map<String, Completer<String>> _pendingAskUser = {};
+  final Map<String, _PendingAskUser> _pendingAskUser = {};
 
   /// Maps an assistant message id → (transport tool-call id →
   /// synthesized UI tool-call id). Populated in the `toolStart`
@@ -494,6 +501,100 @@ class ChatProvider extends ChangeNotifier {
       }
     }
     return out;
+  }
+
+  static List<AskUserQuestion> _normalizeAskUserQuestions(dynamic raw) {
+    if (raw is! List) return const [];
+    final questions = <AskUserQuestion>[];
+    for (final entry in raw) {
+      if (entry is! Map) continue;
+      final question = entry['question'];
+      if (question is! String || question.trim().isEmpty) continue;
+      questions.add(
+        AskUserQuestion(
+          question: question.trim(),
+          options: _normalizeAskUserOptions(entry['options']),
+          multiSelect: entry['multi_select'] as bool? ?? false,
+        ),
+      );
+    }
+    return questions;
+  }
+
+  @visibleForTesting
+  static ({ToolCall toolCall, String? result, bool accepted})
+  advanceAskUserAnswer(ToolCall toolCall, String encodedSelection) {
+    if (toolCall.questions.isEmpty) {
+      return (toolCall: toolCall, result: encodedSelection, accepted: true);
+    }
+
+    dynamic selection;
+    try {
+      final decoded = jsonDecode(encodedSelection);
+      if (decoded is Map) selection = decoded['selection'];
+    } catch (_) {
+      return (toolCall: toolCall, result: null, accepted: false);
+    }
+
+    final values = <String>[];
+    if (selection is String && selection.trim().isNotEmpty) {
+      values.add(selection.trim());
+    } else if (selection is List) {
+      for (final value in selection) {
+        if (value is! String || value.trim().isEmpty) continue;
+        final normalized = value.trim();
+        if (!values.contains(normalized)) values.add(normalized);
+      }
+    }
+    if (values.isEmpty) {
+      return (toolCall: toolCall, result: null, accepted: false);
+    }
+
+    final index = toolCall.askUserQuestionIndex
+        .clamp(0, toolCall.questions.length - 1)
+        .toInt();
+    final answers = [
+      for (final answer in toolCall.askUserAnswers) [...answer],
+    ];
+    while (answers.length <= index) {
+      answers.add(<String>[]);
+    }
+    answers[index] = values;
+    final isLast = index == toolCall.questions.length - 1;
+    final updated = toolCall.copyWith(
+      askUserQuestionIndex: isLast ? index : index + 1,
+      askUserAnswers: answers,
+    );
+    if (!isLast) {
+      return (toolCall: updated, result: null, accepted: true);
+    }
+
+    if (toolCall.questions.length == 1) {
+      final question = toolCall.questions.first;
+      return (
+        toolCall: updated,
+        result: jsonEncode({
+          'selection': question.multiSelect ? values : values.first,
+        }),
+        accepted: true,
+      );
+    }
+
+    return (
+      toolCall: updated,
+      result: jsonEncode({
+        'answers': [
+          for (var i = 0; i < toolCall.questions.length; i++)
+            {
+              'question': toolCall.questions[i].question,
+              'answer': toolCall.questions[i].multiSelect
+                  ? answers[i]
+                  : answers[i].first,
+            },
+        ],
+      }),
+      accepted: true,
+    );
   }
 
   /// Pure helper that decides what id to use for a new
@@ -742,7 +843,8 @@ class ChatProvider extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    for (final c in _pendingAskUser.values) {
+    for (final pending in _pendingAskUser.values) {
+      final c = pending.completer;
       if (!c.isCompleted) c.completeError(ToolException('chat cleared'));
     }
     _pendingAskUser.clear();
@@ -763,9 +865,33 @@ class ChatProvider extends ChangeNotifier {
   /// Called by the message bubble's inline option chips when the
   /// user picks. Unblocks the streaming `await` on this tool call.
   void resolveAskUser(String toolId, String selection) {
-    final completer = _pendingAskUser[toolId];
-    if (completer != null && !completer.isCompleted) {
-      completer.complete(selection);
+    final pending = _pendingAskUser[toolId];
+    if (pending == null || pending.completer.isCompleted) return;
+
+    final s = _activeSession;
+    if (s == null) {
+      pending.completer.complete(selection);
+      return;
+    }
+    final assistant = s.messages.firstWhere(
+      (message) => message.id == pending.assistantId,
+      orElse: () => ChatMessage(id: '', role: MessageRole.assistant),
+    );
+    final toolCall = assistant.toolCalls.firstWhere(
+      (call) => call.id == toolId,
+      orElse: () => ToolCall(id: '', name: '', arguments: ''),
+    );
+    if (toolCall.id.isEmpty || toolCall.questions.isEmpty) {
+      pending.completer.complete(selection);
+      return;
+    }
+
+    final progress = advanceAskUserAnswer(toolCall, selection);
+    if (!progress.accepted) return;
+    _mutateToolCall(pending.assistantId, toolId, (_) => progress.toolCall);
+    notifyListeners();
+    if (progress.result != null) {
+      pending.completer.complete(progress.result!);
     }
   }
 
@@ -1341,17 +1467,39 @@ class ChatProvider extends ChangeNotifier {
     // delegates to the tool's own execute method via the registry.
     switch (name) {
       case 'ask_user':
-        final question = args['question'] as String? ?? '';
-        final options = _normalizeAskUserOptions(args['options']);
-        final multiSelect = args['multi_select'] as bool? ?? false;
-        final toolId = toolCall['id'] as String? ?? '';
-        if (question.isEmpty) {
-          throw ToolException('question is required');
-        }
-        if (options.length < 2) {
-          throw ToolException('at least 2 options are required');
-        }
+        final questions = _normalizeAskUserQuestions(args['questions']);
+        final legacyQuestion = args['question'] as String? ?? '';
+        final legacyOptions = _normalizeAskUserOptions(args['options']);
+        final legacyMultiSelect = args['multi_select'] as bool? ?? false;
+        final transportToolId = toolCall['id'] as String? ?? '';
+        var toolId =
+            _transportToUiToolCallId[assistantId]?[transportToolId] ??
+            transportToolId;
         final s = _activeSession;
+        if (s != null) {
+          final assistant = s.messages.firstWhere(
+            (message) => message.id == assistantId,
+            orElse: () => ChatMessage(id: '', role: MessageRole.assistant),
+          );
+          if (!assistant.toolCalls.any((call) => call.id == toolId)) {
+            final runningAsk = assistant.toolCalls.lastWhere(
+              (call) => call.name == 'ask_user' && call.isRunning,
+              orElse: () => ToolCall(id: '', name: '', arguments: ''),
+            );
+            if (runningAsk.id.isNotEmpty) toolId = runningAsk.id;
+          }
+        }
+        if (questions.isEmpty) {
+          if (legacyQuestion.trim().isEmpty) {
+            throw ToolException('questions are required');
+          }
+          if (legacyOptions.length < 2) {
+            throw ToolException('at least 2 options are required');
+          }
+        }
+        if (questions.length > 8) {
+          throw ToolException('at most 8 questions are allowed');
+        }
         if (s != null) {
           _replaceMessages([
             for (final m in s.messages)
@@ -1360,11 +1508,17 @@ class ChatProvider extends ChangeNotifier {
                   toolCalls: [
                     for (final tc in m.toolCalls)
                       if (tc.id == toolId)
-                        tc.copyWith(
-                          question: question,
-                          options: options,
-                          multiSelect: multiSelect,
-                        )
+                        questions.isNotEmpty
+                            ? tc.copyWith(
+                                questions: questions,
+                                askUserQuestionIndex: 0,
+                                askUserAnswers: const [],
+                              )
+                            : tc.copyWith(
+                                question: legacyQuestion.trim(),
+                                options: legacyOptions,
+                                multiSelect: legacyMultiSelect,
+                              )
                       else
                         tc,
                   ],
@@ -1375,7 +1529,10 @@ class ChatProvider extends ChangeNotifier {
           notifyListeners();
         }
         final completer = Completer<String>();
-        _pendingAskUser[toolId] = completer;
+        _pendingAskUser[toolId] = _PendingAskUser(
+          assistantId: assistantId,
+          completer: completer,
+        );
         try {
           return await completer.future;
         } finally {
@@ -3639,7 +3796,8 @@ class ChatProvider extends ChangeNotifier {
     _orchestrator.cancel();
     // Resolve pending ask_user completers so the orchestrator's
     // tool-execution awaits don't hang forever.
-    for (final c in _pendingAskUser.values) {
+    for (final pending in _pendingAskUser.values) {
+      final c = pending.completer;
       if (!c.isCompleted) {
         c.completeError(ToolException('generation stopped by user'));
       }
@@ -3909,7 +4067,8 @@ class ChatProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    for (final c in _pendingAskUser.values) {
+    for (final pending in _pendingAskUser.values) {
+      final c = pending.completer;
       if (!c.isCompleted) {
         c.completeError(ToolException('disposed before user responded'));
       }

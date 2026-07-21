@@ -1215,7 +1215,7 @@ abstract class AppLocalizations {
   /// No description provided for @toolDescAskUser.
   ///
   /// In en, this message translates to:
-  /// **'Let the model ask you a question or pick from options mid-chat.'**
+  /// **'Let the model ask one or more questions with options or free-text answers mid-chat.'**
   String get toolDescAskUser;
 
   /// No description provided for @toolDescRunCommand.
@@ -2099,6 +2099,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Model asks:'**
   String get askUserQuestionPrompt;
+
+  /// No description provided for @askUserQuestionProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Question {current} of {total}'**
+  String askUserQuestionProgress(int current, int total);
+
+  /// No description provided for @askUserManualAnswerHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Or type your own answer'**
+  String get askUserManualAnswerHint;
+
+  /// No description provided for @askUserNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Next'**
+  String get askUserNext;
+
+  /// No description provided for @askUserSubmit.
+  ///
+  /// In en, this message translates to:
+  /// **'Submit'**
+  String get askUserSubmit;
 
   /// No description provided for @toolCallRetryNote.
   ///
