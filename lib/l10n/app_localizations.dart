@@ -1332,6 +1332,12 @@ abstract class AppLocalizations {
   /// **'Maintain a per-conversation task list — create it at the start of a multi-step task, tick items off as you finish each step. The list shows up above the chat input and the app auto-resumes you when the conversation stops with unfinished items.'**
   String get toolDescTodo;
 
+  /// No description provided for @toolDescLoadTool.
+  ///
+  /// In en, this message translates to:
+  /// **'Meta-tool that unlocks the full usage manual for one or more tools at once. Pass an array of tool ids so the model gets every manual in a single round-trip — important on per-request-billed providers. Loaded tools stay available for the rest of the session.'**
+  String get toolDescLoadTool;
+
   /// No description provided for @toolNameFetchWeb.
   ///
   /// In en, this message translates to:
@@ -1463,6 +1469,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Task List'**
   String get toolNameTodo;
+
+  /// No description provided for @toolNameLoadTool.
+  ///
+  /// In en, this message translates to:
+  /// **'Load Tool'**
+  String get toolNameLoadTool;
 
   /// No description provided for @downloadStatusPending.
   ///

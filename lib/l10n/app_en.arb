@@ -298,6 +298,7 @@
   "toolDescSubAgent": "Delegate a self-contained research / information-gathering task to an isolated sub-agent that runs in its own context window and returns a compressed report. Keeps the main conversation clean and saves tokens.",
   "toolDescEditImage": "Edit an image the user uploaded in this chat: compress, crop, resize, rotate, convert to circle / rounded-corner mask, flip horizontally / vertically, or change format. Each call processes a copy in the temp directory — the original is never modified.",
   "toolDescTodo": "Maintain a per-conversation task list — create it at the start of a multi-step task, tick items off as you finish each step. The list shows up above the chat input and the app auto-resumes you when the conversation stops with unfinished items.",
+  "toolDescLoadTool": "Meta-tool that unlocks the full usage manual for one or more tools at once. Pass an array of tool ids so the model gets every manual in a single round-trip — important on per-request-billed providers. Loaded tools stay available for the rest of the session.",
 
   "toolNameFetchWeb": "Fetch Web",
   "toolNameCurrentTime": "Current Time",
@@ -321,6 +322,7 @@
   "toolNameSubAgent": "Sub-Agent",
   "toolNameEditImage": "Edit Image",
   "toolNameTodo": "Task List",
+  "toolNameLoadTool": "Load Tool",
 
 
   "downloadStatusPending": "Waiting…",

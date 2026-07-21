@@ -673,6 +673,10 @@ class AppLocalizationsZh extends AppLocalizations {
       '维护本轮对话的任务清单 —— 多步任务开始前生成,每完成一项勾选一项。清单会显示在输入框上方,模型在对话停下来但任务还没全部完成时会自动被唤醒继续。';
 
   @override
+  String get toolDescLoadTool =>
+      '元工具:按需批量解锁一个或多个工具的完整使用手册。必须传数组 —— 一次加载多个等于一次 round-trip 拿到所有手册(对按次计费的接口很关键)。加载过的工具本会话内可一直直接调用,无需重复加载。';
+
+  @override
   String get toolNameFetchWeb => 'Fetch Web';
 
   @override
@@ -737,6 +741,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get toolNameTodo => '任务清单';
+
+  @override
+  String get toolNameLoadTool => '加载工具';
 
   @override
   String get downloadStatusPending => '等待中…';

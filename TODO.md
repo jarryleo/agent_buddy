@@ -39,8 +39,6 @@ Agent Buddy
 - 怎么处理 word,excel,pdf 文件,
 - 怎么解包zip文件,相关的类zip文件,jar,apk等
 
-- 完善工具遗漏的_toolUserDescription面向用户描述
-
 - 图片bbox检测，返回图片物体bbox:（坐标不用像素，用图片宽高百分比位置，这样图片缩放也能保证位置的准确性）
 例子：
 ```json5

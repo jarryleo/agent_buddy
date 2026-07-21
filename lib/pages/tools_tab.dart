@@ -199,6 +199,10 @@ String _toolUserName(AppLocalizations l10n, String id) {
       return l10n.toolNameSubAgent;
     case 'edit_image':
       return l10n.toolNameEditImage;
+    case 'todo':
+      return l10n.toolNameTodo;
+    case 'load_tool':
+      return l10n.toolNameLoadTool;
     default:
       return '';
   }
@@ -258,6 +262,10 @@ String _toolUserDescription(AppLocalizations l10n, String id) {
       return l10n.toolDescSubAgent;
     case 'edit_image':
       return l10n.toolDescEditImage;
+    case 'todo':
+      return l10n.toolDescTodo;
+    case 'load_tool':
+      return l10n.toolDescLoadTool;
     default:
       return '';
   }

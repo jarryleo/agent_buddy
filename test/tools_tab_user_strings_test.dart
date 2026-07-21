@@ -54,6 +54,8 @@ void main() {
         'call_mcp',
         'subagent',
         'edit_image',
+        'todo',
+        'load_tool',
       ];
       for (final id in ids) {
         expect(
@@ -99,6 +101,8 @@ void main() {
         'call_mcp',
         'subagent',
         'edit_image',
+        'todo',
+        'load_tool',
       ];
       for (final id in ids) {
         expect(

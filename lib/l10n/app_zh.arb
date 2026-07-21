@@ -226,6 +226,7 @@
   "toolDescSubAgent": "把一个独立的调研/搜集任务交给子 AI 跑 —— 子 agent 在独立的上下文里执行,完成后只把压缩后的报告回给主对话,节省 token 并保持主对话整洁。",
   "toolDescEditImage": "处理用户上传的图片:压缩体积、裁剪区域、调整分辨率、旋转、转换为圆形 / 圆角(透明背景)、左右或上下翻转、转换图片格式。每次调用都在临时目录处理副本,绝不修改原图。",
   "toolDescTodo": "维护本轮对话的任务清单 —— 多步任务开始前生成,每完成一项勾选一项。清单会显示在输入框上方,模型在对话停下来但任务还没全部完成时会自动被唤醒继续。",
+  "toolDescLoadTool": "元工具:按需批量解锁一个或多个工具的完整使用手册。必须传数组 —— 一次加载多个等于一次 round-trip 拿到所有手册(对按次计费的接口很关键)。加载过的工具本会话内可一直直接调用,无需重复加载。",
 
   "toolNameFetchWeb": "Fetch Web",
   "toolNameCurrentTime": "当前时间",
@@ -249,6 +250,7 @@
   "toolNameSubAgent": "子 Agent",
   "toolNameEditImage": "编辑图片",
   "toolNameTodo": "任务清单",
+  "toolNameLoadTool": "加载工具",
 
 
   "downloadStatusPending": "等待中…",
