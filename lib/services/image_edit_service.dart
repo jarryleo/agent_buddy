@@ -148,11 +148,26 @@ class ImageEditService {
         break;
       case EditImageAction.circle:
         processed = _circle(decoded, params);
-        targetFormat = snapshot.format;
+        // `circle` produces an RGBA buffer with the four corners
+        // fully transparent. If we wrote that back into a format
+        // that can't carry alpha (JPEG, BMP) the encoder would
+        // silently drop the alpha channel and the "corners"
+        // would re-appear as opaque (usually black, on a
+        // JPEG-without-background-fill). Auto-promote to PNG so
+        // the transparency actually survives the round trip.
+        // Users who *want* a specific non-alpha format can
+        // follow up with a `convert` call (or override via the
+        // explicit `target_format` param below).
+        targetFormat = _pickTransparentFormat(snapshot.format, params);
         break;
       case EditImageAction.roundedCorners:
         processed = _roundedCorners(decoded, params);
-        targetFormat = snapshot.format;
+        // Same reasoning as `circle`: the rounded-corner mask
+        // sets pixels outside the four corner arcs to alpha 0.
+        // We need a container that preserves that — JPEG / BMP
+        // can't, so default to PNG when the source is one of
+        // those.
+        targetFormat = _pickTransparentFormat(snapshot.format, params);
         break;
       case EditImageAction.flip:
         processed = _flip(decoded, params);
@@ -278,6 +293,67 @@ class ImageEditService {
       case 'jpeg':
       default:
         return '.jpg';
+    }
+  }
+
+  /// Pick the target format for an action that produces RGBA
+  /// output (currently `circle` and `roundedCorners`).
+  ///
+  /// Rules:
+  ///   * If the caller explicitly passed `target_format`, honor
+  ///     it verbatim. The user knows they want a specific
+  ///     container — even if that container can't hold alpha,
+  ///     they may have a downstream pipeline that needs the
+  ///     format (and is willing to accept the alpha loss). The
+  ///     shared `_readTargetFormat` helper handles validation +
+  ///     alias resolution.
+  ///   * Otherwise, if the source format supports alpha (PNG,
+  ///     WebP, GIF, TIFF) keep it — no conversion needed and
+  ///     the user gets back exactly what they put in.
+  ///   * Otherwise (JPEG, BMP), promote to PNG. This is the
+  ///     automatic fix for "the corners of my circle /
+  ///     rounded-corner image aren't transparent": a JPEG
+  ///     source was being written back as JPEG, which silently
+  ///     drops the alpha channel on encode, so the mask we
+  ///     spent cycles building never made it to disk.
+  String _pickTransparentFormat(
+    String sourceFormat,
+    Map<String, dynamic> params,
+  ) {
+    final explicit = params['target_format'];
+    if (explicit is String && explicit.trim().isNotEmpty) {
+      return _readTargetFormat(params, sourceFormat);
+    }
+    if (_formatSupportsAlpha(sourceFormat)) return sourceFormat;
+    return 'png';
+  }
+
+  /// `true` for container formats whose default encoder path in
+  /// this service preserves the alpha channel. Used by
+  /// [_pickTransparentFormat] to decide whether to auto-promote
+  /// to PNG for actions that produce RGBA output.
+  ///
+  /// The encoder side is matched in [_encode]:
+  ///   * `png` → `encodePng` → RGBA survives ✅
+  ///   * `webp` → `WebPEncoder` (lossless) → RGBA survives ✅
+  ///   * `tiff` → `encodeTiff` → RGBA survives ✅
+  ///   * `gif` → `encodeGif` → RGBA survives (the encoder
+  ///     collapses full alpha to binary, but the round-trip
+  ///     still keeps the "transparent vs opaque" distinction
+  ///     we rely on).
+  ///   * `jpeg` → `encodeJpg` → RGBA dropped ❌
+  ///   * `bmp` → `encodeBmp` → 3-channel output, alpha dropped ❌
+  bool _formatSupportsAlpha(String format) {
+    switch (format) {
+      case 'png':
+      case 'webp':
+      case 'tiff':
+      case 'gif':
+        return true;
+      case 'jpeg':
+      case 'bmp':
+      default:
+        return false;
     }
   }
 
