@@ -1,5 +1,6 @@
 import 'package:agent_buddy/l10n/app_localizations.dart';
 import 'package:agent_buddy/models/message.dart';
+import 'package:agent_buddy/widgets/code_block.dart';
 import 'package:agent_buddy/widgets/message_bubble.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -208,29 +209,25 @@ void main() {
   });
 
   group('MessageBubble footer layout', () {
-    testWidgets(
-      'right-aligns the metric chips against the bubble edge via Spacer',
-      (tester) async {
-        // Footer lives BELOW the bubble, but the surrounding
-        // [IntrinsicWidth] + stretch cross-axis aligns the footer
-        // Row to the bubble's width, so the [Spacer] between the
-        // copy button and the chips has real room to expand.
-        final m = _assistantWithMetrics(
-          ttft: const Duration(milliseconds: 200),
-          decodeWindow: const Duration(seconds: 1),
-          outputTokens: 50,
-        );
-        await pumpBubble(tester, m);
-        // Every chip we expect to be present.
-        expect(find.byIcon(Icons.schedule_outlined), findsOneWidget);
-        expect(find.text('0.20s'), findsOneWidget);
-        expect(find.text('50.0t/s'), findsOneWidget);
-        // The footer must contain exactly one Spacer (the one
-        // that pushes the chips to the right). If the
-        // restructuring regresses, this count drops to zero.
-        expect(find.byType(Spacer), findsOneWidget);
-      },
-    );
+    testWidgets('right-aligns metric chips without overflowing', (
+      tester,
+    ) async {
+      final m = _assistantWithMetrics(
+        ttft: const Duration(milliseconds: 200),
+        decodeWindow: const Duration(seconds: 1),
+        outputTokens: 50,
+      );
+      await pumpBubble(tester, m);
+      expect(find.byIcon(Icons.schedule_outlined), findsOneWidget);
+      expect(find.text('0.20s'), findsOneWidget);
+      expect(find.text('50.0t/s'), findsOneWidget);
+      final time = DateFormat('HH:mm').format(m.createdAt.toLocal());
+      expect(
+        tester.getCenter(find.text('0.20s')).dx,
+        greaterThan(tester.getCenter(find.text(time)).dx),
+      );
+      expect(tester.takeException(), isNull);
+    });
 
     testWidgets('footer Row is rendered even when the bubble itself is hidden '
         '(empty content + not streaming, with metrics)', (tester) async {
@@ -345,6 +342,44 @@ void main() {
       // Sanity: the bubble should still have a sensible width
       // (more than just "ok" plus padding).
       expect(bubbleContentRect.width, greaterThan(20));
+    });
+
+    testWidgets('renders a fenced code block inside a shrink-wrapped bubble', (
+      tester,
+    ) async {
+      final startedAt = DateTime(2026, 1, 1, 10);
+      final m = ChatMessage(
+        id: 'code',
+        role: MessageRole.assistant,
+        content: '```text\nfinal answer = 42;\n```',
+        metrics: MessageMetrics(
+          turnStartedAt: startedAt,
+          firstTokenAt: startedAt.add(const Duration(milliseconds: 200)),
+          lastTokenAt: startedAt.add(const Duration(seconds: 1)),
+          inputTokens: 100,
+          outputTokens: 50,
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+          ],
+          supportedLocales: const [Locale('en'), Locale('zh')],
+          locale: const Locale('zh'),
+          home: Scaffold(
+            body: SizedBox(
+              width: 384,
+              child: MessageBubble(message: m, onCopy: (_) {}),
+            ),
+          ),
+        ),
+      );
+      expect(find.byType(CodeBlock), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   });
 }

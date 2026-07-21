@@ -145,6 +145,7 @@ class _CodeBlockState extends State<CodeBlock> {
               border: Border(bottom: BorderSide(color: blockBorder)),
             ),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   _displayLanguage(lang),
@@ -155,7 +156,6 @@ class _CodeBlockState extends State<CodeBlock> {
                     letterSpacing: 0.4,
                   ),
                 ),
-                const Spacer(),
                 InkWell(
                   onTap: _copy,
                   borderRadius: BorderRadius.circular(4),

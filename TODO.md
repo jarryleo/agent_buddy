@@ -34,6 +34,9 @@ Agent Buddy
 - 怎么处理 word,excel,pdf 文件,
 - 怎么解包zip文件,相关的类zip文件,jar,apk等
 
+- 优化项目命令行工具在windows系统内的表现。cmd 对智能体不是很友好，
+- 检查系统内是否有 git bash,如果有优先用 git bash 做命令行工具，其次用 PowerShell. 其次再用cmd 兜底。
+
 - 完善工具遗漏的_toolUserDescription面向用户描述
 
 - 图片bbox检测，返回图片物体bbox:（坐标不用像素，用图片宽高百分比位置，这样图片缩放也能保证位置的准确性）

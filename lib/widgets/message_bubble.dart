@@ -561,19 +561,6 @@ class _MessageBubbleState extends State<MessageBubble> {
           // sequence self-explanatory even without the
           // collapsed card's args panel.
           if (hasEditedImages) _buildEditedImagesGallery(context, m),
-          // Bubble + footer are sized together so the footer
-          // [Spacer] can push chips flush against the bubble's
-          // right edge. The [IntrinsicWidth] is scoped to JUST
-          // this pair (not the whole column) so the thinking
-          // and tool-call blocks above don't stretch the bubble
-          // to their width �?during streaming that's the
-          // difference between a tightly-wrapped bubble and a
-          // hollow-looking one with the answer hugging the
-          // left edge.
-          //
-          // [IntrinsicWidth] costs an extra layout pass per
-          // message; the chat list is paginated enough that
-          // the hit isn't visible.
           IntrinsicWidth(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -646,10 +633,6 @@ class _MessageBubbleState extends State<MessageBubble> {
                   ),
                 // Footer: rendered BELOW the bubble, on the page
                 // background (not inside the bubble's background).
-                // Stretched to bubble width by the surrounding
-                // Column's [crossAxisAlignment.stretch], so the
-                // [Spacer] pushes the metric chips flush to the
-                // bubble's right edge.
                 //
                 // Always rendered (even when content is empty)
                 // so a turn that produced only reasoning tokens
@@ -672,6 +655,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                 Padding(
                   padding: const EdgeInsets.only(top: 4, left: 4),
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         DateFormat('HH:mm').format(m.createdAt.toLocal()),
@@ -716,10 +700,18 @@ class _MessageBubbleState extends State<MessageBubble> {
                           m.roundFinishedAt!.difference(m.createdAt),
                         ),
                       ],
-                      if (m.metrics != null) ...[
-                        const Spacer(),
-                        ..._buildMetricChips(context, m.metrics!),
-                      ],
+                      if (m.metrics != null)
+                        Flexible(
+                          fit: FlexFit.loose,
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: Wrap(
+                              alignment: WrapAlignment.end,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: _buildMetricChips(context, m.metrics!),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -1218,26 +1210,35 @@ class _MessageBubbleState extends State<MessageBubble> {
 
     final ttft = metrics.ttft;
     if (ttft != null) {
-      chips.addAll([
-        const SizedBox(width: 8),
-        Icon(Icons.schedule_outlined, size: 12, color: secondary),
-        const SizedBox(width: 2),
-        Text(
-          l10n.messageMetricTtft(_formatSeconds(ttft)),
-          style: chipTextStyle,
+      chips.add(
+        Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.schedule_outlined, size: 12, color: secondary),
+              const SizedBox(width: 2),
+              Text(
+                l10n.messageMetricTtft(_formatSeconds(ttft)),
+                style: chipTextStyle,
+              ),
+            ],
+          ),
         ),
-      ]);
+      );
     }
 
     final tps = metrics.tokensPerSecond;
     if (tps != null && tps > 0) {
-      chips.addAll([
-        const SizedBox(width: 8),
-        Text(
-          l10n.messageMetricSpeed(tps.toStringAsFixed(tps >= 100 ? 0 : 1)),
-          style: chipTextStyle,
+      chips.add(
+        Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Text(
+            l10n.messageMetricSpeed(tps.toStringAsFixed(tps >= 100 ? 0 : 1)),
+            style: chipTextStyle,
+          ),
         ),
-      ]);
+      );
     }
 
     // Total token count for this turn (input + output). Sits
@@ -1248,15 +1249,22 @@ class _MessageBubbleState extends State<MessageBubble> {
     // with no text, �? we skip the chip entirely.
     final total = metrics.inputTokens + metrics.outputTokens;
     if (total > 0) {
-      chips.addAll([
-        const SizedBox(width: 8),
-        Text('Σ', style: chipTextStyle),
-        const SizedBox(width: 2),
-        Text(
-          l10n.messageMetricTokensTotal(total.toString()),
-          style: chipTextStyle,
+      chips.add(
+        Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Σ', style: chipTextStyle),
+              const SizedBox(width: 2),
+              Text(
+                l10n.messageMetricTokensTotal(total.toString()),
+                style: chipTextStyle,
+              ),
+            ],
+          ),
         ),
-      ]);
+      );
     }
 
     // Cache-hit chip. Only emitted by the Anthropic-protocol
@@ -1268,15 +1276,24 @@ class _MessageBubbleState extends State<MessageBubble> {
     // prompt-cache toggle is doing its job. Skipped silently
     // when there's nothing to show.
     if (metrics.hasServerUsage && metrics.cacheReadInputTokens > 0) {
-      chips.addAll([
-        const SizedBox(width: 8),
-        Text('⚡', style: chipTextStyle),
-        const SizedBox(width: 2),
-        Text(
-          l10n.messageMetricCacheHit(metrics.cacheReadInputTokens.toString()),
-          style: chipTextStyle,
+      chips.add(
+        Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('⚡', style: chipTextStyle),
+              const SizedBox(width: 2),
+              Text(
+                l10n.messageMetricCacheHit(
+                  metrics.cacheReadInputTokens.toString(),
+                ),
+                style: chipTextStyle,
+              ),
+            ],
+          ),
         ),
-      ]);
+      );
     }
 
     return chips;
