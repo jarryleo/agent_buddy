@@ -1434,6 +1434,29 @@ class _GroupedToolCalls extends StatefulWidget {
 class _GroupedToolCallsState extends State<_GroupedToolCalls> {
   bool _expanded = false;
 
+  /// Flat list of every [EditedImage] produced by tool calls in
+  /// this group, paired with the owning [ToolCall.id] so the
+  /// save affordance can route back to the right tool call.
+  ///
+  /// Mirrors `_MessageBubbleState._buildEditedImagesGallery`
+  /// but concatenates across every message in the group instead
+  /// of a single one — the home page collapses consecutive
+  /// tool-only assistant bubbles into a single `_GroupedToolCalls`
+  /// widget, and the edit_image result is rendered on whichever
+  /// bubble originally produced it. Iterating every bubble
+  /// preserves the chronological order the user sees.
+  List<_EditedImageEntry> _collectEditedImages() {
+    final entries = <_EditedImageEntry>[];
+    for (final m in widget.messages) {
+      for (final tc in m.toolCalls) {
+        for (final img in tc.editedImages) {
+          entries.add(_EditedImageEntry(toolId: tc.id, image: img));
+        }
+      }
+    }
+    return entries;
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -1447,6 +1470,7 @@ class _GroupedToolCallsState extends State<_GroupedToolCalls> {
     final runningCount = widget.allCalls
         .where((c) => c.status == ToolCallStatus.running)
         .length;
+    final editedImages = _collectEditedImages();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 48, 4),
@@ -1525,6 +1549,53 @@ class _GroupedToolCallsState extends State<_GroupedToolCalls> {
               ),
             ),
           ),
+          // Edited-image gallery: rendered as a sibling of the
+          // collapsed summary card, NOT inside the expanded tool
+          // list. Mirrors `_MessageBubbleState._buildEditedImagesGallery` —
+          // a 4-step edit chain is most useful when every preview
+          // is on screen at once, and the metadata captions
+          // (action · WxH · bytes) make the sequence
+          // self-explanatory without expanding the collapsed card.
+          //
+          // This is the canonical rendering path for `edit_image`
+          // results: the home page groups consecutive tool-only
+          // assistant bubbles into this widget, so without this
+          // section the model-edited image is invisible after the
+          // group collapses.
+          if (editedImages.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final e in editedImages)
+                    ConstrainedBox(
+                      // Cap each card to a sensible phone-bubble
+                      // width so a chain of N edits doesn't push
+                      // the bubble to full-screen on the wide
+                      // side of the phone-frame layout. The
+                      // card's content is AspectRatio-driven, so
+                      // this constraint controls the preview size
+                      // rather than the caption.
+                      constraints: const BoxConstraints(maxWidth: 260),
+                      child: EditImageCard(
+                        image: e.image,
+                        // The `_GroupedToolCalls` widget bundles
+                        // several bubbles together; the assistant
+                        // id of the first bubble is the closest
+                        // stable anchor we have. `saveEditedImage`
+                        // only uses `imagePath`, so any value
+                        // here is correct as long as it's
+                        // non-empty (keeps the message-bubble
+                        // tests that look up by id happy).
+                        assistantId: widget.messages.first.id,
+                        toolId: e.toolId,
+                      ),
+                    ),
+                ],
+              ),
+            ),
           if (_expanded) ...[
             const SizedBox(height: 6),
             for (final m in widget.messages) ...[
