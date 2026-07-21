@@ -43,285 +43,214 @@ void main() {
 
   tearDown(() async {
     await Hive.deleteBoxFromDisk(ChatSessionRepository.boxName);
-    if (await tempDir.exists()) {
-      await tempDir.delete(recursive: true);
-    }
+    if (await tempDir.exists()) await tempDir.delete(recursive: true);
   });
-
-  // ----- desktop edit (default platform in test host) -----
 
   group('edit (desktop)', () {
-    test('replaces a unique anchor and reports matched_line', () async {
-      final f = File(p.join(workingDir.path, 'a.dart'));
-      f.writeAsStringSync('line 1\nline 2\nline 3\n');
+    test(
+      'replaces by an inclusive line range without exact text matching',
+      () async {
+        final file = File(p.join(workingDir.path, 'a.dart'))
+          ..writeAsBytesSync(utf8.encode('line 1\r\n  line 2\r\nline 3'));
 
-      final raw = await tool.execute({
-        'action': 'edit',
-        'path': f.path,
-        'edits': [
-          {'old_text': 'line 2\n', 'new_text': 'LINE TWO\n'},
-        ],
-      }, toolService);
-      final env = jsonDecode(raw) as Map<String, dynamic>;
-      expect(env['ok'], true);
-      expect(env['applied'], 1);
-      expect((env['diff'] as List).length, 1);
-      final diff = (env['diff'] as List).first as Map<String, dynamic>;
-      expect(diff['matched_line'], 2);
-      expect(diff['old_preview'], contains('line 2'));
-      expect(f.readAsStringSync(), 'line 1\nLINE TWO\nline 3\n');
-    });
-
-    test('batch edit applies every op and reports per-edit diff', () async {
-      final f = File(p.join(workingDir.path, 'b.dart'));
-      f.writeAsStringSync('''
-void foo() {
-  return 1;
-}
-
-void bar() {
-  return 2;
-}
-''');
-
-      final raw = await tool.execute({
-        'action': 'edit',
-        'path': f.path,
-        'edits': [
-          {'old_text': 'return 1;', 'new_text': 'return 10;'},
-          {'old_text': 'return 2;', 'new_text': 'return 20;'},
-        ],
-      }, toolService);
-      final env = jsonDecode(raw) as Map<String, dynamic>;
-      expect(env['ok'], true);
-      expect(env['applied'], 2);
-      final after = f.readAsStringSync();
-      expect(after, contains('return 10;'));
-      expect(after, contains('return 20;'));
-    });
-
-    test('empty new_text deletes the matched block', () async {
-      final f = File(p.join(workingDir.path, 'c.dart'));
-      f.writeAsStringSync('keep this\nDROP THIS LINE\nkeep this too\n');
-
-      final raw = await tool.execute({
-        'action': 'edit',
-        'path': f.path,
-        'edits': [
-          {'old_text': 'DROP THIS LINE\n', 'new_text': ''},
-        ],
-      }, toolService);
-      final env = jsonDecode(raw) as Map<String, dynamic>;
-      expect(env['ok'], true);
-      expect(f.readAsStringSync(), 'keep this\nkeep this too\n');
-    });
-
-    test('global_replace replaces every match', () async {
-      final f = File(p.join(workingDir.path, 'd.dart'));
-      f.writeAsStringSync('foo foo foo\n');
-
-      final raw = await tool.execute({
-        'action': 'edit',
-        'path': f.path,
-        'edits': [
-          {'old_text': 'foo', 'new_text': 'bar', 'global_replace': true},
-        ],
-      }, toolService);
-      final env = jsonDecode(raw) as Map<String, dynamic>;
-      expect(env['ok'], true);
-      expect(f.readAsStringSync(), 'bar bar bar\n');
-      final diff = (env['diff'] as List).first as Map<String, dynamic>;
-      expect(diff['replacements'], 3);
-    });
-
-    test('old_text not found returns near_matches + soft failure', () async {
-      final f = File(p.join(workingDir.path, 'e.dart'));
-      f.writeAsStringSync('line alpha\nline beta\nline gamma\n');
-
-      final raw = await tool.execute({
-        'action': 'edit',
-        'path': f.path,
-        'edits': [
-          {'old_text': 'line omega\n', 'new_text': 'replaced\n'},
-        ],
-      }, toolService);
-      final env = jsonDecode(raw) as Map<String, dynamic>;
-      expect(env['ok'], false);
-      expect(env['error_code'], 'OLD_TEXT_NOT_FOUND');
-      expect(env['failed_index'], 0);
-      final nearMatches = (env['near_matches'] as List?) ?? const [];
-      expect(nearMatches.length, greaterThan(0));
-      // File is untouched on failure.
-      expect(f.readAsStringSync(), 'line alpha\nline beta\nline gamma\n');
-    });
-
-    test('non-unique old_text returns candidates with line numbers', () async {
-      final f = File(p.join(workingDir.path, 'f.dart'));
-      f.writeAsStringSync('return 1;\nreturn 2;\nreturn 3;\n');
-
-      final raw = await tool.execute({
-        'action': 'edit',
-        'path': f.path,
-        'edits': [
-          {'old_text': 'return ', 'new_text': 'yield '},
-        ],
-      }, toolService);
-      final env = jsonDecode(raw) as Map<String, dynamic>;
-      expect(env['ok'], false);
-      expect(env['error_code'], 'OLD_TEXT_NOT_UNIQUE');
-      final candidates = env['candidates'] as List;
-      expect(candidates.length, 3);
-      expect((candidates.first as Map)['line'], 1);
-    });
-
-    test('first failing edit rolls back the whole batch', () async {
-      final f = File(p.join(workingDir.path, 'g.dart'));
-      f.writeAsStringSync('A\nB\nC\n');
-
-      final raw = await tool.execute({
-        'action': 'edit',
-        'path': f.path,
-        'edits': [
-          {'old_text': 'A\n', 'new_text': 'AAA\n'},
-          {'old_text': 'B\n', 'new_text': 'BBB\n'},
-          {'old_text': 'Z\n', 'new_text': 'ZZZ\n'},
-        ],
-      }, toolService);
-      final env = jsonDecode(raw) as Map<String, dynamic>;
-      expect(env['ok'], false);
-      expect(env['failed_index'], 2);
-      // File is untouched - atomic rollback.
-      expect(f.readAsStringSync(), 'A\nB\nC\n');
-    });
-
-    test('edit on a missing file returns a soft PATH_NOT_FOUND', () async {
-      final missing = p.join(workingDir.path, 'does_not_exist.dart');
-      final raw = await tool.execute({
-        'action': 'edit',
-        'path': missing,
-        'edits': [
-          {'old_text': 'x', 'new_text': 'y'},
-        ],
-      }, toolService);
-      final env = jsonDecode(raw) as Map<String, dynamic>;
-      expect(env['ok'], false);
-      expect(env['error_code'], 'PATH_NOT_FOUND');
-    });
-
-    test('missing edits array raises ToolException', () async {
-      final f = File(p.join(workingDir.path, 'h.dart'));
-      f.writeAsStringSync('x');
-      Object? caught;
-      try {
-        await tool.execute({'action': 'edit', 'path': f.path}, toolService);
-      } catch (e) {
-        caught = e;
-      }
-      expect(caught, isNotNull);
-      expect(caught.toString(), contains('edits'));
-    });
-
-    test('empty old_text raises ToolException via EditOp.fromJson', () async {
-      final f = File(p.join(workingDir.path, 'i.dart'));
-      f.writeAsStringSync('x');
-      Object? caught;
-      try {
-        await tool.execute({
+        final raw = await tool.execute({
           'action': 'edit',
-          'path': f.path,
+          'path': file.path,
           'edits': [
-            {'old_text': '', 'new_text': 'x'},
+            {'start_line': 2, 'end_line': 2, 'content': 'LINE TWO'},
           ],
         }, toolService);
-      } catch (e) {
-        caught = e;
-      }
-      expect(caught, isNotNull);
-      expect(caught.toString(), contains('old_text'));
+        final env = jsonDecode(raw) as Map<String, dynamic>;
+
+        expect(env['ok'], true);
+        expect(env['applied'], 1);
+        expect(env['refreshed'], true);
+        expect((env['diff'] as List).single['start_line'], 2);
+        expect((env['diff'] as List).single['end_line'], 2);
+        expect(file.readAsStringSync(), 'line 1\r\nLINE TWO\r\nline 3');
+      },
+    );
+
+    test(
+      'end_line is optional and content can contain inserted lines',
+      () async {
+        final file = File(p.join(workingDir.path, 'insert.txt'))
+          ..writeAsStringSync('A\nB\nC\n');
+
+        await tool.execute({
+          'action': 'edit',
+          'path': file.path,
+          'edits': [
+            {'start_line': 2, 'content': 'B\nINSERTED'},
+          ],
+        }, toolService);
+
+        expect(file.readAsStringSync(), 'A\nB\nINSERTED\nC\n');
+      },
+    );
+
+    test('empty content deletes the inclusive line range', () async {
+      final file = File(p.join(workingDir.path, 'delete.txt'))
+        ..writeAsStringSync('keep 1\nremove 2\nremove 3\nkeep 4\n');
+
+      await tool.execute({
+        'action': 'edit',
+        'path': file.path,
+        'edits': [
+          {'start_line': 2, 'end_line': 3, 'content': ''},
+        ],
+      }, toolService);
+
+      expect(file.readAsStringSync(), 'keep 1\nkeep 4\n');
+    });
+
+    test(
+      'batch edits apply from larger line numbers to smaller ones',
+      () async {
+        final file = File(p.join(workingDir.path, 'batch.txt'))
+          ..writeAsStringSync('L1\nL2\nL3\nL4\nL5\nL6\n');
+
+        final raw = await tool.execute({
+          'action': 'edit',
+          'path': file.path,
+          'edits': [
+            {'start_line': 2, 'content': 'L2\nLOW INSERT'},
+            {'start_line': 5, 'content': 'HIGH REPLACED\nHIGH INSERT'},
+          ],
+        }, toolService);
+
+        final env = jsonDecode(raw) as Map<String, dynamic>;
+        expect(env['ok'], true);
+        expect(
+          file.readAsStringSync(),
+          'L1\nL2\nLOW INSERT\nL3\nL4\nHIGH REPLACED\nHIGH INSERT\nL6\n',
+        );
+      },
+    );
+
+    test('batch edits reject overlapping ranges without writing', () async {
+      final file = File(p.join(workingDir.path, 'overlap.txt'))
+        ..writeAsStringSync('A\nB\nC\n');
+
+      final error = await _captureToolError(
+        tool.execute({
+          'action': 'edit',
+          'path': file.path,
+          'edits': [
+            {'start_line': 1, 'end_line': 2, 'content': 'X'},
+            {'start_line': 2, 'content': 'Y'},
+          ],
+        }, toolService),
+      );
+
+      expect(error.message, contains('OVERLAPPING_EDITS'));
+      expect(file.readAsStringSync(), 'A\nB\nC\n');
+    });
+
+    test(
+      'invalid line ranges are tool failures, not successful results',
+      () async {
+        final file = File(p.join(workingDir.path, 'invalid.txt'))
+          ..writeAsStringSync('A\nB\n');
+
+        final error = await _captureToolError(
+          tool.execute({
+            'action': 'edit',
+            'path': file.path,
+            'edits': [
+              {'start_line': 3, 'content': 'C'},
+            ],
+          }, toolService),
+        );
+
+        expect(error.message, contains('LINE_OUT_OF_RANGE'));
+        expect(file.readAsStringSync(), 'A\nB\n');
+      },
+    );
+
+    test(
+      'failed edit on a missing file is surfaced as a tool failure',
+      () async {
+        final error = await _captureToolError(
+          tool.execute({
+            'action': 'edit',
+            'path': p.join(workingDir.path, 'missing.txt'),
+            'edits': [
+              {'start_line': 1, 'content': 'x'},
+            ],
+          }, toolService),
+        );
+
+        expect(error.message, contains('PATH_NOT_FOUND'));
+      },
+    );
+
+    test('UTF-8 BOM is preserved while editing by line number', () async {
+      final file = File(p.join(workingDir.path, 'bom.txt'))
+        ..writeAsBytesSync([0xef, 0xbb, 0xbf, ...utf8.encode('一\n二')]);
+
+      await tool.execute({
+        'action': 'edit',
+        'path': file.path,
+        'edits': [
+          {'start_line': 2, 'content': '贰'},
+        ],
+      }, toolService);
+
+      expect(file.readAsBytesSync(), [
+        0xef,
+        0xbb,
+        0xbf,
+        ...utf8.encode('一\n贰'),
+      ]);
     });
   });
 
-  // ----- read (desktop) -----
-
-  group('read (desktop, enhanced)', () {
-    test('returns line-numbered content by default', () async {
-      final f = File(p.join(workingDir.path, 'r.dart'));
-      f.writeAsStringSync('a\nb\nc\n');
+  group('read (desktop)', () {
+    test('returns clean line-numbered content for CRLF files', () async {
+      final file = File(p.join(workingDir.path, 'read.txt'))
+        ..writeAsStringSync('a\r\nb\r\nc\r\n');
 
       final raw = await tool.execute({
         'action': 'read',
-        'path': f.path,
+        'path': file.path,
       }, toolService);
       final env = jsonDecode(raw) as Map<String, dynamic>;
-      expect(env['mode'], 'full');
+
       expect(env['total_lines'], 3);
-      expect(env['returned_lines'], 3);
       expect(env['content'], '1|a\n2|b\n3|c');
     });
 
-    test('offset_lines + max_lines return a page with a hint', () async {
-      final f = File(p.join(workingDir.path, 'big.dart'));
-      f.writeAsStringSync(List.generate(1000, (i) => 'L$i').join('\n'));
+    test('pattern and page modes keep 1-based line numbers', () async {
+      final file = File(p.join(workingDir.path, 'large.txt'))
+        ..writeAsStringSync(List.generate(20, (i) => 'L$i').join('\n'));
 
-      final raw = await tool.execute({
-        'action': 'read',
-        'path': f.path,
-        'offset_lines': 100,
-        'max_lines': 50,
-      }, toolService);
-      final env = jsonDecode(raw) as Map<String, dynamic>;
-      expect(env['mode'], 'page');
-      expect(env['start_line'], 101);
-      expect(env['end_line'], 150);
-      expect(env['total_lines'], 1000);
-      expect(env['returned_lines'], 50);
-      expect(env['truncated'], true);
-      expect(env['truncation_hint'], contains('offset_lines=150'));
-      expect((env['content'] as String).split('\n').first, '101|L100');
-    });
+      final page =
+          jsonDecode(
+                await tool.execute({
+                  'action': 'read',
+                  'path': file.path,
+                  'offset_lines': 10,
+                  'max_lines': 3,
+                }, toolService),
+              )
+              as Map<String, dynamic>;
+      expect(page['start_line'], 11);
+      expect((page['content'] as String).split('\n').first, '11|L10');
 
-    test('pattern returns only matching lines plus 2-line context', () async {
-      final f = File(p.join(workingDir.path, 'g.dart'));
-      f.writeAsStringSync('''
-void foo() {
-  print("hello");
-}
-
-void bar() {
-  print("world");
-}
-''');
-
-      final raw = await tool.execute({
-        'action': 'read',
-        'path': f.path,
-        'pattern': 'print',
-      }, toolService);
-      final env = jsonDecode(raw) as Map<String, dynamic>;
-      expect(env['mode'], 'pattern');
-      expect(env['matches'], 2);
-      expect(env['returned_lines'], greaterThanOrEqualTo(2));
-      final content = env['content'] as String;
-      expect(content, contains('print'));
-      final firstLine = content.split('\n').first;
-      expect(firstLine, matches(RegExp(r'^\d+\|')));
-    });
-
-    test('a binary file still returns the legacy binary envelope', () async {
-      final f = File(p.join(workingDir.path, 'b.bin'));
-      f.writeAsBytesSync([0xff, 0x00, 0xfe]);
-
-      final raw = await tool.execute({
-        'action': 'read',
-        'path': f.path,
-      }, toolService);
-      final env = jsonDecode(raw) as Map<String, dynamic>;
-      expect(env['encoding'], 'binary');
-      expect(env['content'], contains('binary file'));
+      final pattern =
+          jsonDecode(
+                await tool.execute({
+                  'action': 'read',
+                  'path': file.path,
+                  'pattern': 'L10',
+                }, toolService),
+              )
+              as Map<String, dynamic>;
+      expect(pattern['matches'], 1);
+      expect(pattern['content'], contains('11|L10'));
     });
   });
-
-  // ----- mobile branch -----
 
   group('edit (mobile branch via injected FileService)', () {
     late _EditTestService editSvc;
@@ -336,106 +265,82 @@ void bar() {
 
     tearDown(resetPlatformOverrides);
 
-    test(
-      'routes edit through the FileService and returns its envelope',
-      () async {
-        editSvc.editResponse = EditResult.success(
-          applied: 1,
-          sizeBefore: 10,
-          sizeAfter: 12,
-          diff: [
-            EditDiffEntry(
-              editIndex: 0,
-              matchedLine: 5,
-              oldPreview: 'foo',
-              newPreview: 'foobar',
-              replacements: 1,
-            ),
-          ],
-        );
-        final raw = await tool.execute({
-          'action': 'edit',
-          'path': 'working://a.dart',
-          'edits': [
-            {'old_text': 'foo', 'new_text': 'foobar'},
-          ],
-        }, toolService);
-        expect(editSvc.lastEditPath, 'working://a.dart');
-        expect(editSvc.lastEdits, hasLength(1));
-        expect(editSvc.lastEdits!.first.oldText, 'foo');
-        final env = jsonDecode(raw) as Map<String, dynamic>;
-        expect(env['ok'], true);
-        expect(env['applied'], 1);
-        expect((env['diff'] as List).first['matched_line'], 5);
-      },
-    );
-
-    test(
-      'soft-error envelopes from the service are surfaced as JSON',
-      () async {
-        editSvc.editResponse = EditResult.notUnique(
-          failedIndex: 0,
-          sizeBefore: 100,
-          foundCount: 3,
-          candidates: const [
-            EditCandidate(line: 1, preview: 'return 1;'),
-            EditCandidate(line: 2, preview: 'return 2;'),
-            EditCandidate(line: 3, preview: 'return 3;'),
-          ],
-        );
-        final raw = await tool.execute({
-          'action': 'edit',
-          'path': 'working://a.dart',
-          'edits': [
-            {'old_text': 'return ', 'new_text': 'yield '},
-          ],
-        }, toolService);
-        final env = jsonDecode(raw) as Map<String, dynamic>;
-        expect(env['ok'], false);
-        expect(env['error_code'], 'OLD_TEXT_NOT_UNIQUE');
-        expect((env['candidates'] as List).length, 3);
-      },
-    );
-
-    test('read on mobile uses the enhanced line-numbered envelope', () async {
-      editSvc.readResponse = 'alpha\nbeta\ngamma\n';
+    test('routes the three line-edit fields through FileService', () async {
+      editSvc.editResponse = EditResult.success(
+        applied: 1,
+        sizeBefore: 10,
+        sizeAfter: 12,
+        diff: [
+          EditDiffEntry(
+            editIndex: 0,
+            startLine: 5,
+            endLine: 5,
+            oldPreview: 'foo',
+            newPreview: 'foobar',
+            replacements: 1,
+          ),
+        ],
+      );
       final raw = await tool.execute({
-        'action': 'read',
+        'action': 'edit',
         'path': 'working://a.dart',
+        'edits': [
+          {'start_line': 5, 'content': 'foobar'},
+        ],
       }, toolService);
-      final env = jsonDecode(raw) as Map<String, dynamic>;
-      expect(env['mode'], 'full');
-      expect(env['total_lines'], 3);
-      expect(env['content'], '1|alpha\n2|beta\n3|gamma');
+
+      expect(editSvc.lastEditPath, 'working://a.dart');
+      expect(editSvc.lastEdits!.single.startLine, 5);
+      expect(editSvc.lastEdits!.single.endLine, isNull);
+      expect(editSvc.lastEdits!.single.content, 'foobar');
+      expect((jsonDecode(raw) as Map)['ok'], true);
+    });
+
+    test('a false EditResult becomes a failed tool call', () async {
+      editSvc.editResponse = EditResult.error(
+        code: 'LINE_OUT_OF_RANGE',
+        message: 'bad line',
+        failedIndex: 0,
+        startLine: 99,
+        endLine: 99,
+      );
+
+      final error = await _captureToolError(
+        tool.execute({
+          'action': 'edit',
+          'path': 'working://a.dart',
+          'edits': [
+            {'start_line': 99, 'content': 'x'},
+          ],
+        }, toolService),
+      );
+
+      expect(error.message, contains('LINE_OUT_OF_RANGE'));
     });
   });
 }
 
-/// In-memory FileService that records edit calls for the
-/// mobile-branch tests above. Reads are served from a fixed
-/// string so the enhanced read envelope has something to chew
-/// on.
+Future<ToolException> _captureToolError(Future<String> future) async {
+  try {
+    await future;
+    fail('expected ToolException');
+  } on ToolException catch (error) {
+    return error;
+  }
+}
+
 class _EditTestService implements FileService {
   List<int> readResult = const [];
-  String? readResultText;
   EditResult? editResponse;
   String? lastEditPath;
   List<EditOp>? lastEdits;
-
-  String? get readResponse => readResultText;
-
-  set readResponse(String value) {
-    readResultText = value;
-    readResult = value.codeUnits;
-  }
 
   @override
   String? get workingDirectory => null;
 
   @override
-  Future<List<int>> read(String path, {int maxBytes = 2 * 1024 * 1024}) async {
-    return readResult;
-  }
+  Future<List<int>> read(String path, {int maxBytes = 2 * 1024 * 1024}) async =>
+      readResult;
 
   @override
   Future<void> write(

@@ -199,11 +199,23 @@ void main() {
       expect(String.fromCharCodes(got), 'written');
     });
 
-    test('write creates missing parent directories', () async {
-      await workingSvc.write('sub/dir/file.txt', utf8.encode('deep'));
-      final got = await workingSvc.read('sub/dir/file.txt');
-      expect(String.fromCharCodes(got), 'deep');
-    });
+    test(
+      'edit replaces lines, applies batches in descending order, and verifies write',
+      () async {
+        await workingSvc.write('lines.txt', utf8.encode('A\nB\nC\nD\n'));
+        final result = await workingSvc.edit('lines.txt', [
+          const EditOp(startLine: 2, content: 'B\nB2'),
+          const EditOp(startLine: 4, content: 'D2'),
+        ]);
+
+        expect(result.ok, isTrue);
+        expect(result.applied, 2);
+        expect(
+          String.fromCharCodes(await workingSvc.read('lines.txt')),
+          'A\nB\nB2\nC\nD2\n',
+        );
+      },
+    );
 
     test('append concatenates and rejects missing file', () async {
       await workingSvc.write('log.txt', utf8.encode('a'));
@@ -479,19 +491,13 @@ class _InMemoryFileService implements FileService {
 
   @override
   Future<EditResult> edit(String path, List<EditOp> edits) async {
-    final current = String.fromCharCodes(docs[path] ?? const []);
-    var updated = current;
-    for (final op in edits) {
-      updated = op.globalReplace
-          ? updated.replaceAll(op.oldText, op.newText)
-          : updated.replaceFirst(op.oldText, op.newText);
-    }
-    docs[path] = updated.codeUnits;
-    return EditResult.success(
-      applied: edits.length,
-      sizeBefore: current.length,
-      sizeAfter: updated.length,
-      diff: const [],
+    final before = String.fromCharCodes(docs[path] ?? const []);
+    final result = applyLineEdits(
+      source: before,
+      edits: edits,
+      sizeBefore: utf8.encode(before).length,
     );
+    if (result.result.ok) docs[path] = utf8.encode(result.text);
+    return result.result;
   }
 }

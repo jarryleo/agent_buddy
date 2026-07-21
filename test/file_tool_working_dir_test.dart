@@ -496,25 +496,16 @@ class _FakeFileService implements FileService {
 
   @override
   Future<EditResult> edit(String path, List<EditOp> edits) async {
-    // Minimal in-memory edit: read the last write if any,
-    // apply, then surface a generic success. The dedicated
-    // edit tests live in `file_tool_edit_test.dart` and use a
-    // real on-disk file.
-    final before = lastWriteBytes ?? readResult ?? const [];
-    var text = String.fromCharCodes(before);
-    for (final op in edits) {
-      text = op.globalReplace
-          ? text.replaceAll(op.oldText, op.newText)
-          : text.replaceFirst(op.oldText, op.newText);
-    }
-    final after = text.codeUnits;
-    lastWriteBytes = after;
-    return EditResult.success(
-      applied: edits.length,
-      sizeBefore: before.length,
-      sizeAfter: after.length,
-      diff: const [],
+    final before = String.fromCharCodes(
+      lastWriteBytes ?? readResult ?? const [],
     );
+    final result = applyLineEdits(
+      source: before,
+      edits: edits,
+      sizeBefore: utf8.encode(before).length,
+    );
+    if (result.result.ok) lastWriteBytes = utf8.encode(result.text);
+    return result.result;
   }
 }
 

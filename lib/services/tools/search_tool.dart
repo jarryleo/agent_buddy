@@ -95,7 +95,7 @@ class SearchTool extends ToolBase {
 最佳实践:
 - **首选用法**:搜符号/字符串/函数名,`search(pattern:"ToolException", include_globs:["*.dart"])` 一秒扫整个 lib/,比逐个 file read 省 token 太多。
 - 三道保护(max_results/max_files/max_file_size_mb):跑了半天还没结果就降低 max_files 或加 include_globs 收紧范围。
-- 命中行带 1-based 行号 + 列号 + 原文,**直接拿 line 字段当 file.read 的 offset_lines、或当 file.edit 的 old_text 锚点**(配合 file.read 的 "N|" 行号前缀,完美衔接)。
+- 命中行带 1-based 行号 + 列号 + 原文,**直接拿 line 字段当 file.read 的 offset_lines,或当 file.edit 的 start_line/end_line**(配合 file.read 的 "N|" 行号前缀,避免整段文本匹配)。
 ''';
 
   @override

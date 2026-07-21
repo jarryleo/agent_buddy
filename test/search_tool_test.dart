@@ -416,19 +416,13 @@ class _InMemoryFileService implements FileService {
   @override
   Future<EditResult> edit(String path, List<EditOp> edits) async {
     final before = contentByPath[path] ?? '';
-    var text = before;
-    for (final op in edits) {
-      text = op.globalReplace
-          ? text.replaceAll(op.oldText, op.newText)
-          : text.replaceFirst(op.oldText, op.newText);
-    }
-    contentByPath[path] = text;
-    return EditResult.success(
-      applied: edits.length,
+    final result = applyLineEdits(
+      source: before,
+      edits: edits,
       sizeBefore: utf8.encode(before).length,
-      sizeAfter: utf8.encode(text).length,
-      diff: const [],
     );
+    if (result.result.ok) contentByPath[path] = result.text;
+    return result.result;
   }
 
   @override

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../../models/picked_file.dart';
 
 /// Abstract surface for the platform file service. On Android /
@@ -74,29 +76,14 @@ abstract class FileService {
   /// `working://` paths.
   Future<FileAttrs> readAttr(String path);
 
-  /// Apply a batch of exact-text edits to the file at [path].
-  /// One atomic operation: either every edit is applied and the
-  /// result is written, or nothing is written and the failure
-  /// details are returned.
+  /// Apply a batch of line-based edits to the file at [path].
+  /// The range is 1-based and inclusive. `end_line` may be omitted
+  /// to edit only `start_line`; empty content deletes the range.
   ///
-  /// Use this instead of [read] + [write] when the model wants
-  /// to change code / text. Token cost stays proportional to
-  /// the **changed** content, not the file size.
-  ///
-  /// Each [EditOp] is matched by literal text (not regex); the
-  /// edit is a single global find / replace.
-  /// * [EditOp.oldText] must be unique in the file unless
-  ///   [EditOp.globalReplace] is `true`.
-  /// * [EditOp.newText] may be empty (= delete the matched
-  ///   block).
-  /// * All edits are validated up front; the file is only
-  ///   written if every edit would succeed. Otherwise
-  ///   [EditResult.ok] is `false` and [EditResult.failedIndex]
-  ///   points at the first bad edit.
-  /// * Edits are applied in the order the model passed them.
-  ///   When two edits touch overlapping text, the *first* edit
-  ///   runs against the original text; the *second* edit is
-  ///   re-matched against the post-first-edit text.
+  /// Every range is validated before writing. The file is only
+  /// written if all edits are valid. Batch edits are applied from
+  /// the largest start line to the smallest start line so inserted
+  /// or deleted lines do not invalidate later ranges.
   Future<EditResult> edit(String path, List<EditOp> edits);
 
   /// The user-selected working directory (an absolute path on
@@ -155,77 +142,50 @@ bool isWorkingPath(String input) {
   return input.startsWith('working://');
 }
 
-/// A single exact-text edit, supplied to [FileService.edit].
-///
-/// Anchor matching is **literal**, not regex: [oldText] is found
-/// in the file with `String.indexOf` and replaced. There is no
-/// escaping of `$` / `\`, no `\n` interpretation, and no glob
-/// expansion. The model is expected to copy the anchor text
-/// verbatim from a prior `file read` response (which is why
-/// `file read` returns content with a 1-indexed line-number
-/// prefix and explicit `\n` separators).
 class EditOp {
-  const EditOp({
-    required this.oldText,
-    this.newText = '',
-    this.globalReplace = false,
-  });
+  const EditOp({required this.startLine, this.endLine, required this.content});
 
-  /// The text to find. Must be unique in the file unless
-  /// [globalReplace] is `true`. An empty string is rejected
-  /// (would match every position).
-  final String oldText;
+  final int startLine;
+  final int? endLine;
+  final String content;
 
-  /// The replacement text. Empty string deletes the matched
-  /// block.
-  final String newText;
+  int get resolvedEndLine => endLine ?? startLine;
 
-  /// When `true`, every occurrence of [oldText] is replaced
-  /// (useful for renaming a symbol across the whole file).
-  /// Defaults to `false`, which requires the anchor to be
-  /// unique - the safe default that prevents accidental
-  /// mass-changes.
-  final bool globalReplace;
-
-  /// Decode one [EditOp] from the JSON shape the `file` tool's
-  /// `edit` action accepts. Throws [FormatException] for
-  /// malformed input so the model gets a clear error.
   factory EditOp.fromJson(Map<String, dynamic> json) {
-    final oldText = json['old_text'];
-    if (oldText is! String) {
+    final start = json['start_line'];
+    if (start is! int) {
       throw const FormatException(
-        'edit: old_text is required and must be a string',
+        'edit: start_line is required and must be an integer',
       );
     }
-    if (oldText.isEmpty) {
-      throw const FormatException('edit: old_text must be a non-empty string');
+    if (start < 1) {
+      throw const FormatException('edit: start_line must be >= 1');
     }
-    final newText = json['new_text'];
-    if (newText != null && newText is! String) {
-      throw const FormatException('edit: new_text must be a string');
+    final end = json['end_line'];
+    if (end != null && end is! int) {
+      throw const FormatException('edit: end_line must be an integer');
     }
-    final global = json['global_replace'];
-    if (global != null && global is! bool) {
-      throw const FormatException('edit: global_replace must be a boolean');
+    if (end != null && end < start) {
+      throw const FormatException(
+        'edit: end_line must be greater than or equal to start_line',
+      );
     }
-    return EditOp(
-      oldText: oldText,
-      newText: (newText as String?) ?? '',
-      globalReplace: (global as bool?) ?? false,
-    );
+    final content = json['content'];
+    if (content is! String) {
+      throw const FormatException(
+        'edit: content is required and must be a string',
+      );
+    }
+    return EditOp(startLine: start, endLine: end as int?, content: content);
   }
 
   Map<String, dynamic> toJson() => {
-    'old_text': oldText,
-    'new_text': newText,
-    'global_replace': globalReplace,
+    'start_line': startLine,
+    if (endLine != null) 'end_line': endLine,
+    'content': content,
   };
 }
 
-/// Outcome of a [FileService.edit] call. When [ok] is `false`
-/// the file is **not** modified and [failedIndex] points at the
-/// first [EditOp] that could not be applied; the rest of the
-/// envelope explains why.
 class EditResult {
   const EditResult._({
     required this.ok,
@@ -233,14 +193,13 @@ class EditResult {
     this.failedIndex,
     this.errorCode,
     this.errorMessage,
+    this.startLine,
+    this.endLine,
     this.sizeBefore,
     this.sizeAfter,
     this.diff = const [],
-    this.nearMatches = const [],
-    this.candidates = const [],
   });
 
-  /// Build a success envelope.
   factory EditResult.success({
     required int applied,
     required int sizeBefore,
@@ -256,141 +215,335 @@ class EditResult {
     );
   }
 
-  /// `old_text` was not found anywhere in the file. The
-  /// [nearMatches] list carries a few line-anchored excerpts of
-  /// the closest matches so the model can self-correct.
-  factory EditResult.notFound({
-    required int failedIndex,
-    required int sizeBefore,
-    required List<EditNearMatch> nearMatches,
+  factory EditResult.error({
+    required String code,
+    required String message,
+    int? failedIndex,
+    int? startLine,
+    int? endLine,
+    int? sizeBefore,
+    int? sizeAfter,
   }) {
     return EditResult._(
       ok: false,
       applied: 0,
       failedIndex: failedIndex,
-      errorCode: 'OLD_TEXT_NOT_FOUND',
-      errorMessage:
-          'old_text was not found in the file; '
-          'see near_matches for the closest locations',
-      sizeBefore: sizeBefore,
-      sizeAfter: sizeBefore,
-      nearMatches: nearMatches,
-    );
-  }
-
-  /// `old_text` matched more than once and `global_replace`
-  /// was `false`. The [candidates] list pinpoints every match
-  /// by line number so the model can extend the anchor.
-  factory EditResult.notUnique({
-    required int failedIndex,
-    required int sizeBefore,
-    required int foundCount,
-    required List<EditCandidate> candidates,
-  }) {
-    return EditResult._(
-      ok: false,
-      applied: 0,
-      failedIndex: failedIndex,
-      errorCode: 'OLD_TEXT_NOT_UNIQUE',
-      errorMessage:
-          'old_text matched $foundCount times; '
-          'add more surrounding context to make it unique, or '
-          'set global_replace=true',
-      sizeBefore: sizeBefore,
-      sizeAfter: sizeBefore,
-      candidates: candidates,
-    );
-  }
-
-  /// Some other failure (file missing, IO error, ...).
-  factory EditResult.error({required String code, required String message}) {
-    return EditResult._(
-      ok: false,
-      applied: 0,
       errorCode: code,
       errorMessage: message,
+      startLine: startLine,
+      endLine: endLine,
+      sizeBefore: sizeBefore,
+      sizeAfter: sizeAfter,
     );
   }
 
-  /// `true` when every edit was applied and the file was
-  /// written successfully.
   final bool ok;
-
-  /// Number of edits that were actually applied. `applied ==
-  /// edits.length` on success, `0` on failure (no partial
-  /// writes — the whole batch is atomic).
   final int applied;
-
-  /// 0-indexed position of the first edit that could not be
-  /// applied, when [ok] is `false`. `null` when [ok] is `true`.
   final int? failedIndex;
-
-  /// A short machine-readable code: `OLD_TEXT_NOT_FOUND`,
-  /// `OLD_TEXT_NOT_UNIQUE`, `PATH_NOT_FOUND`, `BRIDGE_ERROR`,
-  /// ...
   final String? errorCode;
-
-  /// A human-readable explanation. Localised on the Dart side
-  /// when surfaced to the model via the `file` tool envelope.
   final String? errorMessage;
-
-  /// File size in bytes **before** the edit, when known.
+  final int? startLine;
+  final int? endLine;
   final int? sizeBefore;
-
-  /// File size in bytes **after** the edit, when known.
   final int? sizeAfter;
-
-  /// Per-edit preview of the change. Empty on failure.
   final List<EditDiffEntry> diff;
-
-  /// Up to 3 line-anchored excerpts of the closest matches
-  /// when [errorCode] is `OLD_TEXT_NOT_FOUND`. Empty
-  /// otherwise.
-  final List<EditNearMatch> nearMatches;
-
-  /// Every match location when [errorCode] is
-  /// `OLD_TEXT_NOT_UNIQUE`. Capped at 10 to keep the response
-  /// small.
-  final List<EditCandidate> candidates;
 }
 
-/// One row of [EditResult.diff] — a per-edit preview of what
-/// changed. The [oldPreview] / [newPreview] fields are
-/// truncated to a fixed length so the response stays small
-/// even when the model edits a 1000-line block.
 class EditDiffEntry {
   const EditDiffEntry({
     required this.editIndex,
-    required this.matchedLine,
+    required this.startLine,
+    required this.endLine,
     required this.oldPreview,
     required this.newPreview,
     required this.replacements,
   });
 
   final int editIndex;
-  final int matchedLine;
+  final int startLine;
+  final int endLine;
   final String oldPreview;
   final String newPreview;
-
-  /// How many replacements this edit actually applied (1 for
-  /// non-`global_replace`, N for `global_replace`).
   final int replacements;
+
+  int get matchedLine => startLine;
 }
 
-/// A line-anchored excerpt shown in
-/// [EditResult.nearMatches]. The model can re-`read` the
-/// suggested line range to get the exact bytes back.
-class EditNearMatch {
-  const EditNearMatch({required this.line, required this.preview});
-  final int line;
-  final String preview;
+enum TextFileEncoding { utf8, utf8Bom, utf16Le, utf16Be }
+
+class TextFileData {
+  const TextFileData({required this.text, required this.encoding});
+
+  final String text;
+  final TextFileEncoding encoding;
+
+  static TextFileData decode(List<int> bytes) {
+    if (bytes.length >= 3 &&
+        bytes[0] == 0xef &&
+        bytes[1] == 0xbb &&
+        bytes[2] == 0xbf) {
+      return TextFileData(
+        text: utf8.decode(bytes.sublist(3)),
+        encoding: TextFileEncoding.utf8Bom,
+      );
+    }
+    if (bytes.length >= 2 && bytes[0] == 0xff && bytes[1] == 0xfe) {
+      return TextFileData(
+        text: _decodeUtf16(bytes.sublist(2), littleEndian: true),
+        encoding: TextFileEncoding.utf16Le,
+      );
+    }
+    if (bytes.length >= 2 && bytes[0] == 0xfe && bytes[1] == 0xff) {
+      return TextFileData(
+        text: _decodeUtf16(bytes.sublist(2), littleEndian: false),
+        encoding: TextFileEncoding.utf16Be,
+      );
+    }
+    return TextFileData(
+      text: utf8.decode(bytes),
+      encoding: TextFileEncoding.utf8,
+    );
+  }
+
+  List<int> encode() {
+    switch (encoding) {
+      case TextFileEncoding.utf8:
+        return utf8.encode(text);
+      case TextFileEncoding.utf8Bom:
+        return [0xef, 0xbb, 0xbf, ...utf8.encode(text)];
+      case TextFileEncoding.utf16Le:
+        return [0xff, 0xfe, ..._encodeUtf16(text, littleEndian: true)];
+      case TextFileEncoding.utf16Be:
+        return [0xfe, 0xff, ..._encodeUtf16(text, littleEndian: false)];
+    }
+  }
+
+  static String _decodeUtf16(List<int> bytes, {required bool littleEndian}) {
+    if (bytes.length.isOdd) {
+      throw const FormatException('unsupported UTF-16 byte sequence');
+    }
+    final units = <int>[];
+    for (var i = 0; i < bytes.length; i += 2) {
+      units.add(
+        littleEndian
+            ? bytes[i] | (bytes[i + 1] << 8)
+            : (bytes[i] << 8) | bytes[i + 1],
+      );
+    }
+    return String.fromCharCodes(units);
+  }
+
+  static List<int> _encodeUtf16(String text, {required bool littleEndian}) {
+    final bytes = <int>[];
+    for (final unit in text.codeUnits) {
+      if (littleEndian) {
+        bytes.add(unit & 0xff);
+        bytes.add(unit >> 8);
+      } else {
+        bytes.add(unit >> 8);
+        bytes.add(unit & 0xff);
+      }
+    }
+    return bytes;
+  }
 }
 
-/// One match location shown in [EditResult.candidates].
-class EditCandidate {
-  const EditCandidate({required this.line, required this.preview});
-  final int line;
-  final String preview;
+class LineEditApplication {
+  const LineEditApplication({required this.text, required this.result});
+
+  final String text;
+  final EditResult result;
+}
+
+LineEditApplication applyLineEdits({
+  required String source,
+  required List<EditOp> edits,
+  required int sizeBefore,
+}) {
+  if (edits.isEmpty) {
+    return LineEditApplication(
+      text: source,
+      result: EditResult.error(
+        code: 'NO_EDITS',
+        message: 'edit requires at least one edit',
+        sizeBefore: sizeBefore,
+        sizeAfter: sizeBefore,
+      ),
+    );
+  }
+
+  final originalLines = _parseTextLines(source);
+  final lineCount = originalLines.length;
+  for (var i = 0; i < edits.length; i++) {
+    final edit = edits[i];
+    final end = edit.resolvedEndLine;
+    if (edit.startLine < 1) {
+      return LineEditApplication(
+        text: source,
+        result: EditResult.error(
+          code: 'INVALID_START_LINE',
+          message: 'start_line must be >= 1',
+          failedIndex: i,
+          startLine: edit.startLine,
+          endLine: end,
+          sizeBefore: sizeBefore,
+          sizeAfter: sizeBefore,
+        ),
+      );
+    }
+    if (end < edit.startLine) {
+      return LineEditApplication(
+        text: source,
+        result: EditResult.error(
+          code: 'INVALID_LINE_RANGE',
+          message: 'end_line must be greater than or equal to start_line',
+          failedIndex: i,
+          startLine: edit.startLine,
+          endLine: end,
+          sizeBefore: sizeBefore,
+          sizeAfter: sizeBefore,
+        ),
+      );
+    }
+    if (edit.startLine > lineCount || end > lineCount) {
+      return LineEditApplication(
+        text: source,
+        result: EditResult.error(
+          code: 'LINE_OUT_OF_RANGE',
+          message:
+              'line range $edit.startLine-$end is outside the file '
+              '(file has $lineCount lines)',
+          failedIndex: i,
+          startLine: edit.startLine,
+          endLine: end,
+          sizeBefore: sizeBefore,
+          sizeAfter: sizeBefore,
+        ),
+      );
+    }
+  }
+
+  for (var i = 0; i < edits.length; i++) {
+    for (var j = i + 1; j < edits.length; j++) {
+      final firstEnd = edits[i].resolvedEndLine;
+      final secondEnd = edits[j].resolvedEndLine;
+      if (edits[i].startLine <= secondEnd && edits[j].startLine <= firstEnd) {
+        return LineEditApplication(
+          text: source,
+          result: EditResult.error(
+            code: 'OVERLAPPING_EDITS',
+            message:
+                'edit ranges overlap: '
+                '${edits[i].startLine}-$firstEnd and '
+                '${edits[j].startLine}-$secondEnd',
+            failedIndex: j,
+            startLine: edits[j].startLine,
+            endLine: secondEnd,
+            sizeBefore: sizeBefore,
+            sizeAfter: sizeBefore,
+          ),
+        );
+      }
+    }
+  }
+
+  final order = List<int>.generate(edits.length, (i) => i)
+    ..sort((a, b) {
+      final start = edits[b].startLine.compareTo(edits[a].startLine);
+      if (start != 0) return start;
+      return edits[b].resolvedEndLine.compareTo(edits[a].resolvedEndLine);
+    });
+  final updatedLines = originalLines
+      .map((line) => _TextLine(line.content, line.ending))
+      .toList();
+  final diffs = List<EditDiffEntry?>.filled(edits.length, null);
+
+  for (final index in order) {
+    final edit = edits[index];
+    final start = edit.startLine - 1;
+    final end = edit.resolvedEndLine;
+    final oldLines = originalLines.sublist(start, end);
+    final oldPreview = _previewText(_renderTextLines(oldLines));
+    final replacement = _parseTextLines(edit.content, emptyAsLine: false);
+    if (replacement.isNotEmpty && replacement.last.ending.isEmpty) {
+      replacement.last.ending = originalLines[end - 1].ending;
+    }
+    updatedLines.replaceRange(start, end, replacement);
+    diffs[index] = EditDiffEntry(
+      editIndex: index,
+      startLine: edit.startLine,
+      endLine: end,
+      oldPreview: oldPreview,
+      newPreview: _previewText(edit.content),
+      replacements: end - edit.startLine + 1,
+    );
+  }
+
+  final updated = _renderTextLines(updatedLines);
+  return LineEditApplication(
+    text: updated,
+    result: EditResult.success(
+      applied: edits.length,
+      sizeBefore: sizeBefore,
+      sizeAfter: utf8.encode(updated).length,
+      diff: diffs.cast<EditDiffEntry>(),
+    ),
+  );
+}
+
+List<String> splitTextLines(String text) {
+  return _parseTextLines(text).map((line) => line.content).toList();
+}
+
+class _TextLine {
+  _TextLine(this.content, this.ending);
+
+  final String content;
+  String ending;
+}
+
+List<_TextLine> _parseTextLines(String text, {bool emptyAsLine = true}) {
+  if (text.isEmpty) {
+    return emptyAsLine ? [_TextLine('', '')] : <_TextLine>[];
+  }
+  final lines = <_TextLine>[];
+  var start = 0;
+  var i = 0;
+  while (i < text.length) {
+    final unit = text.codeUnitAt(i);
+    if (unit == 0x0a || unit == 0x0d) {
+      final ending =
+          unit == 0x0d && i + 1 < text.length && text.codeUnitAt(i + 1) == 0x0a
+          ? '\r\n'
+          : String.fromCharCode(unit);
+      lines.add(_TextLine(text.substring(start, i), ending));
+      i += ending.length;
+      start = i;
+      continue;
+    }
+    i += 1;
+  }
+  if (start < text.length) {
+    lines.add(_TextLine(text.substring(start), ''));
+  }
+  return lines;
+}
+
+String _renderTextLines(List<_TextLine> lines) {
+  final buffer = StringBuffer();
+  for (final line in lines) {
+    buffer
+      ..write(line.content)
+      ..write(line.ending);
+  }
+  return buffer.toString();
+}
+
+String _previewText(String text) {
+  var flat = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+  flat = flat.replaceAll('\n', '\\n');
+  if (flat.length > 120) flat = '${flat.substring(0, 120)}...';
+  return flat;
 }
 
 /// Parses a `working://...` URI into its relative path
