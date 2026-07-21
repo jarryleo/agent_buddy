@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:agent_buddy/services/chat_session_repository.dart';
+import 'package:agent_buddy/services/platform/windows_shell_resolver.dart';
 import 'package:agent_buddy/services/storage_service.dart';
 import 'package:agent_buddy/services/tool_service.dart';
 import 'package:agent_buddy/services/tools/run_command_tool.dart';
@@ -19,7 +20,18 @@ void main() {
     final tempDir = await Directory.systemTemp.createTemp('run_command_tool_');
     Hive.init(tempDir.path);
     addTearDown(() async {
-      await tempDir.delete(recursive: true);
+      // Windows sometimes holds a lingering handle on the temp
+      // dir when the prior test spawned a child process. Retry
+      // a few times before giving up — the tests themselves are
+      // passing; the failure is only in the cleanup.
+      for (var i = 0; i < 5; i++) {
+        try {
+          await tempDir.delete(recursive: true);
+          return;
+        } on FileSystemException {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+      }
     });
     final storage = StorageService();
     await storage.init();
@@ -88,6 +100,30 @@ void main() {
       expect(result[pathKey], isNotNull);
       expect(result[pathKey]!.isNotEmpty, isTrue);
     });
+
+    test('extraPaths come BEFORE the built-in standards', () {
+      if (!Platform.isWindows) return;
+      final result = buildShellEnvironment(
+        baseEnv: <String, String>{},
+        extraPaths: <String>[r'D:\custom\bin'],
+      );
+      final parts = (result['Path'] ?? '').split(';');
+      expect(parts.first, r'D:\custom\bin',
+          reason: 'extraPaths must precede the built-in standards');
+      expect(parts, contains(r'C:\Windows\System32'));
+    });
+
+    test('extraPaths win when they collide with the built-in standards',
+        () {
+      if (!Platform.isWindows) return;
+      final result = buildShellEnvironment(
+        baseEnv: <String, String>{},
+        extraPaths: <String>[r'C:\Windows\System32'],
+      );
+      final parts = (result['Path'] ?? '').split(';');
+      // No duplicates — `extraPaths` overlaps with a standard.
+      expect(parts.where((p) => p == r'C:\Windows\System32').length, 1);
+    });
   });
 
   group('RunCommandTool.execute', () {
@@ -143,6 +179,66 @@ void main() {
         stdout == '/tmp' || stdout == '/private/tmp',
         isTrue,
         reason: 'expected pwd to land in /tmp, got "$stdout"',
+      );
+    });
+
+    test('envelope carries the resolved shell label on Windows', () async {
+      if (!Platform.isWindows) return;
+      final tool = RunCommandTool();
+      final out = await tool.execute({
+        'command': 'echo hi',
+        'timeout_seconds': 5,
+      }, toolService);
+      final payload = jsonDecode(out) as Map<String, dynamic>;
+      expect(payload['exit_code'], 0);
+      // `shell` is one of bash / powershell / cmd depending on
+      // whatever the resolver picked for this host. Don't pin
+      // a specific label — different machines have different
+      // installs — but require the field to be present.
+      expect(payload['shell'], isIn(<String>['bash', 'powershell', 'cmd']));
+      expect(payload['duration_ms'], isA<int>());
+    });
+
+    test('uses the resolved shell when overridden via the test seam',
+        () async {
+      // Inject a fake resolver that always reports Git Bash at
+      // a path we know is real on Windows. This sidesteps the
+      // `where.exe` probe so the test stays deterministic on any
+      // machine (no real Git Bash install required for the
+      // assertion), while still letting us verify the tool picks
+      // up the right argv construction.
+      if (!Platform.isWindows) return;
+      final tool = RunCommandTool();
+      final fakeResolver = WindowsShellResolver(
+        shellProbe: (exe, args) async {
+          if (exe == 'where.exe' && args.contains('bash.exe')) {
+            return r'C:\Program Files\Git\bin\bash.exe';
+          }
+          return '';
+        },
+        fileSystem: (_) async => false,
+      );
+      final shell = await tool.debugResolveWindowsShell(
+        resolver: fakeResolver,
+      );
+      expect(shell.kind, WindowsShellKind.gitBash);
+      expect(shell.executable, r'C:\Program Files\Git\bin\bash.exe');
+      expect(shell.flagArg, '-c');
+      // The argv the tool would pass to Process.start. We don't
+      // actually spawn — we just verify the structure that bash
+      // would receive.
+      expect(shell.buildArgv(r'echo $PATH'), <String>[
+        '--noprofile',
+        '-c',
+        r'echo $PATH',
+      ]);
+      expect(
+        shell.pathAdditions,
+        containsAll(<String>[
+          r'C:\Program Files\Git\usr\bin',
+          r'C:\Program Files\Git\mingw64\bin',
+          r'C:\Program Files\Git\bin',
+        ]),
       );
     });
   });
