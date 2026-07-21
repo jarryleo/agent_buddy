@@ -53,8 +53,39 @@ class MessageMetrics {
 
   /// Estimated input tokens (system prompts + history + user
   /// message + attached file/image text) sent to the model.
-  /// Same heuristic as [outputTokens].
+  /// Same heuristic as [inputTokens].
   final int inputTokens;
+
+  /// Tokens the server reported as "uncached input" — i.e. the
+  /// tokens AFTER the last cache breakpoint that weren't covered
+  /// by a cache hit. `0` when the transport doesn't report usage
+  /// (OpenAI-protocol streaming, local LLM) or when the entire
+  /// prompt was cached.
+  ///
+  /// Overrides [inputTokens] when non-zero, so the bubble footer
+  /// shows the server's authoritative count instead of the
+  /// heuristic estimate.
+  final int cacheUncachedInputTokens;
+
+  /// Tokens the server wrote into a fresh cache entry on this
+  /// request (charged at the "cache write" rate, slightly higher
+  /// than the regular input rate). `0` on a fully-cached request.
+  ///
+  /// Only populated by the Anthropic-protocol transport; the
+  /// other transports leave it at `0`.
+  final int cacheCreationInputTokens;
+
+  /// Tokens the server reused from a pre-existing cache entry
+  /// on this request (charged at the discounted "cache read"
+  /// rate, ~5x cheaper than regular input). `0` on a cold
+  /// (cache-creation) request or when caching is disabled.
+  ///
+  /// Only populated by the Anthropic-protocol transport; the
+  /// other transports leave it at `0`. The bubble footer renders
+  /// a "⚡ cache hit N token" chip when this is non-zero, so the
+  /// user can see at a glance whether the prompt-cache is doing
+  /// its job.
+  final int cacheReadInputTokens;
 
   const MessageMetrics({
     required this.turnStartedAt,
@@ -62,6 +93,9 @@ class MessageMetrics {
     this.lastTokenAt,
     this.outputTokens = 0,
     this.inputTokens = 0,
+    this.cacheUncachedInputTokens = 0,
+    this.cacheCreationInputTokens = 0,
+    this.cacheReadInputTokens = 0,
   });
 
   /// Time-to-first-token (TTFT) measured from [turnStartedAt] to
@@ -87,12 +121,36 @@ class MessageMetrics {
     return outputTokens * 1000000.0 / d.inMicroseconds;
   }
 
+  /// True iff the provider reported a real per-request usage
+  /// for this turn (i.e. the Anthropic-protocol transport was
+  /// used AND the stream produced a `usage` event). When true,
+  /// [cacheUncachedInputTokens] is the authoritative input count
+  /// (overrides [inputTokens]) and [cacheReadInputTokens] is
+  /// meaningful.
+  bool get hasServerUsage =>
+      cacheUncachedInputTokens > 0 ||
+      cacheCreationInputTokens > 0 ||
+      cacheReadInputTokens > 0;
+
+  /// Total prompt-side tokens billed this turn: uncached input
+  /// + everything cached (write-on-cold, read-on-warm). Matches
+  /// the docs' "total_input_tokens = cache_read_input_tokens +
+  /// cache_creation_input_tokens + input_tokens" formula. Only
+  /// meaningful when [hasServerUsage] is true.
+  int get totalServerInputTokens =>
+      cacheUncachedInputTokens +
+      cacheCreationInputTokens +
+      cacheReadInputTokens;
+
   MessageMetrics copyWith({
     DateTime? turnStartedAt,
     DateTime? firstTokenAt,
     DateTime? lastTokenAt,
     int? outputTokens,
     int? inputTokens,
+    int? cacheUncachedInputTokens,
+    int? cacheCreationInputTokens,
+    int? cacheReadInputTokens,
   }) {
     return MessageMetrics(
       turnStartedAt: turnStartedAt ?? this.turnStartedAt,
@@ -100,6 +158,11 @@ class MessageMetrics {
       lastTokenAt: lastTokenAt ?? this.lastTokenAt,
       outputTokens: outputTokens ?? this.outputTokens,
       inputTokens: inputTokens ?? this.inputTokens,
+      cacheUncachedInputTokens:
+          cacheUncachedInputTokens ?? this.cacheUncachedInputTokens,
+      cacheCreationInputTokens:
+          cacheCreationInputTokens ?? this.cacheCreationInputTokens,
+      cacheReadInputTokens: cacheReadInputTokens ?? this.cacheReadInputTokens,
     );
   }
 
@@ -109,6 +172,12 @@ class MessageMetrics {
     if (lastTokenAt != null) 'lastTokenAt': lastTokenAt!.toIso8601String(),
     'outputTokens': outputTokens,
     'inputTokens': inputTokens,
+    // Only serialize cache fields when the server actually
+    // reported usage — keeps v1 records (no cache keys)
+    // round-trip identically.
+    if (hasServerUsage) 'cacheUncachedInputTokens': cacheUncachedInputTokens,
+    if (hasServerUsage) 'cacheCreationInputTokens': cacheCreationInputTokens,
+    if (hasServerUsage) 'cacheReadInputTokens': cacheReadInputTokens,
   };
 
   factory MessageMetrics.fromJson(Map<String, dynamic> json) {
@@ -120,6 +189,12 @@ class MessageMetrics {
       lastTokenAt: DateTime.tryParse(json['lastTokenAt'] as String? ?? ''),
       outputTokens: (json['outputTokens'] as num?)?.toInt() ?? 0,
       inputTokens: (json['inputTokens'] as num?)?.toInt() ?? 0,
+      cacheUncachedInputTokens:
+          (json['cacheUncachedInputTokens'] as num?)?.toInt() ?? 0,
+      cacheCreationInputTokens:
+          (json['cacheCreationInputTokens'] as num?)?.toInt() ?? 0,
+      cacheReadInputTokens:
+          (json['cacheReadInputTokens'] as num?)?.toInt() ?? 0,
     );
   }
 }

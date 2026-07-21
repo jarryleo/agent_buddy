@@ -104,6 +104,8 @@
   },
   "providerSupportedFileTypes": "Supported file types",
   "providerSupportedFileTypesHelper": "Picked files in these categories are sent inline to the model. Other files are forwarded as path-only references so the model can read them via the file tool.",
+  "providerPromptCache": "Prompt caching (cache_control)",
+  "providerPromptCacheHelper": "Tag static content (tool definitions, system prompt, recent messages) with Anthropic-style cache_control breakpoints so the model can reuse it across turns. Lower cost and faster TTFT on multi-turn chats. Requires the provider to support prompt caching (e.g. the MiniMax Anthropic-compatible endpoint).",
   "providerFileTypeText": "Text",
   "providerFileTypeImage": "Image",
   "providerFileTypeAudio": "Audio",
@@ -464,6 +466,13 @@
   "messageMetricTokensTotal": "{count}token",
   "@messageMetricTokensTotal": {
     "description": "Total token count for the assistant turn (input + output), prefixed in the UI with a Σ glyph. Sits at the far right of the bubble footer.",
+    "placeholders": {
+      "count": { "type": "String" }
+    }
+  },
+  "messageMetricCacheHit": "cache hit {count}token",
+  "@messageMetricCacheHit": {
+    "description": "Prefix cache hit indicator shown in the message-bubble footer when the Anthropic-protocol transport reuses cached prompt content. Suffix is the count of cache-read tokens; prefixed in the UI with a ⚡ glyph.",
     "placeholders": {
       "count": { "type": "String" }
     }

@@ -89,6 +89,11 @@ StreamEvent _toStreamEvent(OrchestratorEvent ev) {
       );
     case OrchestratorEventKind.error:
       return StreamEvent(type: 'error', error: ev.error);
+    case OrchestratorEventKind.usage:
+      // Sub-agent doesn't surface per-request usage in tests;
+      // forward any incoming event as a no-op so the switch
+      // stays exhaustive.
+      return const StreamEvent(type: 'usage');
     case OrchestratorEventKind.turnDone:
       return const StreamEvent(type: 'done', done: true);
   }

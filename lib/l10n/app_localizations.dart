@@ -542,6 +542,18 @@ abstract class AppLocalizations {
   /// **'Picked files in these categories are sent inline to the model. Other files are forwarded as path-only references so the model can read them via the file tool.'**
   String get providerSupportedFileTypesHelper;
 
+  /// No description provided for @providerPromptCache.
+  ///
+  /// In en, this message translates to:
+  /// **'Prompt caching (cache_control)'**
+  String get providerPromptCache;
+
+  /// No description provided for @providerPromptCacheHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'Tag static content (tool definitions, system prompt, recent messages) with Anthropic-style cache_control breakpoints so the model can reuse it across turns. Lower cost and faster TTFT on multi-turn chats. Requires the provider to support prompt caching (e.g. the MiniMax Anthropic-compatible endpoint).'**
+  String get providerPromptCacheHelper;
+
   /// No description provided for @providerFileTypeText.
   ///
   /// In en, this message translates to:
@@ -1931,6 +1943,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count}token'**
   String messageMetricTokensTotal(String count);
+
+  /// Prefix cache hit indicator shown in the message-bubble footer when the Anthropic-protocol transport reuses cached prompt content. Suffix is the count of cache-read tokens; prefixed in the UI with a ⚡ glyph.
+  ///
+  /// In en, this message translates to:
+  /// **'cache hit {count}token'**
+  String messageMetricCacheHit(String count);
 
   /// No description provided for @codeCopy.
   ///

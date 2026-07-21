@@ -28,6 +28,31 @@ class StreamEvent {
   final bool? toolSuccess;
   final String? toolError;
 
+  /// Per-turn token usage. Populated when type == 'usage' with
+  /// the cumulative counts reported by the provider:
+  ///   * [usageInputTokens] — uncached input tokens (i.e. the
+  ///     tokens AFTER the last cache breakpoint; the count the
+  ///     provider charges at the regular input rate).
+  ///   * [usageCacheCreationInputTokens] — tokens WRITTEN to a
+  ///     fresh cache entry on this request (charged at the
+  ///     "cache write" rate). 0 on a fully-cached request.
+  ///   * [usageCacheReadInputTokens] — tokens READ from a
+  ///     pre-existing cache entry on this request (charged at
+  ///     the discounted "cache read" rate). 0 on a cold
+  ///     (cache-creation) request.
+  ///   * [usageOutputTokens] — generated tokens (charged at
+  ///     the output rate).
+  ///
+  /// Currently only the Anthropic-protocol transport emits this
+  /// event (it surfaces the `usage` block carried by
+  /// `message_start` and updated by `message_delta`). The
+  /// OpenAI-protocol transport does not (OpenAI does not surface
+  /// per-request usage in the streaming channel).
+  final int? usageInputTokens;
+  final int? usageCacheCreationInputTokens;
+  final int? usageCacheReadInputTokens;
+  final int? usageOutputTokens;
+
   const StreamEvent({
     required this.type,
     this.text = '',
@@ -41,6 +66,10 @@ class StreamEvent {
     this.toolResult,
     this.toolSuccess,
     this.toolError,
+    this.usageInputTokens,
+    this.usageCacheCreationInputTokens,
+    this.usageCacheReadInputTokens,
+    this.usageOutputTokens,
   });
 
   factory StreamEvent.error(String msg) =>
@@ -69,6 +98,25 @@ class StreamEvent {
     toolResult: result,
     toolSuccess: success,
     toolError: error,
+  );
+
+  /// Emitted exactly once per assistant turn on transports that
+  /// surface per-request usage (currently only Anthropic). The
+  /// [usageOutputTokens] is the final value (streamed deltas
+  /// don't carry it; the value lands on the terminal `message_delta`
+  /// event). The cache fields reflect the state at the end of
+  /// the request.
+  factory StreamEvent.usage({
+    required int inputTokens,
+    required int cacheCreationInputTokens,
+    required int cacheReadInputTokens,
+    required int outputTokens,
+  }) => StreamEvent(
+    type: 'usage',
+    usageInputTokens: inputTokens,
+    usageCacheCreationInputTokens: cacheCreationInputTokens,
+    usageCacheReadInputTokens: cacheReadInputTokens,
+    usageOutputTokens: outputTokens,
   );
 }
 
@@ -336,6 +384,22 @@ class ApiService {
           break;
         case OrchestratorEventKind.error:
           yield StreamEvent(type: 'error', error: ev.error);
+          break;
+        case OrchestratorEventKind.usage:
+          // Forward the per-turn token usage as a
+          // [StreamEvent.usage]. Currently only the
+          // Anthropic-protocol transport populates it; OpenAI
+          // / local transports leave it null and the event is
+          // never emitted.
+          final u = ev.usage;
+          if (u != null) {
+            yield StreamEvent.usage(
+              inputTokens: u.inputTokens,
+              cacheCreationInputTokens: u.cacheCreationInputTokens,
+              cacheReadInputTokens: u.cacheReadInputTokens,
+              outputTokens: u.outputTokens,
+            );
+          }
           break;
         case OrchestratorEventKind.turnDone:
           // Internal sentinel; never forwarded to the chat UI.
@@ -649,6 +713,18 @@ class ApiService {
       } else if (ev.kind == OrchestratorEventKind.reasoning &&
           ev.thinkingDelta != null) {
         yield StreamEvent(type: 'reasoning', thinkingDelta: ev.thinkingDelta);
+      } else if (ev.kind == OrchestratorEventKind.usage && ev.usage != null) {
+        // Same usage forwarding as the orchestrator path so
+        // the single-turn chat (no tools wired up) still
+        // surfaces real per-request token usage + cache hits
+        // to the bubble footer.
+        final u = ev.usage!;
+        yield StreamEvent.usage(
+          inputTokens: u.inputTokens,
+          cacheCreationInputTokens: u.cacheCreationInputTokens,
+          cacheReadInputTokens: u.cacheReadInputTokens,
+          outputTokens: u.outputTokens,
+        );
       }
     }
     if (finalResult?.protocolError != null) {
@@ -669,22 +745,69 @@ class ApiService {
     required bool enableThinking,
     Set<AgentFileType>? inlineFileTypes,
   }) async* {
+    // Active prompt-cache toggle. The user opts in per provider
+    // (default off) — when off, every `cache_control` marker is
+    // suppressed and the wire is byte-identical to the
+    // pre-caching behaviour. When on, the layer below adds
+    // `cache_control: {type: ephemeral}` to the last tool, the
+    // last system block, and the last user-message block — see
+    // https://platform.minimaxi.com/docs/api-reference/anthropic-api-compatible-cache
+    // for the auto-prefix-matching rules.
+    final promptCacheEnabled = provider.promptCacheEnabled;
+
     final payload = <String, dynamic>{
       'model': model,
       'stream': true,
       'max_tokens': 4096,
-      'messages': _buildAnthropicMessages(history, inlineFileTypes),
+      'messages': _buildAnthropicMessages(
+        history,
+        inlineFileTypes,
+        promptCacheEnabled: promptCacheEnabled,
+      ),
     };
     if (enableThinking) {
       payload['thinking'] = {'type': 'enabled', 'budget_tokens': 2048};
     }
     if (systemPrompts != null && systemPrompts.isNotEmpty) {
-      payload['system'] = systemPrompts
-          .map((p) => {'type': 'text', 'text': p})
-          .toList();
+      if (!promptCacheEnabled) {
+        // Preserve the legacy flat-string wire format. The
+        // array-of-blocks form only carries cache_control
+        // markers; with caching off we want byte-identical
+        // compatibility with the pre-prompt-cache behaviour.
+        // Anthropic supports both shapes, so this is purely a
+        // compatibility choice (some downstream proxies / log
+        // shippers key off the flat-string variant).
+        payload['system'] = systemPrompts.join('\n\n');
+      } else {
+        // Anthropic's `system` field accepts either a plain
+        // string or an array of typed content blocks. The block
+        // form is the only way to attach `cache_control` to a
+        // specific system chunk, so when prompt caching is on
+        // we emit the block form. Per the MiniMax / Anthropic
+        // docs, "you only need a single cache breakpoint at the
+        // end of the static content and the system finds the
+        // longest matching prefix" — so we mark just the FINAL
+        // block; the server then walks back up to 20 blocks
+        // looking for a cache hit.
+        final blocks = <Map<String, dynamic>>[];
+        for (var i = 0; i < systemPrompts.length; i++) {
+          final block = <String, dynamic>{
+            'type': 'text',
+            'text': systemPrompts[i],
+          };
+          if (i == systemPrompts.length - 1) {
+            block['cache_control'] = const {'type': 'ephemeral'};
+          }
+          blocks.add(block);
+        }
+        payload['system'] = blocks;
+      }
     }
     if (tools != null && tools.isNotEmpty) {
-      payload['tools'] = _toAnthropicTools(tools);
+      payload['tools'] = _toAnthropicTools(
+        tools,
+        markLastForCache: promptCacheEnabled,
+      );
     }
 
     final req = http.Request('POST', Uri.parse(provider.fullChatUrl))
@@ -714,6 +837,16 @@ class ApiService {
     var currentThinkingSignature = '';
     var anyContent = false;
 
+    // Usage fields collected from the Anthropic stream. The
+    // server sends the cumulative input/cache counts on
+    // `message_start`, then updates `output_tokens` on the
+    // terminal `message_delta`. We track both so the final
+    // StreamEvent carries a complete picture.
+    var usageInputTokens = 0;
+    var usageCacheCreationInputTokens = 0;
+    var usageCacheReadInputTokens = 0;
+    var usageOutputTokens = 0;
+
     void emitContent(String chunk) {
       currentContent += chunk;
       anyContent = true;
@@ -736,6 +869,24 @@ class ApiService {
         final json = jsonDecode(data) as Map<String, dynamic>;
         final type = json['type'] as String?;
         switch (type) {
+          case 'message_start':
+            // The very first SSE event. Carries the initial
+            // input-token + cache-token counts in `message.usage`.
+            // Per the docs, the `output_tokens` field is also
+            // present but always 0 here — the server fills it in
+            // on the terminal `message_delta` instead.
+            final message = json['message'] as Map<String, dynamic>?;
+            final usage = message?['usage'] as Map<String, dynamic>?;
+            if (usage != null) {
+              usageInputTokens = (usage['input_tokens'] as num?)?.toInt() ?? 0;
+              usageCacheCreationInputTokens =
+                  (usage['cache_creation_input_tokens'] as num?)?.toInt() ?? 0;
+              usageCacheReadInputTokens =
+                  (usage['cache_read_input_tokens'] as num?)?.toInt() ?? 0;
+              usageOutputTokens =
+                  (usage['output_tokens'] as num?)?.toInt() ?? 0;
+            }
+            break;
           case 'content_block_start':
             final block = json['content_block'] as Map<String, dynamic>?;
             if (block != null && block['type'] == 'tool_use') {
@@ -777,9 +928,30 @@ class ApiService {
             }
             break;
           case 'message_delta':
+            // The server emits one or more `message_delta` events
+            // before `message_stop`. The `stop_reason` lands on
+            // the first one; the final usage snapshot (with the
+            // now-final `output_tokens`) lands on the LAST one.
             final delta = json['delta'] as Map<String, dynamic>?;
             if (delta != null && delta['stop_reason'] is String) {
               currentStopReason = delta['stop_reason'] as String;
+            }
+            final usage = json['usage'] as Map<String, dynamic>?;
+            if (usage != null) {
+              usageOutputTokens =
+                  (usage['output_tokens'] as num?)?.toInt() ??
+                  usageOutputTokens;
+              // The server also re-broadcasts input/cache counts
+              // here in some implementations; prefer them so the
+              // final tally is the server's most recent view.
+              usageInputTokens =
+                  (usage['input_tokens'] as num?)?.toInt() ?? usageInputTokens;
+              usageCacheCreationInputTokens =
+                  (usage['cache_creation_input_tokens'] as num?)?.toInt() ??
+                  usageCacheCreationInputTokens;
+              usageCacheReadInputTokens =
+                  (usage['cache_read_input_tokens'] as num?)?.toInt() ??
+                  usageCacheReadInputTokens;
             }
             break;
         }
@@ -841,22 +1013,59 @@ class ApiService {
     );
 
     if (currentStopReason == 'refusal') {
+      // Emit the per-turn usage first so callers that only
+      // listen for usage events (e.g. the single-turn chat
+      // path that bypasses the orchestrator) still see the
+      // snapshot.
+      yield OrchestratorEvent.usage(
+        TurnUsage(
+          inputTokens: usageInputTokens,
+          cacheCreationInputTokens: usageCacheCreationInputTokens,
+          cacheReadInputTokens: usageCacheReadInputTokens,
+          outputTokens: usageOutputTokens,
+        ),
+      );
       yield OrchestratorEvent.turnDone(
         TurnResult(
           assistantTurn: assistantTurn,
           protocolError: 'Response was refused by the API',
           emittedAnyContent: anyContent,
+          usage: TurnUsage(
+            inputTokens: usageInputTokens,
+            cacheCreationInputTokens: usageCacheCreationInputTokens,
+            cacheReadInputTokens: usageCacheReadInputTokens,
+            outputTokens: usageOutputTokens,
+          ),
         ),
       );
       return;
     }
 
+    // Surface the per-turn usage BEFORE the turnDone sentinel
+    // so callers (orchestrator AND single-turn path) see a
+    // live snapshot. The orchestrator captures this for its
+    // own re-emission; the single-turn path forwards it
+    // directly as a StreamEvent.usage.
+    yield OrchestratorEvent.usage(
+      TurnUsage(
+        inputTokens: usageInputTokens,
+        cacheCreationInputTokens: usageCacheCreationInputTokens,
+        cacheReadInputTokens: usageCacheReadInputTokens,
+        outputTokens: usageOutputTokens,
+      ),
+    );
     yield OrchestratorEvent.turnDone(
       TurnResult(
         assistantTurn: assistantTurn,
         toolCalls: parsedCalls,
         truncated: currentStopReason == 'max_tokens',
         emittedAnyContent: anyContent,
+        usage: TurnUsage(
+          inputTokens: usageInputTokens,
+          cacheCreationInputTokens: usageCacheCreationInputTokens,
+          cacheReadInputTokens: usageCacheReadInputTokens,
+          outputTokens: usageOutputTokens,
+        ),
       ),
     );
   }
@@ -872,7 +1081,12 @@ class ApiService {
   List<Map<String, dynamic>> buildAnthropicMessagesForTest(
     List<ChatRequestMessage> messages, [
     Set<AgentFileType>? inlineFileTypes,
-  ]) => _buildAnthropicMessages(messages, inlineFileTypes);
+    bool promptCacheEnabled = false,
+  ]) => _buildAnthropicMessages(
+    messages,
+    inlineFileTypes,
+    promptCacheEnabled: promptCacheEnabled,
+  );
 
   List<Map<String, dynamic>> _buildOpenAIMessages(
     List<ChatRequestMessage> messages,
@@ -991,10 +1205,13 @@ class ApiService {
 
   List<Map<String, dynamic>> _buildAnthropicMessages(
     List<ChatRequestMessage> messages,
-    Set<AgentFileType>? inlineFileTypes,
-  ) {
+    Set<AgentFileType>? inlineFileTypes, {
+    bool promptCacheEnabled = false,
+  }) {
     final out = <Map<String, dynamic>>[];
-    for (final m in messages) {
+    for (var i = 0; i < messages.length; i++) {
+      final m = messages[i];
+      final isLastMessage = i == messages.length - 1;
       switch (m.role) {
         case MessageRole.user:
           if (m.imageDataUrls.isNotEmpty || m.fileAttachments.isNotEmpty) {
@@ -1064,9 +1281,38 @@ class ApiService {
                 });
               }
             }
+            // Attach the cache breakpoint to the LAST block of
+            // the last message only. Per the docs, one marker
+            // on the trailing block is sufficient — the server
+            // walks back up to 20 blocks to find the longest
+            // matching prefix, so we don't need to mark earlier
+            // blocks. Marking earlier blocks would just waste
+            // one of the 4-breakpoint budget.
+            if (promptCacheEnabled && isLastMessage && parts.isNotEmpty) {
+              parts.last['cache_control'] = const {'type': 'ephemeral'};
+            }
             out.add({'role': 'user', 'content': parts});
           } else {
-            out.add({'role': 'user', 'content': m.content});
+            // Text-only user turn. Anthropic accepts a flat string
+            // for `content`, but to attach `cache_control` we have
+            // to convert to a single-block content array. Only do
+            // that conversion when caching is on AND this is the
+            // last message; otherwise the legacy flat-string wire
+            // format is preserved byte-for-byte.
+            if (promptCacheEnabled && isLastMessage) {
+              out.add({
+                'role': 'user',
+                'content': [
+                  {
+                    'type': 'text',
+                    'text': m.content,
+                    'cache_control': const {'type': 'ephemeral'},
+                  },
+                ],
+              });
+            } else {
+              out.add({'role': 'user', 'content': m.content});
+            }
           }
           break;
         case MessageRole.assistant:
@@ -1076,6 +1322,12 @@ class ApiService {
             // the `tool_use` entries) verbatim. Otherwise the
             // follow-up turn would have no record of what tools the
             // model asked us to call, and the API would 400.
+            // NOTE: we deliberately do NOT add `cache_control` to
+            // the assistant turn itself — assistant turns are the
+            // part that changes the most between rounds, so
+            // caching them would mostly invalidate the prefix
+            // anyway. The next user message's trailing block is
+            // a much better breakpoint.
             out.add({'role': 'assistant', 'content': m.anthropicContentBlocks});
           } else {
             out.add({'role': 'assistant', 'content': m.content});
@@ -1108,24 +1360,45 @@ class ApiService {
 
   /// Converts OpenAI-style tool schemas (`{type:'function', function:{name,...}}`)
   /// to Anthropic format (`{name, description, input_schema}`).
+  ///
+  /// When [markLastForCache] is true, attaches `cache_control: {type:
+  /// ephemeral}` to the LAST tool only. Per the MiniMax / Anthropic
+  /// docs, "you only need a single cache breakpoint at the end of the
+  /// static content and the system finds the longest matching prefix"
+  /// — so a single marker on the last tool is enough for the tools +
+  /// system + earlier-messages prefix to be reused across turns.
   List<Map<String, dynamic>> _toAnthropicTools(
-    List<Map<String, dynamic>> openaiTools,
-  ) {
-    return openaiTools.map((t) {
-      final fn = t['function'] as Map<String, dynamic>?;
-      if (fn != null) {
-        return <String, dynamic>{
-          'name': fn['name'] ?? '',
-          'description': fn['description'] ?? '',
-          'input_schema':
-              fn['parameters'] ??
-              {'type': 'object', 'properties': <String, dynamic>{}},
-        };
-      }
-      // If the tool is already in Anthropic format (no `function` wrapper),
-      // pass it through directly.
-      return t;
-    }).toList();
+    List<Map<String, dynamic>> openaiTools, {
+    bool markLastForCache = false,
+  }) {
+    final lastIndex = openaiTools.isEmpty ? -1 : openaiTools.length - 1;
+    return [
+      for (var i = 0; i < openaiTools.length; i++)
+        (() {
+          final t = openaiTools[i];
+          final fn = t['function'] as Map<String, dynamic>?;
+          final Map<String, dynamic> out;
+          if (fn != null) {
+            out = <String, dynamic>{
+              'name': fn['name'] ?? '',
+              'description': fn['description'] ?? '',
+              'input_schema':
+                  fn['parameters'] ??
+                  {'type': 'object', 'properties': <String, dynamic>{}},
+            };
+          } else {
+            // If the tool is already in Anthropic format (no
+            // `function` wrapper), pass it through directly via a
+            // shallow copy so we don't mutate the caller's map when
+            // we attach cache_control.
+            out = Map<String, dynamic>.from(t);
+          }
+          if (markLastForCache && i == lastIndex) {
+            out['cache_control'] = const {'type': 'ephemeral'};
+          }
+          return out;
+        })(),
+    ];
   }
 
   void _applyOpenAIThinking(

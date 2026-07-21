@@ -12,6 +12,7 @@ enum OrchestratorEventKind {
   content,
   reasoning,
   error,
+  usage,
   turnDone,
 }
 
@@ -28,6 +29,13 @@ class OrchestratorEvent {
   final String? error;
   final TurnResult? turnResult;
 
+  /// Per-turn token usage, lifted off the latest `turnDone`
+  /// payload when present. Only the Anthropic-protocol
+  /// transport populates it today; the rest stays null and the
+  /// chat UI falls back to its heuristic token estimate. See
+  /// [TurnUsage] for the field semantics.
+  final TurnUsage? usage;
+
   const OrchestratorEvent._({
     required this.kind,
     this.toolId,
@@ -40,14 +48,21 @@ class OrchestratorEvent {
     this.contentDelta,
     this.error,
     this.turnResult,
+    this.usage,
   });
 
   /// Const-friendly sentinel constructor. The redirecting
   /// `const factory` above uses this to allow `const
   /// OrchestratorEvent.turnDone(...)` in tests and other constant
   /// contexts.
-  const OrchestratorEvent._turnDoneSentinel(TurnResult result)
-    : this._(kind: OrchestratorEventKind.turnDone, turnResult: result);
+  const OrchestratorEvent._turnDoneSentinel(
+    TurnResult result, {
+    TurnUsage? usage,
+  }) : this._(
+         kind: OrchestratorEventKind.turnDone,
+         turnResult: result,
+         usage: usage,
+       );
 
   factory OrchestratorEvent.toolStart({
     required String id,
@@ -88,9 +103,19 @@ class OrchestratorEvent {
   factory OrchestratorEvent.error(String error) =>
       OrchestratorEvent._(kind: OrchestratorEventKind.error, error: error);
 
+  /// Forwarded to the chat UI as a `StreamEvent.usage` so the
+  /// message-bubble footer can show real cache-hit numbers
+  /// instead of the heuristic estimate. Currently only the
+  /// Anthropic-protocol transport emits this.
+  factory OrchestratorEvent.usage(TurnUsage usage) =>
+      OrchestratorEvent._(kind: OrchestratorEventKind.usage, usage: usage);
+
   /// Sentinel: the per-round generator is done and produced a
   /// [TurnResult]. The orchestrator uses this to know when to stop
   /// listening to the round stream and start executing tools.
+  /// The optional [usage] is surfaced by the orchestrator as a
+  /// separate `usage` event before the sentinel so the chat UI
+  /// sees the live token counts.
   const factory OrchestratorEvent.turnDone(TurnResult result) =
       OrchestratorEvent._turnDoneSentinel;
 }
@@ -127,13 +152,59 @@ class TurnResult {
   /// model probably won't be able to answer either.
   final bool emittedAnyContent;
 
+  /// Per-turn token usage as reported by the provider. Only the
+  /// Anthropic-protocol transport populates this (OpenAI does not
+  /// surface per-request usage on the streaming channel); for the
+  /// other transports it stays null and the chat UI falls back to
+  /// its heuristic token estimate.
+  final TurnUsage? usage;
+
   const TurnResult({
     this.assistantTurn,
     this.toolCalls = const [],
     this.protocolError,
     this.truncated = false,
     this.emittedAnyContent = false,
+    this.usage,
   });
+}
+
+/// Per-turn token usage, surfaced by transports that report it
+/// (today: only the Anthropic-protocol cloud transport — the
+/// OpenAI-protocol transport and the local LLM don't report
+/// per-request usage on the streaming channel).
+///
+/// The shape mirrors the `usage` block the Anthropic / MiniMax
+/// server emits on `message_start` (and updates on
+/// `message_delta`): split into the four buckets the docs
+/// describe — uncached input, cache-write, cache-read, output.
+/// See
+/// https://platform.minimaxi.com/docs/api-reference/anthropic-api-compatible-cache
+/// for the cost/latency semantics of each.
+class TurnUsage {
+  final int inputTokens;
+  final int cacheCreationInputTokens;
+  final int cacheReadInputTokens;
+  final int outputTokens;
+
+  const TurnUsage({
+    required this.inputTokens,
+    required this.cacheCreationInputTokens,
+    required this.cacheReadInputTokens,
+    required this.outputTokens,
+  });
+
+  /// Total prompt-side tokens billed this turn: uncached input
+  /// + everything cached (write-on-cold, read-on-warm). Matches
+  /// the docs' "total_input_tokens = cache_read_input_tokens +
+  /// cache_creation_input_tokens + input_tokens" formula.
+  int get totalInputTokens =>
+      inputTokens + cacheCreationInputTokens + cacheReadInputTokens;
+
+  /// True iff the prompt hit at least one cache entry on this
+  /// turn (i.e. the server reused something instead of writing
+  /// the entire prompt from scratch).
+  bool get cacheHit => cacheReadInputTokens > 0;
 }
 
 class ParsedToolCall {
@@ -240,14 +311,38 @@ class ToolOrchestrator {
         return;
       }
       // Run one round: live-forward every event; the final
-      // `turnDone` carries the parsed [TurnResult].
+      // `turnDone` carries the parsed [TurnResult]. Each round
+      // also reports its own per-request usage (today: only the
+      // Anthropic-protocol transport does). We track only the
+      // LATEST round's usage so the chat UI sees the snapshot
+      // from the final, content-bearing turn — earlier tool-call
+      // rounds tend to be partial / discarded once the tool
+      // result comes back, so their usage is less meaningful for
+      // the bubble footer.
       TurnResult? turn;
+      TurnUsage? turnUsage;
       await for (final ev in runOneTurn(history)) {
         if (ev.kind == OrchestratorEventKind.turnDone) {
           turn = ev.turnResult;
+          turnUsage = ev.usage;
+        } else if (ev.kind == OrchestratorEventKind.usage && ev.usage != null) {
+          // The Anthropic protocol layer surfaces a one-shot
+          // `usage` event right before `turnDone`. Capture the
+          // latest so we can re-emit it AFTER all tool rounds
+          // finish (the final payload is the one the chat UI
+          // cares about for the message-bubble footer).
+          turnUsage = ev.usage;
         } else {
           yield ev;
         }
+      }
+      // Forward the per-turn usage to the chat UI so the
+      // bubble footer can show real cache-hit numbers. We
+      // emit AFTER the inner stream completes (rather than
+      // immediately on the inner usage event) so callers see
+      // a stable "final of this turn" snapshot.
+      if (turnUsage != null) {
+        yield OrchestratorEvent.usage(turnUsage);
       }
       if (turn == null) {
         // The round stream closed without a turnDone sentinel —

@@ -552,6 +552,24 @@ class LocalLlmService extends ChangeNotifier {
               case OrchestratorEventKind.error:
                 outbound.add(StreamEvent(type: 'error', error: ev.error));
                 break;
+              case OrchestratorEventKind.usage:
+                // Local LLM transport doesn't surface per-request
+                // usage (llama.cpp has no "cache_read" concept).
+                // Forward any usage event unchanged so the chat UI
+                // stays switch-compatible, but expect this branch
+                // to be unreachable in practice.
+                final u = ev.usage;
+                if (u != null) {
+                  outbound.add(
+                    StreamEvent.usage(
+                      inputTokens: u.inputTokens,
+                      cacheCreationInputTokens: u.cacheCreationInputTokens,
+                      cacheReadInputTokens: u.cacheReadInputTokens,
+                      outputTokens: u.outputTokens,
+                    ),
+                  );
+                }
+                break;
               case OrchestratorEventKind.turnDone:
                 // Internal sentinel; never forwarded to the chat UI.
                 break;

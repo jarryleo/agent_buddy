@@ -248,6 +248,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Picked files in these categories are sent inline to the model. Other files are forwarded as path-only references so the model can read them via the file tool.';
 
   @override
+  String get providerPromptCache => 'Prompt caching (cache_control)';
+
+  @override
+  String get providerPromptCacheHelper =>
+      'Tag static content (tool definitions, system prompt, recent messages) with Anthropic-style cache_control breakpoints so the model can reuse it across turns. Lower cost and faster TTFT on multi-turn chats. Requires the provider to support prompt caching (e.g. the MiniMax Anthropic-compatible endpoint).';
+
+  @override
   String get providerFileTypeText => 'Text';
 
   @override
@@ -1044,6 +1051,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String messageMetricTokensTotal(String count) {
     return '${count}token';
+  }
+
+  @override
+  String messageMetricCacheHit(String count) {
+    return 'cache hit ${count}token';
   }
 
   @override

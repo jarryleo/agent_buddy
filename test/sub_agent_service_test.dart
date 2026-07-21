@@ -786,6 +786,13 @@ StreamEvent _toStreamEventForTest(OrchestratorEvent ev) {
       );
     case OrchestratorEventKind.error:
       return StreamEvent(type: 'error', error: ev.error);
+    case OrchestratorEventKind.usage:
+      // Sub-agent runs don't surface per-request usage (today
+      // only the Anthropic cloud transport does, and even there
+      // the sub-agent runs don't forward it). Forward any
+      // incoming usage event as a no-op StreamEvent so the
+      // switch stays exhaustive.
+      return const StreamEvent(type: 'usage');
     case OrchestratorEventKind.turnDone:
       return const StreamEvent(type: 'done', done: true);
   }

@@ -35,6 +35,14 @@ class _AddProviderPageState extends State<AddProviderPage> {
   /// persisted set so the user doesn't lose what they had.
   late Set<AgentFileType> _supportedFileTypes;
 
+  /// Whether to attach Anthropic-style `cache_control` markers
+  /// to the wire payload when the active protocol is Anthropic.
+  /// Defaults to `false` (matches the persisted model default).
+  /// Only relevant for [ProviderProtocol.anthropic]; the form
+  /// hides the toggle for OpenAI-protocol providers since
+  /// OpenAI does not honour cache_control on its wire format.
+  late bool _promptCacheEnabled;
+
   @override
   void initState() {
     super.initState();
@@ -53,6 +61,7 @@ class _AddProviderPageState extends State<AddProviderPage> {
     _supportedFileTypes = p == null
         ? {...kDefaultSupportedFileTypes}
         : {...p.effectiveSupportedFileTypes};
+    _promptCacheEnabled = p?.promptCacheEnabled ?? false;
   }
 
   @override
@@ -172,6 +181,7 @@ class _AddProviderPageState extends State<AddProviderPage> {
           models: _models,
           selectedModel: _selectedModel,
           supportedFileTypes: supportedSnapshot,
+          promptCacheEnabled: _promptCacheEnabled,
         ),
       );
     } else {
@@ -184,6 +194,7 @@ class _AddProviderPageState extends State<AddProviderPage> {
         models: _models,
         selectedModel: _selectedModel,
         supportedFileTypes: supportedSnapshot,
+        promptCacheEnabled: _promptCacheEnabled,
       );
       await widget.settings.updateProvider(updated);
     }
@@ -285,6 +296,19 @@ class _AddProviderPageState extends State<AddProviderPage> {
                 _supportedFileTypes = next;
               }),
             ),
+            // Anthropic-only: prompt-cache (cache_control) toggle.
+            // Hidden for the OpenAI protocol — OpenAI doesn't
+            // honour cache_control on its wire format, so the
+            // toggle would be meaningless / confusing.
+            if (_protocol == ProviderProtocol.anthropic) ...[
+              const SizedBox(height: 14),
+              _PromptCacheSwitch(
+                value: _promptCacheEnabled,
+                onChanged: (v) => setState(() {
+                  _promptCacheEnabled = v;
+                }),
+              ),
+            ],
             SizedBox(height: 16),
             Row(
               children: [
@@ -568,6 +592,60 @@ class _FileTypeChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Prompt-cache toggle for the Anthropic protocol. Switches
+/// the [ModelProvider.promptCacheEnabled] flag on / off; the
+/// wire layer reads it when building the Anthropic payload
+/// and attaches `cache_control: {type: ephemeral}` to the last
+/// tool / system / user-message block.
+///
+/// No-op for the OpenAI protocol (the toggle is hidden on the
+/// AddProviderPage for that protocol). Defaults to off so
+/// legacy OpenAI-compatible providers that silently drop
+/// unknown fields keep behaving identically.
+class _PromptCacheSwitch extends StatelessWidget {
+  const _PromptCacheSwitch({required this.value, required this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _Label(text: l10n.providerPromptCache),
+        SwitchListTile.adaptive(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 2),
+          value: value,
+          onChanged: onChanged,
+          // Compress the default SwitchListTile vertical padding
+          // — the toggle row sits between the supported-file-types
+          // editor and the test/fetch button row, and the default
+          // 24px+ padding makes the form noticeably taller.
+          dense: true,
+          visualDensity: VisualDensity.compact,
+          title: Text(
+            l10n.providerPromptCache,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              l10n.providerPromptCacheHelper,
+              style: TextStyle(
+                fontSize: 11,
+                color: context.textSecondary,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

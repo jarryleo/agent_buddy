@@ -83,6 +83,32 @@ class ModelProvider {
   /// to the image-only default so today's behavior is unchanged.
   final Set<AgentFileType>? supportedFileTypes;
 
+  /// Whether to attach Anthropic-style `cache_control` blocks to
+  /// the wire payload when the active protocol supports it.
+  ///
+  /// Off by default so legacy OpenAI-compatible providers (which
+  /// silently drop unknown fields) keep behaving the same. When
+  /// the provider points at the MiniMax Anthropic-compatible
+  /// endpoint (or any other Anthropic-protocol gateway that has
+  /// prompt caching enabled), flipping this on instructs
+  /// `ApiService` to tag the last tool definition, the last
+  /// system block, and the last user-message block with
+  /// `{"type": "ephemeral"}` — see
+  /// https://platform.minimaxi.com/docs/api-reference/anthropic-api-compatible-cache.
+  ///
+  /// Cost/latency tradeoff:
+  ///   * First request — small extra cost (the cache-control
+  ///     markers themselves are tiny; the cached content is
+  ///     written once at "cache write" pricing).
+  ///   * Subsequent requests inside the 5-minute TTL — much lower
+  ///     per-token cost ("cache read" pricing ≈ 5x cheaper than
+  ///     regular input) and noticeably faster TTFT.
+  ///   * Outside the 5-minute TTL — first request cost again.
+  ///
+  /// No-op for the OpenAI / local paths; the wire layer only
+  /// honours it on the Anthropic protocol.
+  final bool promptCacheEnabled;
+
   ModelProvider({
     required this.id,
     required this.name,
@@ -94,6 +120,7 @@ class ModelProvider {
     this.enabled = true,
     this.selectedModel,
     this.supportedFileTypes,
+    this.promptCacheEnabled = false,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -127,6 +154,7 @@ class ModelProvider {
     bool? enabled,
     String? selectedModel,
     Object? supportedFileTypes = _sentinel,
+    bool? promptCacheEnabled,
   }) {
     return ModelProvider(
       id: id,
@@ -141,6 +169,7 @@ class ModelProvider {
       supportedFileTypes: identical(supportedFileTypes, _sentinel)
           ? this.supportedFileTypes
           : supportedFileTypes as Set<AgentFileType>?,
+      promptCacheEnabled: promptCacheEnabled ?? this.promptCacheEnabled,
       createdAt: createdAt,
     );
   }
@@ -171,6 +200,10 @@ class ModelProvider {
                 ..sort((a, b) => a.index.compareTo(b.index)))
               .map((e) => e.name)
               .toList(),
+    // Only serialize when true so v1 records (no
+    // `promptCacheEnabled` key) round-trip identically. Default
+    // on read is `false`.
+    if (promptCacheEnabled) 'promptCacheEnabled': true,
     'createdAt': createdAt.toIso8601String(),
   };
 
@@ -209,6 +242,7 @@ class ModelProvider {
       enabled: json['enabled'] as bool? ?? true,
       selectedModel: json['selectedModel'] as String?,
       supportedFileTypes: parsed,
+      promptCacheEnabled: json['promptCacheEnabled'] as bool? ?? false,
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.now(),

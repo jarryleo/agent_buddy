@@ -242,6 +242,13 @@ class AppLocalizationsZh extends AppLocalizations {
       '选中的文件类型会以原始内容直接发给模型;其他类型只会把路径告诉模型,模型需要时通过 file 工具读取。';
 
   @override
+  String get providerPromptCache => '主动缓存(cache_control)';
+
+  @override
+  String get providerPromptCacheHelper =>
+      '在静态内容(工具定义、系统提示、最近的消息)上加 Anthropic 风格的 cache_control 断点,让模型在多轮对话中复用。降低费用并缩短首字延迟。要求提供商支持主动缓存(如 MiniMax 的 Anthropic 兼容接口)。';
+
+  @override
   String get providerFileTypeText => '文本';
 
   @override
@@ -999,6 +1006,11 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String messageMetricTokensTotal(String count) {
     return '${count}token';
+  }
+
+  @override
+  String messageMetricCacheHit(String count) {
+    return '命中缓存 ${count}token';
   }
 
   @override

@@ -1221,6 +1221,26 @@ class _MessageBubbleState extends State<MessageBubble> {
       ]);
     }
 
+    // Cache-hit chip. Only emitted by the Anthropic-protocol
+    // transport (other transports leave the cache fields at 0,
+    // so `hasServerUsage` is false and we skip it). When the
+    // server reports a `cache_read_input_tokens > 0` on this
+    // turn we render a `⚡ cache hit N token` chip right before
+    // the Σ total so the user can see at a glance whether the
+    // prompt-cache toggle is doing its job. Skipped silently
+    // when there's nothing to show.
+    if (metrics.hasServerUsage && metrics.cacheReadInputTokens > 0) {
+      chips.addAll([
+        const SizedBox(width: 8),
+        Text('⚡', style: chipTextStyle),
+        const SizedBox(width: 2),
+        Text(
+          l10n.messageMetricCacheHit(metrics.cacheReadInputTokens.toString()),
+          style: chipTextStyle,
+        ),
+      ]);
+    }
+
     return chips;
   }
 

@@ -2417,6 +2417,16 @@ class ChatProvider extends ChangeNotifier {
     var lastTokenAt = null as DateTime?;
     var outputTokens = 0;
 
+    // Server-reported usage (Anthropic-protocol transport only).
+    // We track these separately from the heuristic `inputTokens`
+    // above because the server's count is authoritative — when
+    // both are available, the bubble footer prefers the server's
+    // tally. `usageCacheReadInputTokens > 0` also drives the
+    // "⚡ cache hit" chip in the bubble footer.
+    var usageUncachedInputTokens = 0;
+    var usageCacheCreationInputTokens = 0;
+    var usageCacheReadInputTokens = 0;
+
     final completer = Completer<_TurnOutcome>();
     StreamSubscription<StreamEvent>? sub;
     final controller = StreamController<void>();
@@ -2655,6 +2665,57 @@ class ChatProvider extends ChangeNotifier {
             outputTokens += estimateTokens(event.contentDelta!);
             controller.add(null);
           }
+        } else if (event.type == 'usage') {
+          // Anthropic-protocol transport surfaces real per-turn
+          // usage at the end of the request (input + cache_read +
+          // cache_creation + output). When this lands, replace
+          // the heuristic `inputTokens` estimate with the
+          // authoritative server count, and persist the cache
+          // breakdown so the bubble footer can render a
+          // "⚡ cache hit N token" chip. Only the LATEST usage
+          // matters — the orchestrator may emit one per
+          // tool-call round, but the chat UI shows only the
+          // snapshot from the final, content-bearing turn.
+          final s = _activeSession;
+          // Cache the latest server-reported counts in local
+          // closure variables so the final [MessageMetrics]
+          // writeback at the end of the stream includes them
+          // (even if the very last event is a `done` rather
+          // than a fresh `usage`).
+          usageUncachedInputTokens =
+              event.usageInputTokens ?? usageUncachedInputTokens;
+          usageCacheCreationInputTokens =
+              event.usageCacheCreationInputTokens ??
+              usageCacheCreationInputTokens;
+          usageCacheReadInputTokens =
+              event.usageCacheReadInputTokens ?? usageCacheReadInputTokens;
+          if (s != null) {
+            _replaceMessages([
+              for (final mm in s.messages)
+                if (mm.id == assistantId)
+                  mm.copyWith(
+                    metrics: MessageMetrics(
+                      turnStartedAt: turnStartedAt,
+                      firstTokenAt: firstTokenAt,
+                      lastTokenAt: lastTokenAt,
+                      inputTokens: inputTokens,
+                      outputTokens: outputTokens,
+                      cacheUncachedInputTokens: usageUncachedInputTokens,
+                      cacheCreationInputTokens: usageCacheCreationInputTokens,
+                      cacheReadInputTokens: usageCacheReadInputTokens,
+                    ),
+                  )
+                else
+                  mm,
+            ]);
+            // Sync the running heuristic counters to the
+            // server's authoritative counts so the final
+            // metrics object (written after the stream closes)
+            // stays consistent with what we just persisted.
+            inputTokens = event.usageInputTokens ?? inputTokens;
+            outputTokens = event.usageOutputTokens ?? outputTokens;
+            controller.add(null);
+          }
         } else if (event.type == 'error') {
           // Cloud path: classify as transient BEFORE writing
           // the error to the bubble. A retryable error flips
@@ -2776,6 +2837,14 @@ class ChatProvider extends ChangeNotifier {
         lastTokenAt: lastTokenAt,
         outputTokens: outputTokens,
         inputTokens: inputTokens,
+        // The Anthropic-protocol transport populates these via
+        // its `usage` event; OpenAI / local transports leave
+        // them at 0 so hasServerUsage stays false and the
+        // bubble footer falls back to the heuristic input
+        // total.
+        cacheUncachedInputTokens: usageUncachedInputTokens,
+        cacheCreationInputTokens: usageCacheCreationInputTokens,
+        cacheReadInputTokens: usageCacheReadInputTokens,
       );
       _replaceMessages([
         for (final m in s.messages)
