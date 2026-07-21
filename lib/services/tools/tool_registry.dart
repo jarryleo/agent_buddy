@@ -21,6 +21,7 @@ import 'google_sheet_tool.dart';
 import 'search_tool.dart';
 import 'sub_agent_tool.dart';
 import 'edit_image_tool.dart';
+import 'todo_tool.dart';
 
 /// Central registry that maps tool [id] to [ToolBase] instances.
 ///
@@ -84,6 +85,12 @@ class ToolRegistry {
 
     // External services — third-party APIs the user signs into.
     GoogleSheetTool(),
+
+    // Per-conversation task list (auto-supervision). Available on
+    // every platform; the chat provider owns the per-session
+    // state and the tool itself just declares the schema + routes
+    // calls back into the provider.
+    TodoTool(),
 
     // MCP (Model Context Protocol) — dynamic external tool registration.
     McpTool(),

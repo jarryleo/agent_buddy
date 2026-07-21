@@ -669,6 +669,10 @@ class AppLocalizationsZh extends AppLocalizations {
       '处理用户上传的图片:压缩体积、裁剪区域、调整分辨率、旋转、转换为圆形 / 圆角(透明背景)、左右或上下翻转、转换图片格式。每次调用都在临时目录处理副本,绝不修改原图。';
 
   @override
+  String get toolDescTodo =>
+      '维护本轮对话的任务清单 —— 多步任务开始前生成,每完成一项勾选一项。清单会显示在输入框上方,模型在对话停下来但任务还没全部完成时会自动被唤醒继续。';
+
+  @override
   String get toolNameFetchWeb => 'Fetch Web';
 
   @override
@@ -730,6 +734,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get toolNameEditImage => '编辑图片';
+
+  @override
+  String get toolNameTodo => '任务清单';
 
   @override
   String get downloadStatusPending => '等待中…';
@@ -1462,4 +1469,52 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get googleSheetStatusError => '授权出错';
+
+  @override
+  String get todoPanelTitle => '任务清单';
+
+  @override
+  String todoProgress(int done, int total) {
+    return '$done/$total';
+  }
+
+  @override
+  String get todoAllDonePlain => '所有任务已完成';
+
+  @override
+  String todoAllDoneWithTitle(String title) {
+    return '任务「$title」全部完成';
+  }
+
+  @override
+  String get todoAbandonTooltip => '放弃任务清单';
+
+  @override
+  String get todoAbandonTitle => '放弃任务清单?';
+
+  @override
+  String get todoAbandonMessage => '当前任务清单将被清空,模型也不会再被自动唤醒继续。聊天记录会保留。';
+
+  @override
+  String get todoAbandonConfirm => '放弃';
+
+  @override
+  String get todoSupervisionPending => '监督中,稍后将自动唤醒模型…';
+
+  @override
+  String get todoSupervisionUserStopped => '已暂停监督 —— 发条新消息即可继续。';
+
+  @override
+  String get todoSupervisionCapped => '已达最大自动唤醒次数,请发条消息提醒模型。';
+
+  @override
+  String todoSupervisionPrompt(
+    String titleHint,
+    int completed,
+    int total,
+    int pendingCount,
+    String pendingSummary,
+  ) {
+    return '[任务监督] 当前任务清单 $titleHint已完成 $completed/$total 项,还有 $pendingCount 项待完成:\n$pendingSummary\n\n请继续完成剩下的任务,每完成一项就 todo(action=\"complete\", id=\"<id>\") 勾掉。如果无法继续(外部系统阻塞、缺信息等),调用 todo(action=\"clear\") 并向用户解释原因。';
+  }
 }

@@ -15,6 +15,7 @@ import '../widgets/chat_input.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/no_focus_icon_button.dart';
 import '../widgets/session_manager_sheet.dart';
+import '../widgets/todo_list_panel.dart';
 import 'auto_scroll_policy.dart';
 import 'settings_page.dart';
 
@@ -338,6 +339,7 @@ class _HomePageState extends State<HomePage> {
               // Selector-style wrapper isn't worth the boilerplate
               // here, but we DO use `read` (not `watch`) so the
               // input widget doesn't rebuild on settings changes.
+              const _TodoListPanelSlot(),
               _ChatInputArea(
                 chat: chat,
                 sending: sending,
@@ -623,5 +625,35 @@ class _LocalModelStatusBar extends StatelessWidget {
     }
 
     return const SizedBox.shrink();
+  }
+}
+
+/// Thin slot that renders the per-session [TodoListPanel] above
+/// the chat input. Kept as a separate `StatelessWidget` (not
+/// inlined in `_HomePageState.build`) so it can call
+/// `Consumer<ChatProvider>` on its own — only the panel
+/// rebuilds when the todo list mutates, not the whole home
+/// page. Also publishes the BuildContext to the chat provider
+/// as a fallback for the supervision-prompt path
+/// (`ChatProvider._fireSupervisionPrompt`), which needs a
+/// `BuildContext` to read localized strings even when no
+/// user-initiated send has populated `_cachedContext` yet.
+class _TodoListPanelSlot extends StatelessWidget {
+  const _TodoListPanelSlot();
+
+  @override
+  Widget build(BuildContext context) {
+    // Push the live context into the chat provider so the
+    // supervision-resume path (which fires from a Timer
+    // callback) can read l10n strings. Re-attaches on every
+    // build, which is cheap (one assignment) and keeps the
+    // snapshot fresh.
+    final chat = context.read<ChatProvider>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (context.mounted) chat.setRootContext(context);
+    });
+    return Consumer<ChatProvider>(
+      builder: (context, chat, child) => const TodoListPanel(),
+    );
   }
 }

@@ -1326,6 +1326,12 @@ abstract class AppLocalizations {
   /// **'Edit an image the user uploaded in this chat: compress, crop, resize, rotate, convert to circle / rounded-corner mask, flip horizontally / vertically, or change format. Each call processes a copy in the temp directory — the original is never modified.'**
   String get toolDescEditImage;
 
+  /// No description provided for @toolDescTodo.
+  ///
+  /// In en, this message translates to:
+  /// **'Maintain a per-conversation task list — create it at the start of a multi-step task, tick items off as you finish each step. The list shows up above the chat input and the app auto-resumes you when the conversation stops with unfinished items.'**
+  String get toolDescTodo;
+
   /// No description provided for @toolNameFetchWeb.
   ///
   /// In en, this message translates to:
@@ -1451,6 +1457,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Edit Image'**
   String get toolNameEditImage;
+
+  /// No description provided for @toolNameTodo.
+  ///
+  /// In en, this message translates to:
+  /// **'Task List'**
+  String get toolNameTodo;
 
   /// No description provided for @downloadStatusPending.
   ///
@@ -2765,6 +2777,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Authorization error'**
   String get googleSheetStatusError;
+
+  /// No description provided for @todoPanelTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Task list'**
+  String get todoPanelTitle;
+
+  /// No description provided for @todoProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'{done}/{total}'**
+  String todoProgress(int done, int total);
+
+  /// No description provided for @todoAllDonePlain.
+  ///
+  /// In en, this message translates to:
+  /// **'All tasks completed'**
+  String get todoAllDonePlain;
+
+  /// No description provided for @todoAllDoneWithTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'All tasks completed: {title}'**
+  String todoAllDoneWithTitle(String title);
+
+  /// No description provided for @todoAbandonTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Drop the task list'**
+  String get todoAbandonTooltip;
+
+  /// No description provided for @todoAbandonTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Drop the task list?'**
+  String get todoAbandonTitle;
+
+  /// No description provided for @todoAbandonMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'The current task list will be cleared and the model will stop being auto-resumed. The chat history is kept.'**
+  String get todoAbandonMessage;
+
+  /// No description provided for @todoAbandonConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Drop'**
+  String get todoAbandonConfirm;
+
+  /// No description provided for @todoSupervisionPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Resuming the model in a moment…'**
+  String get todoSupervisionPending;
+
+  /// No description provided for @todoSupervisionUserStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'Supervision paused — send a new message to resume.'**
+  String get todoSupervisionUserStopped;
+
+  /// No description provided for @todoSupervisionCapped.
+  ///
+  /// In en, this message translates to:
+  /// **'Reached the maximum number of auto-resume prompts. Send a message to nudge the model.'**
+  String get todoSupervisionCapped;
+
+  /// No description provided for @todoSupervisionPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'[Task supervision] The current todo list {titleHint} has {completed}/{total} items done; the following {pendingCount} item(s) are still pending:\n{pendingSummary}\n\nPlease continue working on the remaining items. Tick each one off with todo(action=\"complete\", id=\"<id>\") as you finish. If you cannot continue (blocked by an external system, missing info, etc.), call todo(action=\"clear\") and explain to the user why.'**
+  String todoSupervisionPrompt(
+    String titleHint,
+    int completed,
+    int total,
+    int pendingCount,
+    String pendingSummary,
+  );
 }
 
 class _AppLocalizationsDelegate

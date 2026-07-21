@@ -702,6 +702,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Edit an image the user uploaded in this chat: compress, crop, resize, rotate, convert to circle / rounded-corner mask, flip horizontally / vertically, or change format. Each call processes a copy in the temp directory — the original is never modified.';
 
   @override
+  String get toolDescTodo =>
+      'Maintain a per-conversation task list — create it at the start of a multi-step task, tick items off as you finish each step. The list shows up above the chat input and the app auto-resumes you when the conversation stops with unfinished items.';
+
+  @override
   String get toolNameFetchWeb => 'Fetch Web';
 
   @override
@@ -763,6 +767,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolNameEditImage => 'Edit Image';
+
+  @override
+  String get toolNameTodo => 'Task List';
 
   @override
   String get downloadStatusPending => 'Waiting…';
@@ -1527,4 +1534,55 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get googleSheetStatusError => 'Authorization error';
+
+  @override
+  String get todoPanelTitle => 'Task list';
+
+  @override
+  String todoProgress(int done, int total) {
+    return '$done/$total';
+  }
+
+  @override
+  String get todoAllDonePlain => 'All tasks completed';
+
+  @override
+  String todoAllDoneWithTitle(String title) {
+    return 'All tasks completed: $title';
+  }
+
+  @override
+  String get todoAbandonTooltip => 'Drop the task list';
+
+  @override
+  String get todoAbandonTitle => 'Drop the task list?';
+
+  @override
+  String get todoAbandonMessage =>
+      'The current task list will be cleared and the model will stop being auto-resumed. The chat history is kept.';
+
+  @override
+  String get todoAbandonConfirm => 'Drop';
+
+  @override
+  String get todoSupervisionPending => 'Resuming the model in a moment…';
+
+  @override
+  String get todoSupervisionUserStopped =>
+      'Supervision paused — send a new message to resume.';
+
+  @override
+  String get todoSupervisionCapped =>
+      'Reached the maximum number of auto-resume prompts. Send a message to nudge the model.';
+
+  @override
+  String todoSupervisionPrompt(
+    String titleHint,
+    int completed,
+    int total,
+    int pendingCount,
+    String pendingSummary,
+  ) {
+    return '[Task supervision] The current todo list $titleHint has $completed/$total items done; the following $pendingCount item(s) are still pending:\n$pendingSummary\n\nPlease continue working on the remaining items. Tick each one off with todo(action=\"complete\", id=\"<id>\") as you finish. If you cannot continue (blocked by an external system, missing info, etc.), call todo(action=\"clear\") and explain to the user why.';
+  }
 }

@@ -352,4 +352,14 @@ class ToolService {
     final tool = ToolRegistry.byId('edit_image')!;
     return tool.execute(args, this);
   }
+
+  /// `todo` tool dispatch. The tool itself just throws and
+  /// routes the call back to `ChatProvider._onToolCall`; the
+  /// thin delegate here exists for parity with the other
+  /// `run*` helpers so tests / sub-agents that already go
+  /// through `ToolService` keep working.
+  Future<String> runTodo(Map<String, dynamic> args) async {
+    final tool = ToolRegistry.byId('todo')!;
+    return tool.execute(args, this);
+  }
 }

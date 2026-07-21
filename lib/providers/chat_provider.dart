@@ -18,6 +18,7 @@ import '../models/message.dart';
 import '../models/provider.dart';
 import '../models/skill.dart';
 import '../models/timer_task.dart';
+import '../models/todo_list.dart';
 import '../services/api_service.dart';
 import '../services/download_service.dart';
 import '../services/file_attachment_service.dart';
@@ -29,6 +30,7 @@ import '../services/timer_service.dart';
 import '../services/tool_orchestrator.dart';
 import '../services/tool_service.dart';
 import '../services/tools/sub_agent_tool.dart';
+import '../services/tools/todo_tool.dart';
 import '../services/tools/tool_base.dart';
 import '../services/tools/tool_registry.dart';
 import 'settings_provider.dart';
@@ -117,18 +119,28 @@ String buildBaseSystemPrompt({
             '- MCP 工具(名称以 mcp__ 开头):已启用 $enabledMcpServerCount 个 MCP 服务器,'
             'load_tool("mcp__<server>__<tool>") 按需加载;'
       : '';
-  return '你是一个聪明且细心的助理,诚实又可靠.\n'
+return '你是一个聪明且细心的助理,诚实又可靠.\n'
       '\n'
       '## 核心规则\n'
       '处理任务流程:\n'
       '1.分析任务目标,拆解任务,列出所有需要的技能和工具,有需要的技能先加载技能,无工具则只分析不调用工具;\n'
-      '2.批量加载所需工具：`load_tool(tool_names=["a","b","c"])`一次性加载;无工具直接跳过;\n'
+      '2.批量加载所需工具:`load_tool(tool_names=["a","b","c"])`一次性加载;无工具直接跳过;\n'
       '3.根据工具规则分步调用工具,完成任务并汇总结果;\n'
       '4.根据任务结果判断是否完成任务目标,若没有达到目标则再次规划任务,回到流程1;\n'
       '可以连续调多个工具,等全部结果回来再统一回复;'
       '独立任务优先使用 subagent 工具,这样能减少你的工作负担和保持简洁的上下文;\n'
       '工具报错尝试根据错误信息想方法解决,无法解决则求助用户,不要编造内容;\n'
       '回复内容需要简洁明了,不要复述思考过程,不要复述执行步骤.\n'
+      '\n'
+      '## 任务清单(todo)\n'
+      '对**长任务(>=3 步且会跨多轮工具调用)**:**必须**先用 `todo` 工具列出任务清单,'
+      '这样用户能在输入框上方实时看到进度,任务中断时我也会自动监督你继续完成。\n'
+      '用法:\n'
+      '- 任务开始:`todo(action="create", title="<任务名>")` + 同轮发多个 `todo(action="add", content="<步骤>")` 把所有步骤列出来\n'
+      '- 每完成一项:**立刻** `todo(action="complete", id="<id>")` — 别攒到最后再勾,用户看不到进度\n'
+      '- 任务全部 done 后**不要**调 clear,UI 会自动收起\n'
+      '- 用户换任务 / 放弃:先 `todo(action="clear")`,然后重新 create + add\n'
+      '- 单步查询、闲聊、问候**不要**调用 todo(节省一轮往返)\n'
       '\n'
       '## 工具使用\n'
       '- 可用工具一览见下面的"可用工具"列表(只有 id + 一句话用途);\n'
@@ -254,6 +266,40 @@ class ChatProvider extends ChangeNotifier {
   @visibleForTesting
   List<String> debugBuildSystemPrompts() => _buildSystemPrompts();
 
+  /// Test seam for [_onTodoToolCall]. Lets the test suite drive
+  /// the todo dispatcher directly (without a real streaming
+  /// turn) so the per-session state machine can be asserted on
+  /// in isolation. Production code always reaches this method
+  /// through [_onToolCall]'s switch on the tool name.
+  @visibleForTesting
+  Future<String> debugOnTodoToolCall({
+    required BuildContext context,
+    required Map<String, dynamic> toolCall,
+    required String assistantId,
+    required Map<String, dynamic> args,
+  }) {
+    return _onTodoToolCall(context, toolCall, assistantId, args);
+  }
+
+  /// Test seam for the per-turn "user stopped" flag. Set
+  /// directly by the test to skip the realistic path
+  /// (`stopGeneration` requires an actual in-flight turn).
+  @visibleForTesting
+  void debugSetUserStoppedLastTurn(bool value) {
+    _userStoppedLastTurn = value;
+  }
+
+  /// Test seam for the `sendMessage` side-effect that clears
+  /// the per-turn "user stopped" flag. Production callers
+  /// should always go through `sendMessage`; this seam lets
+  /// tests assert on the flag-clearing behavior without
+  /// running a full turn.
+  @visibleForTesting
+  void debugClearUserStoppedOnSend() {
+    _userStoppedLastTurn = false;
+    _cancelSupervision();
+  }
+
   /// True while a request is in flight on the active session.
   bool _sending = false;
   bool _disposed = false;
@@ -324,6 +370,51 @@ class ChatProvider extends ChangeNotifier {
   /// cleared exclusively by [_runAssistantTurn] on the cloud
   /// retry path.
   Completer<void>? _retryWakeup;
+
+  /// True if the user explicitly stopped the last assistant
+  /// turn (tapped the "stop" button) while a todo list was
+  /// active. When true, [_maybeScheduleSupervision] refuses to
+  /// fire a hidden resume prompt — the user's intent is "stop
+  /// the loop", and we honor it. Cleared by the next user
+  /// send / clearTodoList / abandonTodoList call.
+  bool _userStoppedLastTurn = false;
+
+  /// Timer used to delay the supervision resume prompt by a
+  /// short grace window (so a model's natural "all done"
+  /// response — which usually fires a tool-call to mark the
+  /// last item done — has time to settle before we react).
+  /// `null` when no supervision is scheduled.
+  Timer? _supervisionTimer;
+
+  /// How many auto-resume prompts we've already injected for
+  /// the *current* todo list. Capped at
+  /// [kMaxSupervisionAttempts] so a misbehaving model can't
+  /// loop forever; once the cap is hit, the chat provider
+  /// surfaces a final "无法继续监督" notice in the panel and
+  /// stops scheduling further resumes.
+  int _supervisionAttempts = 0;
+
+  /// Revision number of the todo list at the moment the
+  /// current supervision timer was scheduled. When the
+  /// supervision grace window elapses, the chat provider only
+  /// fires a resume if the list is *still* incomplete AND its
+  /// revision hasn't moved (the model might have edited it
+  /// during the grace window — e.g. marked the last item done
+  /// — and we'd otherwise inject a redundant resume).
+  int _supervisionScheduledForRevision = 0;
+
+  /// Hard cap on auto-resume prompts per todo list. Hit the
+  /// cap → the chat provider stops scheduling further
+  /// supervision for the current list; the user can still hit
+  /// "放弃任务" to clear and start fresh, or just continue
+  /// without further auto-resumes.
+  static const int kMaxSupervisionAttempts = 4;
+
+  /// Grace window between "model turn ended" and "auto-resume
+  /// prompt fired". Long enough to let the model's natural
+  /// `complete(id)` for the final item land in the list, short
+  /// enough that the user doesn't notice the pause.
+  static const Duration kSupervisionGraceWindow = Duration(milliseconds: 1500);
 
   /// Returns `true` when a tool call is parked waiting on a
   /// native UI flow (system file picker, OS permission dialog,
@@ -441,6 +532,57 @@ class ChatProvider extends ChangeNotifier {
 
   bool get hasActiveSession => _activeSession != null;
 
+  // -------- Todo list (per-session task list) --------
+
+  /// The current todo list for the active session. Always
+  /// non-null; returns [TodoList.empty] when no list is
+  /// active. The widget tree watches this via the standard
+  /// `Consumer<ChatProvider>` pattern.
+  TodoList get todoList => _activeSession?.todoList ?? TodoList.empty;
+
+  /// True when [todoList] has any pending (not-yet-done) item.
+  /// The chat input panel uses this to decide whether to
+  /// render the "监督中 / supervising" badge.
+  bool get hasPendingTodos =>
+      todoList.isNotEmpty && todoList.completedCount < todoList.totalCount;
+
+  /// True iff the user manually stopped the last turn while
+  /// a todo list was active. The chat input panel uses this to
+  /// render the "已暂停监督" hint; the chat provider itself uses
+  /// it to gate [_maybeScheduleSupervision].
+  bool get userStoppedLastTurn => _userStoppedLastTurn;
+
+  /// True when an auto-resume prompt is queued but not yet
+  /// fired. The panel uses this to show a "监督唤醒中…"
+  /// spinner (so the user understands the chat is about to
+  /// continue without their input).
+  bool get supervisionPending => _supervisionTimer != null;
+
+  /// Drops the active todo list and cancels any pending
+  /// supervision prompt. Called when the user hits the
+  /// panel's "放弃任务 / abandon" button. Also clears the
+  /// per-turn "user stopped" flag so the next send (even if
+  /// the user immediately re-creates a list) starts from a
+  /// clean slate.
+  Future<void> abandonTodoList() async {
+    _cancelSupervision();
+    _userStoppedLastTurn = false;
+    _supervisionAttempts = 0;
+    final s = _activeSession;
+    if (s == null) return;
+    _setActiveSession(s.copyWith(todoList: TodoList.empty));
+    await _storage.sessions.save(_activeSession!);
+    notifyListeners();
+  }
+
+  /// Same as [abandonTodoList] but used by the model itself
+  /// when it explicitly tells the user the task is being
+  /// dropped (e.g. it hit the supervision cap). The
+  /// `_onTodoToolCall` dispatcher calls this on the
+  /// `abandon` action; on the model-driven path we still want
+  /// the user-facing state to be identical (list gone, no
+  /// resume) so we reuse the public method.
+
   // -------- Session lifecycle --------
 
   /// Pick the most recent session (or the one stored as "active"
@@ -477,6 +619,13 @@ class ChatProvider extends ChangeNotifier {
     final session = _createBlankSessionInternal();
     setLocalSessionId(null);
     _loadedToolIds.clear();
+    // Drop any pending supervision state from the previous
+    // session — a brand-new chat can't have a half-finished
+    // todo list carry over. The new session starts with
+    // `TodoList.empty` by default, so the panel won't show.
+    _cancelSupervision();
+    _userStoppedLastTurn = false;
+    _supervisionAttempts = 0;
     await _storage.sessions.save(session);
     await _storage.setActiveSessionId(session.id);
     refreshSessionList();
@@ -504,6 +653,14 @@ class ChatProvider extends ChangeNotifier {
     if (id == _activeSession?.id) return;
     final s = _storage.sessions.get(id);
     if (s == null) return;
+    // Drop any pending supervision from the previous session —
+    // it would otherwise wake the model up for a list it can no
+    // longer see. The new session's persisted list (if any) is
+    // already on the [ChatSession] we're about to activate, so
+    // it'll show up in the panel as soon as the rebuild lands.
+    _cancelSupervision();
+    _userStoppedLastTurn = false;
+    _supervisionAttempts = 0;
     _setActiveSession(s);
     // Force the local-llm engine to reset+seed on the next turn of
     // the new session; the existing ChatSession binding is stale.
@@ -566,7 +723,14 @@ class ChatProvider extends ChangeNotifier {
     }
     _pendingAskUser.clear();
     _loadedToolIds.clear();
-    final cleared = s.copyWith(messages: const [], updatedAt: DateTime.now());
+    _cancelSupervision();
+    _userStoppedLastTurn = false;
+    _supervisionAttempts = 0;
+    final cleared = s.copyWith(
+      messages: const [],
+      todoList: TodoList.empty,
+      updatedAt: DateTime.now(),
+    );
     _setActiveSession(cleared);
     await _storage.sessions.save(cleared);
     notifyListeners();
@@ -1122,6 +1286,8 @@ class ChatProvider extends ChangeNotifier {
         return await _onSubAgentCall(context, toolCall, assistantId, args);
       case 'edit_image':
         return await _onEditImageCall(context, toolCall, assistantId, args);
+      case 'todo':
+        return await _onTodoToolCall(context, toolCall, assistantId, args);
       default:
         if (name.startsWith('mcp__')) {
           return await _onMcpToolCall(name, args);
@@ -1190,6 +1356,407 @@ class ChatProvider extends ChangeNotifier {
     }
 
     return resultStr;
+  }
+
+  /// Backs the `todo` tool. All actions are pure state mutations
+  /// on the active session's [TodoList]; nothing actually
+  /// executes asynchronously. The dispatcher mirrors the
+  /// `ask_user` / `subagent` pattern: [TodoTool.execute] always
+  /// throws (the tool is a thin schema shim), and this method is
+  /// the single entry point that resolves the per-session state.
+  ///
+  /// The chat provider also bumps the list's `revision` counter
+  /// on every mutation so the supervision loop can detect
+  /// "model edited the list while the grace window was open".
+  Future<String> _onTodoToolCall(
+    BuildContext context,
+    Map<String, dynamic> toolCall,
+    String assistantId,
+    Map<String, dynamic> args,
+  ) async {
+    final action = (args['action'] as String? ?? '').trim();
+    final s = _activeSession;
+    if (s == null) {
+      throw ToolException('todo: no active session');
+    }
+
+    TodoList current = s.todoList;
+
+    switch (action) {
+      case 'create':
+        final title = (args['title'] as String? ?? '').trim();
+        if (current.items.isNotEmpty) {
+          // The model is starting a fresh list while one is
+          // already active — replace it instead of merging, so
+          // the panel doesn't show stale items from the old
+          // task. Bump the revision so the supervision loop
+          // resets.
+          current = TodoList(
+            title: title.isEmpty ? null : title,
+            createdAt: DateTime.now(),
+            revision: current.revision + 1,
+            items: const [],
+          );
+        } else {
+          current = TodoList(
+            title: title.isEmpty ? null : title,
+            createdAt: current.createdAt ?? DateTime.now(),
+            revision: current.revision + 1,
+            items: current.items,
+          );
+        }
+        _userStoppedLastTurn = false;
+        _supervisionAttempts = 0;
+        break;
+
+      case 'add':
+        final content = (args['content'] as String? ?? '').trim();
+        if (content.isEmpty) {
+          throw ToolException('todo: action=add requires non-empty "content"');
+        }
+        if (current.isEmpty) {
+          // The model forgot to call `create` first — auto-init
+          // the list with no title rather than reject, so the
+          // tool call doesn't blow up the whole turn.
+          current = TodoList(
+            createdAt: DateTime.now(),
+            revision: 1,
+            items: const [],
+          );
+        }
+        final now = DateTime.now();
+        final newItem = TodoItem(
+          id: 'td_${_uuid.v4()}',
+          content: content,
+          detail: (args['detail'] as String?)?.trim().isEmpty == true
+              ? null
+              : args['detail'] as String?,
+          order: current.items.length,
+          createdAt: now,
+        );
+        current = current.copyWith(
+          revision: current.revision + 1,
+          items: [...current.items, newItem],
+        );
+        _userStoppedLastTurn = false;
+        break;
+
+      case 'complete':
+        final id = args['id'] as String? ?? '';
+        if (id.isEmpty) {
+          throw ToolException('todo: action=complete requires "id"');
+        }
+        final idx = current.items.indexWhere((i) => i.id == id);
+        if (idx < 0) {
+          // Unknown id — surface as a soft error so the model
+          // can self-correct (e.g. typo). Doesn't abort the turn.
+          return encodeTodoEnvelope({
+            'action': 'complete',
+            'id': id,
+            'ok': false,
+            'reason': 'no such todo item (id might have been removed)',
+          });
+        }
+        final updated = current.items[idx].copyWith(
+          status: TodoItemStatus.done,
+          completedAt: DateTime.now(),
+        );
+        current = current.copyWith(
+          revision: current.revision + 1,
+          items: [
+            for (var i = 0; i < current.items.length; i++)
+              if (i == idx) updated else current.items[i],
+          ],
+        );
+        break;
+
+      case 'update':
+        final id = args['id'] as String? ?? '';
+        if (id.isEmpty) {
+          throw ToolException('todo: action=update requires "id"');
+        }
+        final idx = current.items.indexWhere((i) => i.id == id);
+        if (idx < 0) {
+          return encodeTodoEnvelope({
+            'action': 'update',
+            'id': id,
+            'ok': false,
+            'reason': 'no such todo item',
+          });
+        }
+        final existing = current.items[idx];
+        final newContent =
+            (args['content'] as String?)?.trim() ?? existing.content;
+        if (newContent.isEmpty) {
+          throw ToolException(
+            'todo: action=update with empty "content" is not allowed '
+            '(use remove + add if you want to rewrite)',
+          );
+        }
+        final rawDetail = args['detail'];
+        final isEmptyDetail =
+            rawDetail is String && rawDetail.trim().isEmpty;
+        final updated = existing.copyWith(
+          content: newContent,
+          detail: rawDetail == null
+              ? existing.detail
+              : isEmptyDetail
+                  ? null
+                  : rawDetail as String,
+          clearDetail: isEmptyDetail,
+        );
+        current = current.copyWith(
+          revision: current.revision + 1,
+          items: [
+            for (var i = 0; i < current.items.length; i++)
+              if (i == idx) updated else current.items[i],
+          ],
+        );
+        break;
+
+      case 'remove':
+        final id = args['id'] as String? ?? '';
+        if (id.isEmpty) {
+          throw ToolException('todo: action=remove requires "id"');
+        }
+        final idx = current.items.indexWhere((i) => i.id == id);
+        if (idx < 0) {
+          return encodeTodoEnvelope({
+            'action': 'remove',
+            'id': id,
+            'ok': false,
+            'reason': 'no such todo item',
+          });
+        }
+        current = current.copyWith(
+          revision: current.revision + 1,
+          items: [
+            for (var i = 0; i < current.items.length; i++)
+              if (i != idx) current.items[i],
+          ],
+        );
+        break;
+
+      case 'list':
+        return encodeTodoEnvelope({
+          'action': 'list',
+          'title': current.title,
+          'count': current.items.length,
+          'completed': current.completedCount,
+          'total': current.totalCount,
+          'all_done': current.allDone,
+          'items': current.items.map((i) => i.toJson()).toList(),
+        });
+
+      case 'get':
+        final id = args['id'] as String? ?? '';
+        if (id.isEmpty) {
+          throw ToolException('todo: action=get requires "id"');
+        }
+        final it = current.byId(id);
+        if (it == null) {
+          return encodeTodoEnvelope({
+            'action': 'get',
+            'id': id,
+            'found': false,
+          });
+        }
+        return encodeTodoEnvelope({
+          'action': 'get',
+          'found': true,
+          'item': it.toJson(),
+        });
+
+      case 'clear':
+        // The model itself decided to clear. Drop the list and
+        // reset the supervision state — the chat provider won't
+        // auto-resume against an empty list.
+        current = TodoList.empty;
+        _userStoppedLastTurn = false;
+        _supervisionAttempts = 0;
+        _cancelSupervision();
+        break;
+
+      case 'abandon':
+        // Same as `clear` but the model explicitly tells the
+        // user the task is being dropped. UX-wise identical
+        // (both clear the list); the semantic split lets the
+        // model carry intent into the next assistant message.
+        current = TodoList.empty;
+        _userStoppedLastTurn = false;
+        _supervisionAttempts = 0;
+        _cancelSupervision();
+        break;
+
+      default:
+        throw ToolException(
+          'todo: unknown action "$action" '
+          '(expected create/add/complete/update/remove/list/get/clear/abandon)',
+        );
+    }
+
+    // Persist the updated list on the session. We always emit a
+    // notifyListeners so the panel re-renders, even on no-op
+    // writes (e.g. `update` that doesn't change anything).
+    _setActiveSession(s.copyWith(todoList: current));
+    await _storage.sessions.save(_activeSession!);
+    notifyListeners();
+
+    // The model's view: a compact envelope with the items + the
+    // current counters. Same shape on every mutation so the
+    // model can pattern-match without reading the schema each
+    // time. `revision` is included so the model can detect
+    // stale snapshots (it's optional for the model — purely
+    // informational).
+    return encodeTodoEnvelope({
+      'action': action,
+      'ok': true,
+      'revision': current.revision,
+      'count': current.items.length,
+      'completed': current.completedCount,
+      'total': current.totalCount,
+      'all_done': current.allDone,
+      'items': current.items.map((i) => i.toJson()).toList(),
+    });
+  }
+
+  /// Cancels any pending auto-resume timer. Safe to call from
+  /// anywhere — the timer is nulled and cancelled together.
+  void _cancelSupervision() {
+    _supervisionTimer?.cancel();
+    _supervisionTimer = null;
+  }
+
+  /// Schedules an auto-resume prompt for the active todo list
+  /// if and only if:
+  ///
+  ///   * the list has at least one pending item;
+  ///   * the user did NOT manually stop the last turn;
+  ///   * we haven't already burned through
+  ///     [kMaxSupervisionAttempts] attempts on this list;
+  ///   * a supervisor timer isn't already running.
+  ///
+  /// The check happens AFTER a small grace window (so a model
+  /// that completes the last item just as its turn ends isn't
+  /// woken up redundantly). On the grace-window tick we re-read
+  /// the list and re-check all four conditions; only if they
+  /// still hold do we actually inject the resume prompt.
+  void _maybeScheduleSupervision() {
+    if (_disposed) return;
+    if (_sending) return;
+    if (_userStoppedLastTurn) return;
+    if (_supervisionTimer != null) return;
+
+    final list = todoList;
+    if (list.isEmpty) return;
+    if (list.allDone) return;
+    if (_supervisionAttempts >= kMaxSupervisionAttempts) return;
+
+    _supervisionScheduledForRevision = list.revision;
+    _cancelSupervision();
+    _supervisionTimer = Timer(kSupervisionGraceWindow, () {
+      _supervisionTimer = null;
+      if (_disposed) return;
+      if (_sending) return;
+      // The user might have abandoned the list, sent a fresh
+      // message, or the model might have completed the last
+      // item during the grace window. Re-validate.
+      final fresh = todoList;
+      if (fresh.isEmpty || fresh.allDone) return;
+      if (_userStoppedLastTurn) return;
+      if (fresh.revision != _supervisionScheduledForRevision) {
+        // The list moved during the grace window — let the
+        // turn we just received drive the next decision rather
+        // than fire a redundant resume.
+        return;
+      }
+      unawaited(_fireSupervisionPrompt());
+    });
+    notifyListeners();
+  }
+
+  /// Injects a hidden user message that asks the model to
+  /// continue the todo list, then kicks off a fresh assistant
+  /// turn. The user never sees the prompt — it's tagged
+  /// `hidden: true` so the message bubble is suppressed from
+  /// the chat list while still being delivered to the model
+  /// in the request payload.
+  Future<void> _fireSupervisionPrompt() async {
+    if (_disposed) return;
+    final s = _activeSession;
+    if (s == null) return;
+    final list = todoList;
+    if (list.isEmpty || list.allDone) return;
+    if (_userStoppedLastTurn) return;
+
+    _supervisionAttempts++;
+
+    final ctx = _cachedContext ?? _rootContextFallback;
+    if (ctx == null) {
+      // No live context — the supervision prompt can't be
+      // localized. Bail out silently; the user can re-engage
+      // by sending a fresh message.
+      return;
+    }
+    final l10n = AppLocalizations.of(ctx);
+    final pending = list.pendingItems;
+    final pendingSummary = pending
+        .map((i) => '- [${i.id}] ${i.content}')
+        .join('\n');
+    final titleHint = list.title == null ? '' : '("${list.title}")';
+    final prompt = l10n.todoSupervisionPrompt(
+      titleHint,
+      list.completedCount,
+      list.totalCount,
+      pending.length,
+      pendingSummary,
+    );
+
+    // Append the synthetic user message. Hidden: true so the
+    // bubble isn't rendered in the chat list, but the message
+    // is still in the request payload (see _runAssistantTurn
+    // → _buildRequestMessages which includes hidden messages).
+    final hiddenMsg = ChatMessage(
+      id: _uuid.v4(),
+      role: MessageRole.user,
+      content: prompt,
+      hidden: true,
+    );
+    _setActiveSession(s.copyWith(messages: [...s.messages, hiddenMsg]));
+    await _storage.sessions.save(_activeSession!);
+    notifyListeners();
+
+    // Kick off the next assistant turn. `_cachedContext` is set
+    // on every user-initiated send; if we never had one (e.g.
+    // the supervision prompt fired right after a timer-driven
+    // restart) fall back to the root navigator's context if
+    // available. The continuation path uses l10n.from(context).
+    final resumeCtx = _cachedContext ?? _rootContextFallback;
+    if (resumeCtx == null) return;
+    // We intentionally DO NOT call `sendMessage` (which would
+    // reset `_userStoppedLastTurn`); instead reuse the
+    // timer-driven `continueWithLastUserMessage` path, which
+    // appends a fresh assistant placeholder and runs the same
+    // streaming turn loop. Same plumbing the timer reminder
+    // uses.
+    // ignore: use_build_context_synchronously
+    await continueWithLastUserMessage(resumeCtx);
+  }
+
+  /// Last-ditch fallback context used by [_fireSupervisionPrompt]
+  /// when [_cachedContext] is null (e.g. supervision fires
+  /// shortly after a process-resume on a freshly-launched app
+  /// where no user send has happened yet). Set lazily by the
+  /// home page through [setRootContext].
+  BuildContext? _rootContextFallback;
+
+  /// Called by the home page once during init so the
+  /// supervision prompt can resolve an l10n-aware `BuildContext`
+  /// even when no user-initiated send has populated
+  /// [_cachedContext] yet. The home page re-attaches on every
+  /// build, so we keep the most recent live context.
+  void setRootContext(BuildContext context) {
+    _rootContextFallback = context;
   }
 
   /// Backs the `subagent` tool. Resolves the per-turn transport
@@ -1981,6 +2548,17 @@ class ChatProvider extends ChangeNotifier {
       return;
     }
     _cachedContext = context;
+    // The user just sent a fresh message — this is a new
+    // "task", so the chat provider re-arms the supervision
+    // loop. The previous-turn "user stopped" flag is cleared
+    // (the user explicitly chose to continue, so the intent
+    // to resume auto-supervision is back). The model can also
+    // choose to clear() the existing list and rebuild for the
+    // new task; if it doesn't, the existing list survives
+    // (which is the right behaviour for follow-up questions
+    // on the same task).
+    _userStoppedLastTurn = false;
+    _cancelSupervision();
     final useLocal = _settings.useLocalModel;
     final provider = _settings.activeProvider;
     final localProvider = _settings.activeLocalProvider;
@@ -2210,6 +2788,16 @@ class ChatProvider extends ChangeNotifier {
     }
     refreshSessionList();
     if (!_disposed) notifyListeners();
+
+    // Auto-supervision: if the model's turn just ended naturally
+    // and the todo list still has pending items, schedule a
+    // resume prompt after a short grace window. The user-stopped
+    // path bails out here (the flag was already flipped in
+    // `stopGeneration`); the hard-error / retryable-exhausted
+    // path also bails (we don't want to inject a resume on top
+    // of a broken provider). The grace window gives the model's
+    // final `complete(id)` a chance to land before we react.
+    _maybeScheduleSupervision();
   }
 
   /// Pulls every persisted user/assistant message out of the
@@ -2882,6 +3470,18 @@ class ChatProvider extends ChangeNotifier {
     // processed by ChatProvider.
     _streamSub?.cancel();
     _streamSub = null;
+    // If a todo list is currently active and the user just hit
+    // "stop", the user explicitly wants the loop to end. Flip
+    // the per-turn flag so the auto-resume prompt stays off;
+    // the next user send (or the panel's "放弃任务" button) is
+    // what re-arms supervision.
+    if (todoList.isNotEmpty) {
+      _userStoppedLastTurn = true;
+    }
+    // Cancel any pending supervision timer that was already
+    // queued — the user just told us to stop, so a resume
+    // queued during the same turn would be wrong.
+    _cancelSupervision();
     // Mark the in-flight assistant message as done (remove streaming
     // flag, add a truncated marker; clear any auto-retry state
     // so the bubble doesn't keep showing a stale countdown).
@@ -3119,6 +3719,10 @@ class ChatProvider extends ChangeNotifier {
     if (wakeup != null && !wakeup.isCompleted) wakeup.complete();
     _retryTickTimer?.cancel();
     _retryTickTimer = null;
+    // Cancel any pending todo-supervision timer so a disposed
+    // provider can't fire a resume prompt against a torn-down
+    // session.
+    _cancelSupervision();
     _disposed = true;
     super.dispose();
   }
