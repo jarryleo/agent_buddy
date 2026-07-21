@@ -356,13 +356,23 @@ class ChatProvider extends ChangeNotifier {
 
   /// Round-aware bubble tracking. The orchestrator emits a
   /// `roundStart(N)` event at the start of every tool-calling
-  /// round; we mint a fresh per-round assistant bubble on each
-  /// boundary so a long, multi-round tool-calling sequence
-  /// stops stacking every round's content / thinking / tool
-  /// cards into a single ever-growing bubble. Round 0 reuses
-  /// the placeholder bubble created by
-  /// `_appendUserAndAssistantPlaceholders` / `_appendAssistantPlaceholder`;
-  /// rounds >= 1 are fresh bubbles.
+  /// round. **Only rounds that produce a main-text reply (正文)
+  /// get their own bubble.** A round whose only output is
+  /// thinking + tool calls stays merged into the most recent
+  /// content-bearing bubble (which itself may still be the
+  /// round-0 placeholder if nothing has produced 正文 yet).
+  ///
+  /// Concretely:
+  ///   * Round 0 reuses the placeholder bubble created by
+  ///     `_appendUserAndAssistantPlaceholders` /
+  ///     `_appendAssistantPlaceholder`. The placeholder
+  ///     continues to absorb events from every subsequent
+  ///     round as long as NO round has streamed 正文 yet.
+  ///   * Round N >= 1 mints a fresh bubble ONLY if the current
+  ///     bubble already has visible content; otherwise we just
+  ///     keep routing into the current bubble so the user's
+  ///     chat list doesn't get cluttered with one empty
+  ///     "thinking-only" bubble per tool-calling round.
   ///
   /// `_currentRoundBubbleId` is the bubble that incoming
   /// `content` / `reasoning` / `toolStart` / `toolDone` /
@@ -1107,11 +1117,20 @@ class ChatProvider extends ChangeNotifier {
   /// `assistantId` returned by those helpers is the round-0
   /// bubble id, so we just point `_currentRoundBubbleId` at it.
   ///
-  /// For round N >= 1, marks the previous round's bubble
-  /// `streaming: false` (so the typing indicator disappears from
-  /// intermediate bubbles), mints a fresh assistant bubble,
-  /// appends it to the session, and switches
-  /// `_currentRoundBubbleId` to the new id.
+  /// For round N >= 1, **only mints a fresh bubble when the
+  /// current bubble already has visible 正文** (i.e. its
+  /// `content` field is non-empty after trim). The rationale:
+  /// a tool-only round should not create an empty intermediate
+  /// bubble — it would just clutter the chat list with one
+  /// "thinking-only" bubble per round. Instead its thinking +
+  /// tool cards stay merged into the most recent
+  /// content-bearing bubble, so the user sees a single "thinking
+  /// + tool calls + answer" bubble per real reply.
+  ///
+  /// When a fresh bubble IS minted, we also flip the previous
+  /// bubble `streaming: false` and stamp `roundFinishedAt` so
+  /// its footer can render a stable "⏱ 1.2s" duration chip
+  /// without the wall clock continuing to advance.
   ///
   /// Idempotent in the edge case where the same round number
   /// somehow arrives twice (e.g. a stream retry that re-emits
@@ -1150,23 +1169,46 @@ class ChatProvider extends ChangeNotifier {
       return;
     }
 
-    // Intermediate / final round: mint a fresh bubble.
-    if (_currentRoundBubbleId != null) {
-      // Close the previous round's bubble — flip streaming off
-      // AND stamp `roundFinishedAt` so the bubble footer can
-      // render a stable "⏱ 1.2s" duration chip after the
-      // round has ended (without this, the duration would
-      // continue counting "live" because `createdAt` is fixed
-      // but the wall clock keeps advancing).
-      final closedAt = DateTime.now();
-      _replaceMessages([
-        for (final m in s.messages)
-          if (m.id == _currentRoundBubbleId)
-            m.copyWith(streaming: false, roundFinishedAt: closedAt)
-          else
-            m,
-      ]);
+    // Resolve the bubble we'd otherwise split from. Fall back to
+    // the round-0 placeholder if no `roundStart` has fired yet
+    // (defensive — shouldn't happen because round 0's
+    // `roundStart` always lands first).
+    final currentId = _currentRoundBubbleId ?? fallbackRoundZeroBubbleId;
+    final currentBubble = s.messages.firstWhere(
+      (m) => m.id == currentId,
+      orElse: () => ChatMessage(
+        id: currentId,
+        role: MessageRole.assistant,
+        content: '',
+      ),
+    );
+
+    // 正文-merge rule: keep using the current bubble if it has
+    // not produced a main-text reply yet. The fresh round's
+    // thinking + tool cards will append inside the same bubble
+    // and the bubble's `createdAt` / `streaming` flags stay
+    // aligned with the rest of the turn.
+    if (currentBubble.content.trim().isEmpty) {
+      _currentRoundBubbleId = currentId;
+      if (!_currentTurnBubbleIds.contains(currentId)) {
+        _currentTurnBubbleIds.add(currentId);
+      }
+      return;
     }
+
+    // The previous round did produce 正文 — close it so the
+    // fresh round's events don't pile onto a bubble that's
+    // already showing final text. `roundFinishedAt` freezes the
+    // duration footer (the wall clock would otherwise keep
+    // advancing past `createdAt`).
+    final closedAt = DateTime.now();
+    _replaceMessages([
+      for (final m in s.messages)
+        if (m.id == _currentRoundBubbleId)
+          m.copyWith(streaming: false, roundFinishedAt: closedAt)
+        else
+          m,
+    ]);
     final fresh = ChatMessage(
       id: _uuid.v4(),
       role: MessageRole.assistant,
@@ -3284,11 +3326,14 @@ class ChatProvider extends ChangeNotifier {
     // attempt (the cloud retry path may re-enter this method
     // after a previous attempt failed). Round 0 reuses the
     // placeholder bubble created by `_append*Placeholder`; rounds
-    // 1+ are minted lazily on each `roundStart` event. The
-    // dispatch below reads `_currentRoundBubbleId` instead of
-    // the original `assistantId` parameter so multi-round
-    // tool-calling sequences don't stack every round's content /
-    // thinking / tool cards into a single ever-growing bubble.
+    // 1+ are minted lazily on each `roundStart` event — but only
+    // when the previous round has streamed 正文. A round whose
+    // only output is thinking + tool calls stays merged into the
+    // same bubble so the user doesn't accumulate empty
+    // "thinking-only" bubbles during a long tool-calling chain.
+    // The dispatch below reads `_currentRoundBubbleId` instead of
+    // the original `assistantId` parameter so the per-round tool
+    // calls / thinking / content land where they belong.
     _currentRoundBubbleId = assistantId;
     _currentTurnBubbleIds
       ..clear()
@@ -3353,11 +3398,15 @@ class ChatProvider extends ChangeNotifier {
         if (outcomeRecorded) return;
         // Read the active round bubble id fresh on every event.
         // Multi-round tool-calling sequences mint a fresh bubble
-        // at each `roundStart` boundary; routing events to
-        // `_currentRoundBubbleId` instead of the original
+        // at each `roundStart` boundary, but ONLY for rounds whose
+        // predecessor had already produced 正文 (see
+        // [_startNewRound]). Pure-think + tool-only rounds stay
+        // merged into the previous content-bearing bubble, so a
+        // long tool-calling chain doesn't pad the chat list with
+        // empty intermediate bubbles. Either way, routing events
+        // to `_currentRoundBubbleId` instead of the original
         // `assistantId` keeps each round's tool calls / thinking
-        // / content in its own bubble instead of stacking them
-        // into one ever-growing card.
+        // attached to the right bubble.
         final roundBubbleId = _currentRoundBubbleId ?? assistantId;
         if (event.type == 'roundStart') {
           _startNewRound(event.roundIndex ?? 0, assistantId);
@@ -3732,8 +3781,13 @@ class ChatProvider extends ChangeNotifier {
       // round's bubble (the one that carries the actual answer
       // text). All other bubbles in the turn are flipped to
       // `streaming: false` so the typing indicator doesn't
-      // linger on intermediate tool-only rounds, but keep their
+      // linger on intermediate rounds, but they keep their
       // tool cards / thinking panels for the user to revisit.
+      // (Per the 正文-merge rule, intermediate rounds whose
+      // only output was thinking + tools may not have produced
+      // a distinct bubble at all — they stay merged into the
+      // bubble that eventually carries the answer text, which
+      // also receives the metrics.)
       //
       // Skipped on retryable outcomes — those already wrote
       // streaming=false + null metrics into the bubble via
