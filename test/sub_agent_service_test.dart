@@ -795,5 +795,13 @@ StreamEvent _toStreamEventForTest(OrchestratorEvent ev) {
       return const StreamEvent(type: 'usage');
     case OrchestratorEventKind.turnDone:
       return const StreamEvent(type: 'done', done: true);
+    case OrchestratorEventKind.roundStart:
+      // Sub-agent bubbles stay as a single round in the bubble
+      // snapshot — forward the round boundary as a stream event
+      // so the test mirror of the production bridge stays
+      // exhaustive, but the sub-agent chat UI doesn't render
+      // multiple bubbles (its ToolCall card shows the report
+      // instead — see [ChatProvider.formatSubAgentSnapshot]).
+      return StreamEvent.roundStart(ev.roundIndex ?? 0);
   }
 }

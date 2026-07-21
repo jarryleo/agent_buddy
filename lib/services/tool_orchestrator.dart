@@ -14,6 +14,14 @@ enum OrchestratorEventKind {
   error,
   usage,
   turnDone,
+
+  /// Fired at the START of each tool-calling round (zero-indexed).
+  /// ChatProvider uses it to mint a fresh per-round assistant
+  /// bubble so long, multi-round tool-calling sequences stop
+  /// accumulating every round's content / thinking / tool cards
+  /// into a single ever-growing bubble. The final round's bubble
+  /// is the one that carries the user-facing answer text.
+  roundStart,
 }
 
 class OrchestratorEvent {
@@ -28,6 +36,12 @@ class OrchestratorEvent {
   final String? contentDelta;
   final String? error;
   final TurnResult? turnResult;
+
+  /// Zero-indexed round number. Populated by [roundStart] events
+  /// only; `0` for the first round. Lets the chat UI track
+  /// "which round bubble am I currently writing to" without
+  /// relying on string ids.
+  final int? roundIndex;
 
   /// Per-turn token usage, lifted off the latest `turnDone`
   /// payload when present. Only the Anthropic-protocol
@@ -48,6 +62,7 @@ class OrchestratorEvent {
     this.contentDelta,
     this.error,
     this.turnResult,
+    this.roundIndex,
     this.usage,
   });
 
@@ -118,6 +133,23 @@ class OrchestratorEvent {
   /// sees the live token counts.
   const factory OrchestratorEvent.turnDone(TurnResult result) =
       OrchestratorEvent._turnDoneSentinel;
+
+  /// Fired at the START of every tool-calling round (zero-indexed).
+  /// ChatProvider uses it to mint a fresh per-round assistant bubble
+  /// so long, multi-round sequences stop accumulating every round's
+  /// content / thinking / tool cards into a single bubble.
+  ///
+  /// The very first round (roundIndex == 0) is signalled right
+  /// after the orchestrator enters its loop; subsequent rounds are
+  /// signalled before the corresponding `runOneTurn` call. Round 0
+  /// is the one that starts streaming the assistant's first reply,
+  /// so ChatProvider mints the initial assistant placeholder here
+  /// (rather than in `_appendUserAndAssistantPlaceholders`, which
+  /// now only appends the user message).
+  factory OrchestratorEvent.roundStart(int roundIndex) => OrchestratorEvent._(
+    kind: OrchestratorEventKind.roundStart,
+    roundIndex: roundIndex,
+  );
 }
 
 /// Result of a single "model turn" parsed from the underlying protocol
@@ -310,6 +342,11 @@ class ToolOrchestrator {
         yield OrchestratorEvent.error('Generation stopped by user');
         return;
       }
+      // Emit the round boundary so the chat UI can mint a fresh
+      // per-round assistant bubble. Fired BEFORE any content /
+      // reasoning / tool-start events of this round so the bubble
+      // is in place by the time the first chunk lands.
+      yield OrchestratorEvent.roundStart(round);
       // Run one round: live-forward every event; the final
       // `turnDone` carries the parsed [TurnResult]. Each round
       // also reports its own per-request usage (today: only the

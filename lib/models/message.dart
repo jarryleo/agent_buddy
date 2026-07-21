@@ -441,6 +441,21 @@ class ChatMessage {
   final int retryAttempt;
   final DateTime? nextRetryAt;
 
+  /// Wall-clock instant the per-round bubble was closed by the
+  /// orchestrator — either because a follow-up round started
+  /// (minting a new bubble for the next round) or because the
+  /// stream ended. `null` while the round is still being
+  /// streamed.
+  ///
+  /// Used by `MessageBubble` to render a "⏱ 1.2s" duration chip
+  /// in the footer of intermediate round bubbles (the final
+  /// round's bubble has its full `metrics` footer instead).
+  /// Persisted so a multi-round turn can still show per-round
+  /// durations after an app restart — same JSON v1 round-trip
+  /// contract as `hidden` (only serialized when set, default
+  /// null on read).
+  final DateTime? roundFinishedAt;
+
   ChatMessage({
     required this.id,
     required this.role,
@@ -455,6 +470,7 @@ class ChatMessage {
     this.metrics,
     this.retryAttempt = 0,
     this.nextRetryAt,
+    this.roundFinishedAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
   ChatMessage copyWith({
@@ -470,6 +486,8 @@ class ChatMessage {
     int? retryAttempt,
     DateTime? nextRetryAt,
     bool clearNextRetryAt = false,
+    DateTime? roundFinishedAt,
+    bool clearRoundFinishedAt = false,
   }) {
     return ChatMessage(
       id: id,
@@ -489,6 +507,13 @@ class ChatMessage {
       // state, callers that want to RESET to 0 just pass 0.
       retryAttempt: retryAttempt ?? this.retryAttempt,
       nextRetryAt: clearNextRetryAt ? null : (nextRetryAt ?? this.nextRetryAt),
+      // Same pattern as `nextRetryAt`: callers can clear via
+      // `clearRoundFinishedAt: true` (the default-true path is
+      // a no-op for our usage today, but the flag is here for
+      // symmetry / future-proofing).
+      roundFinishedAt: clearRoundFinishedAt
+          ? null
+          : (roundFinishedAt ?? this.roundFinishedAt),
     );
   }
 
@@ -511,6 +536,10 @@ class ChatMessage {
     // round-trip identically. Default on read is `false`.
     if (hidden) 'hidden': true,
     if (metrics != null) 'metrics': metrics!.toJson(),
+    // Only serialize when set so v1 records (no `roundFinishedAt`
+    // key) round-trip identically. Default on read is `null`.
+    if (roundFinishedAt != null)
+      'roundFinishedAt': roundFinishedAt!.toIso8601String(),
     // `retryAttempt` / `nextRetryAt` intentionally omitted: auto-
     // retry is session-only state that resets on launch (see the
     // field doc above). Persisting them would surface a stale
@@ -553,6 +582,9 @@ class ChatMessage {
           : MessageMetrics.fromJson(
               (json['metrics'] as Map).cast<String, dynamic>(),
             ),
+      roundFinishedAt: DateTime.tryParse(
+        json['roundFinishedAt'] as String? ?? '',
+      ),
     );
   }
 

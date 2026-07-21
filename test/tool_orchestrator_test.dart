@@ -30,7 +30,12 @@ void main() {
         events.add(ev);
       }
 
-      expect(events, isEmpty);
+      // The orchestrator still yields the roundStart boundary
+      // before consuming the runOneTurn stream's turnDone —
+      // so the chat UI sees at least one event per round
+      // attempt even when the underlying turn produced nothing.
+      expect(events, hasLength(1));
+      expect(events.single.kind, OrchestratorEventKind.roundStart);
     });
 
     test('loops to execute tool calls and stops on follow-up text', () async {
@@ -84,12 +89,17 @@ void main() {
         events.add(ev);
       }
 
-      // We expect: toolStart, toolDone (in that order, from round 1).
-      // No events from round 2 because it's an empty-tool turn.
+      // We expect: roundStart (round 1), toolStart, toolDone
+      // (in that order), then a roundStart for round 2 whose
+      // runOneTurn yields no events. The round 2 roundStart
+      // is the final yield; the orchestrator terminates when
+      // round 2 emits a turnDone with no toolCalls.
       final kinds = events.map((e) => e.kind).toList();
       expect(kinds, [
+        OrchestratorEventKind.roundStart,
         OrchestratorEventKind.toolStart,
         OrchestratorEventKind.toolDone,
+        OrchestratorEventKind.roundStart,
       ]);
       expect(executorCalls, hasLength(1));
       expect(executorCalls.single.id, 'call_1');
@@ -131,13 +141,16 @@ void main() {
         events.add(ev);
       }
 
-      // 3 rounds of (toolStart, toolDone) + a final error.
+      // 3 rounds of (roundStart, toolStart, toolDone) + a final error.
       final kinds = events.map((e) => e.kind).toList();
       expect(kinds, [
+        OrchestratorEventKind.roundStart,
         OrchestratorEventKind.toolStart,
         OrchestratorEventKind.toolDone,
+        OrchestratorEventKind.roundStart,
         OrchestratorEventKind.toolStart,
         OrchestratorEventKind.toolDone,
+        OrchestratorEventKind.roundStart,
         OrchestratorEventKind.toolStart,
         OrchestratorEventKind.toolDone,
         OrchestratorEventKind.error,
@@ -168,7 +181,11 @@ void main() {
 
       // An empty turn (no content, no tool calls) just terminates
       // the loop; the orchestrator doesn't synthesize a follow-up.
-      expect(events, isEmpty);
+      // The round boundary is still yielded — it's the round
+      // boundary itself that's the start of the round, not the
+      // content.
+      expect(events, hasLength(1));
+      expect(events.single.kind, OrchestratorEventKind.roundStart);
     });
 
     test(
@@ -326,21 +343,191 @@ void main() {
           events.add(ev);
         }
 
-        // 3 rounds of (toolStart, toolDone) followed by 2 content deltas
-        // from the final turn.
+        // 3 rounds of (roundStart, toolStart, toolDone) followed by
+        // (roundStart, content, content) from the final turn.
         final kinds = events.map((e) => e.kind).toList();
         expect(kinds, [
+          OrchestratorEventKind.roundStart,
           OrchestratorEventKind.toolStart,
           OrchestratorEventKind.toolDone,
+          OrchestratorEventKind.roundStart,
           OrchestratorEventKind.toolStart,
           OrchestratorEventKind.toolDone,
+          OrchestratorEventKind.roundStart,
           OrchestratorEventKind.toolStart,
           OrchestratorEventKind.toolDone,
+          OrchestratorEventKind.roundStart,
           OrchestratorEventKind.content,
           OrchestratorEventKind.content,
         ]);
         expect(round, 4);
       },
     );
+
+    group('roundStart boundary', () {
+      test('emits roundStart(0) before the very first round', () async {
+        final events = <OrchestratorEvent>[];
+        final orch = ToolOrchestrator();
+
+        Stream<OrchestratorEvent> runOneTurn(
+          List<ChatRequestMessage> history,
+        ) async* {
+          yield const OrchestratorEvent.turnDone(
+            TurnResult(emittedAnyContent: true),
+          );
+        }
+
+        await for (final ev in orch.run(
+          runOneTurn: runOneTurn,
+          initialHistory: const <ChatRequestMessage>[],
+          executor: (_) async => 'unused',
+          onTurnCommitted: (_) {},
+        )) {
+          events.add(ev);
+        }
+
+        expect(events, hasLength(1));
+        expect(events.single.kind, OrchestratorEventKind.roundStart);
+        expect(events.single.roundIndex, 0);
+      });
+
+      test(
+        'emits roundStart with monotonically increasing roundIndex',
+        () async {
+          final indices = <int>[];
+          final orch = ToolOrchestrator(maxToolRounds: 4);
+
+          Stream<OrchestratorEvent> runOneTurn(
+            List<ChatRequestMessage> history,
+          ) async* {
+            // Every round emits one tool call so the loop keeps
+            // running. The 4th round's runOneTurn won't run —
+            // we hit maxToolRounds first.
+            yield OrchestratorEvent.turnDone(
+              TurnResult(
+                toolCalls: [
+                  ParsedToolCall(
+                    id: 'call_x',
+                    name: 'current_time',
+                    argumentsRaw: '{}',
+                    arguments: const <String, dynamic>{},
+                  ),
+                ],
+                emittedAnyContent: true,
+              ),
+            );
+          }
+
+          await for (final ev in orch.run(
+            runOneTurn: runOneTurn,
+            initialHistory: const <ChatRequestMessage>[],
+            executor: (_) async => 'time',
+            onTurnCommitted: (_) {},
+          )) {
+            if (ev.kind == OrchestratorEventKind.roundStart) {
+              indices.add(ev.roundIndex ?? -1);
+            }
+          }
+
+          expect(indices, [0, 1, 2, 3]);
+        },
+      );
+
+      test('roundStart is emitted BEFORE the round\'s content / '
+          'toolStart events', () async {
+        // Regression guard: if the orchestrator ever started
+        // emitting roundStart after the round's content (e.g.
+        // accidentally moved below `await for`), ChatProvider
+        // would mint the round-0 bubble AFTER content has
+        // already been routed to it — i.e. content would land
+        // on the wrong bubble. Pin down the ordering.
+        final events = <OrchestratorEvent>[];
+        final orch = ToolOrchestrator();
+
+        Stream<OrchestratorEvent> runOneTurn(
+          List<ChatRequestMessage> history,
+        ) async* {
+          yield OrchestratorEvent.content('hello ');
+          yield OrchestratorEvent.content('world');
+          yield OrchestratorEvent.turnDone(
+            const TurnResult(emittedAnyContent: true),
+          );
+        }
+
+        await for (final ev in orch.run(
+          runOneTurn: runOneTurn,
+          initialHistory: const <ChatRequestMessage>[],
+          executor: (_) async => 'unused',
+          onTurnCommitted: (_) {},
+        )) {
+          events.add(ev);
+        }
+
+        expect(events.map((e) => e.kind).toList(), [
+          OrchestratorEventKind.roundStart,
+          OrchestratorEventKind.content,
+          OrchestratorEventKind.content,
+        ]);
+      });
+
+      test('roundStart for a subsequent round arrives between the '
+          'previous round\'s toolDone and the new round\'s '
+          'content/toolStart', () async {
+        // Mirrors the actual production event sequence: round
+        // N's toolDone fires, then round N+1's roundStart
+        // boundary, then round N+1's content / toolStart.
+        // ChatProvider relies on this exact ordering to flip
+        // `streaming: false` on round N's bubble before
+        // minting round N+1's bubble — flipping it later
+        // would leave the typing indicator on the now-closed
+        // round N.
+        final events = <OrchestratorEvent>[];
+        final orch = ToolOrchestrator();
+
+        var round = 0;
+        Stream<OrchestratorEvent> runOneTurn(
+          List<ChatRequestMessage> history,
+        ) async* {
+          round++;
+          if (round == 1) {
+            yield OrchestratorEvent.turnDone(
+              TurnResult(
+                toolCalls: [
+                  const ParsedToolCall(
+                    id: 'call_1',
+                    name: 'current_time',
+                    argumentsRaw: '{}',
+                    arguments: {},
+                  ),
+                ],
+                emittedAnyContent: true,
+              ),
+            );
+          } else {
+            yield OrchestratorEvent.content('answer');
+            yield const OrchestratorEvent.turnDone(
+              TurnResult(emittedAnyContent: true),
+            );
+          }
+        }
+
+        await for (final ev in orch.run(
+          runOneTurn: runOneTurn,
+          initialHistory: const <ChatRequestMessage>[],
+          executor: (_) async => 'time',
+          onTurnCommitted: (_) {},
+        )) {
+          events.add(ev);
+        }
+
+        expect(events.map((e) => e.kind).toList(), [
+          OrchestratorEventKind.roundStart, // round 0
+          OrchestratorEventKind.toolStart,
+          OrchestratorEventKind.toolDone,
+          OrchestratorEventKind.roundStart, // round 1
+          OrchestratorEventKind.content,
+        ]);
+      });
+    });
   });
 }

@@ -119,7 +119,7 @@ String buildBaseSystemPrompt({
             '- MCP 工具(名称以 mcp__ 开头):已启用 $enabledMcpServerCount 个 MCP 服务器,'
             'load_tool("mcp__<server>__<tool>") 按需加载;'
       : '';
-return '你是一个聪明且细心的助理,诚实又可靠.\n'
+  return '你是一个聪明且细心的助理,诚实又可靠.\n'
       '\n'
       '## 核心规则\n'
       '处理任务流程:\n'
@@ -346,6 +346,30 @@ class ChatProvider extends ChangeNotifier {
   /// up here. Entries are removed as soon as the corresponding
   /// `toolDone` arrives, so the map stays small.
   final Map<String, Map<String, String>> _transportToUiToolCallId = {};
+
+  /// Round-aware bubble tracking. The orchestrator emits a
+  /// `roundStart(N)` event at the start of every tool-calling
+  /// round; we mint a fresh per-round assistant bubble on each
+  /// boundary so a long, multi-round tool-calling sequence
+  /// stops stacking every round's content / thinking / tool
+  /// cards into a single ever-growing bubble. Round 0 reuses
+  /// the placeholder bubble created by
+  /// `_appendUserAndAssistantPlaceholders` / `_appendAssistantPlaceholder`;
+  /// rounds >= 1 are fresh bubbles.
+  ///
+  /// `_currentRoundBubbleId` is the bubble that incoming
+  /// `content` / `reasoning` / `toolStart` / `toolDone` /
+  /// `error` / `usage` events should be routed to. Reset to
+  /// `null` when the turn is over.
+  String? _currentRoundBubbleId;
+
+  /// Every assistant bubble id minted for the in-flight turn, in
+  /// order (round 0 first). Used at end-of-stream to flip
+  /// `streaming: false` on every bubble in one pass and to drop
+  /// the round-1+ bubbles' "streaming" typing indicator without
+  /// leaving a stale flag on intermediate rounds. Empty when no
+  /// turn is in flight.
+  final List<String> _currentTurnBubbleIds = [];
 
   /// Periodic 1-second ticker that drives the auto-retry
   /// countdown UI. Started by [_setRetryStateOnMessage] the
@@ -949,6 +973,87 @@ class ChatProvider extends ChangeNotifier {
     );
   }
 
+  /// Handles the orchestrator's `roundStart(N)` boundary event.
+  ///
+  /// For round 0, reuses the placeholder assistant bubble that
+  /// was already created by `_appendUserAndAssistantPlaceholders`
+  /// (or `_appendAssistantPlaceholder` for the timer path) — the
+  /// `assistantId` returned by those helpers is the round-0
+  /// bubble id, so we just point `_currentRoundBubbleId` at it.
+  ///
+  /// For round N >= 1, marks the previous round's bubble
+  /// `streaming: false` (so the typing indicator disappears from
+  /// intermediate bubbles), mints a fresh assistant bubble,
+  /// appends it to the session, and switches
+  /// `_currentRoundBubbleId` to the new id.
+  ///
+  /// Idempotent in the edge case where the same round number
+  /// somehow arrives twice (e.g. a stream retry that re-emits
+  /// the boundary): the second call is a no-op for round 0 and
+  /// would create a stray bubble for round N>=1, but the
+  /// orchestrator only emits `roundStart` once per round, so
+  /// this is theoretical.
+  void _startNewRound(int roundIndex, String fallbackRoundZeroBubbleId) {
+    final s = _activeSession;
+    if (s == null) return;
+
+    if (roundIndex == 0) {
+      // Reuse the pre-existing placeholder bubble. Sanity-check
+      // it actually exists; if it doesn't (extremely rare — a
+      // stream that started without going through the helper),
+      // mint a fresh one rather than silently losing events.
+      final exists = s.messages.any((m) => m.id == fallbackRoundZeroBubbleId);
+      if (!exists) {
+        final fresh = ChatMessage(
+          id: _uuid.v4(),
+          role: MessageRole.assistant,
+          content: '',
+          streaming: true,
+        );
+        _replaceMessages([...s.messages, fresh]);
+        _currentRoundBubbleId = fresh.id;
+        if (!_currentTurnBubbleIds.contains(fresh.id)) {
+          _currentTurnBubbleIds.add(fresh.id);
+        }
+      } else {
+        _currentRoundBubbleId = fallbackRoundZeroBubbleId;
+        if (!_currentTurnBubbleIds.contains(fallbackRoundZeroBubbleId)) {
+          _currentTurnBubbleIds.add(fallbackRoundZeroBubbleId);
+        }
+      }
+      return;
+    }
+
+    // Intermediate / final round: mint a fresh bubble.
+    if (_currentRoundBubbleId != null) {
+      // Close the previous round's bubble — flip streaming off
+      // AND stamp `roundFinishedAt` so the bubble footer can
+      // render a stable "⏱ 1.2s" duration chip after the
+      // round has ended (without this, the duration would
+      // continue counting "live" because `createdAt` is fixed
+      // but the wall clock keeps advancing).
+      final closedAt = DateTime.now();
+      _replaceMessages([
+        for (final m in s.messages)
+          if (m.id == _currentRoundBubbleId)
+            m.copyWith(streaming: false, roundFinishedAt: closedAt)
+          else
+            m,
+      ]);
+    }
+    final fresh = ChatMessage(
+      id: _uuid.v4(),
+      role: MessageRole.assistant,
+      content: '',
+      streaming: true,
+    );
+    _replaceMessages([..._activeSession!.messages, fresh]);
+    _currentRoundBubbleId = fresh.id;
+    if (!_currentTurnBubbleIds.contains(fresh.id)) {
+      _currentTurnBubbleIds.add(fresh.id);
+    }
+  }
+
   /// Append a fresh user + assistant placeholder pair to the
   /// active session. Returns the new assistant message id so the
   /// stream listener can find it.
@@ -1494,15 +1599,14 @@ class ChatProvider extends ChangeNotifier {
           );
         }
         final rawDetail = args['detail'];
-        final isEmptyDetail =
-            rawDetail is String && rawDetail.trim().isEmpty;
+        final isEmptyDetail = rawDetail is String && rawDetail.trim().isEmpty;
         final updated = existing.copyWith(
           content: newContent,
           detail: rawDetail == null
               ? existing.detail
               : isEmptyDetail
-                  ? null
-                  : rawDetail as String,
+              ? null
+              : rawDetail as String,
           clearDetail: isEmptyDetail,
         );
         current = current.copyWith(
@@ -3019,6 +3123,20 @@ class ChatProvider extends ChangeNotifier {
     StreamSubscription<StreamEvent>? sub;
     final controller = StreamController<void>();
 
+    // Round-aware bubble tracking. Reset at the start of every
+    // attempt (the cloud retry path may re-enter this method
+    // after a previous attempt failed). Round 0 reuses the
+    // placeholder bubble created by `_append*Placeholder`; rounds
+    // 1+ are minted lazily on each `roundStart` event. The
+    // dispatch below reads `_currentRoundBubbleId` instead of
+    // the original `assistantId` parameter so multi-round
+    // tool-calling sequences don't stack every round's content /
+    // thinking / tool cards into a single ever-growing bubble.
+    _currentRoundBubbleId = assistantId;
+    _currentTurnBubbleIds
+      ..clear()
+      ..add(assistantId);
+
     // Single-shot guard: once we've recorded an outcome (any
     // kind), subsequent events from the stream become no-ops.
     // This guards against a late 'content' / 'error' / 'done'
@@ -3040,7 +3158,15 @@ class ChatProvider extends ChangeNotifier {
             tools: tools,
             toolsBuilder: toolsBuilder,
             enableThinking: _settings.thinkingModeEnabled,
-            onToolCall: (tc) => _onToolCall(context, tc, assistantId),
+            // Resolve the bubble id at invocation time so the
+            // tool's chat-side mutations (ask_user chips,
+            // download progress, edit_image gallery, etc.) land
+            // on the CURRENT round's bubble — not on round 0's
+            // bubble, which would defeat the round split. The
+            // closure body is re-evaluated each time the
+            // orchestrator calls the executor.
+            onToolCall: (tc) =>
+                _onToolCall(context, tc, _currentRoundBubbleId ?? assistantId),
             orchestrator: _orchestrator,
             boundSessionId: _activeSession?.id,
             onBoundSessionId: (id) => setLocalSessionId(id?.toString()),
@@ -3058,7 +3184,8 @@ class ChatProvider extends ChangeNotifier {
             tools: tools.isEmpty ? null : tools,
             toolsBuilder: toolsBuilder,
             enableThinking: _settings.thinkingModeEnabled,
-            onToolCall: (tc) => _onToolCall(context, tc, assistantId),
+            onToolCall: (tc) =>
+                _onToolCall(context, tc, _currentRoundBubbleId ?? assistantId),
             orchestrator: _orchestrator,
             inlineFileTypes: provider.effectiveSupportedFileTypes,
           );
@@ -3067,7 +3194,18 @@ class ChatProvider extends ChangeNotifier {
     sub = stream.listen(
       (event) {
         if (outcomeRecorded) return;
-        if (event.type == 'toolStart') {
+        // Read the active round bubble id fresh on every event.
+        // Multi-round tool-calling sequences mint a fresh bubble
+        // at each `roundStart` boundary; routing events to
+        // `_currentRoundBubbleId` instead of the original
+        // `assistantId` keeps each round's tool calls / thinking
+        // / content in its own bubble instead of stacking them
+        // into one ever-growing card.
+        final roundBubbleId = _currentRoundBubbleId ?? assistantId;
+        if (event.type == 'roundStart') {
+          _startNewRound(event.roundIndex ?? 0, assistantId);
+          controller.add(null);
+        } else if (event.type == 'toolStart') {
           final s = _activeSession;
           if (s != null) {
             // The id hygiene here is load-bearing. Three failure
@@ -3095,7 +3233,7 @@ class ChatProvider extends ChangeNotifier {
             // the right bubble.
             final incoming = event.toolId ?? '';
             final assistant = s.messages.firstWhere(
-              (m) => m.id == assistantId,
+              (m) => m.id == roundBubbleId,
               orElse: () => s.messages.first,
             );
             final toolId = resolveToolCallBubbleId(
@@ -3104,7 +3242,7 @@ class ChatProvider extends ChangeNotifier {
             );
             _replaceMessages([
               for (final mm in s.messages)
-                if (mm.id == assistantId)
+                if (mm.id == roundBubbleId)
                   mm.copyWith(
                     toolCalls: [
                       ...mm.toolCalls,
@@ -3132,9 +3270,12 @@ class ChatProvider extends ChangeNotifier {
             // Record the transport→UI id mapping so `toolDone`
             // can find the right bubble even if we synthesized
             // a new id (see the `toolDone` branch below).
+            // Keyed by the CURRENT round's bubble id so that a
+            // round 2 tool call's mapping doesn't collide with a
+            // round 1 sibling's mapping.
             if (incoming.isNotEmpty && incoming != toolId) {
-              _transportToUiToolCallId[assistantId] ??= <String, String>{};
-              _transportToUiToolCallId[assistantId]![incoming] = toolId;
+              _transportToUiToolCallId[roundBubbleId] ??= <String, String>{};
+              _transportToUiToolCallId[roundBubbleId]![incoming] = toolId;
             }
             controller.add(null);
           }
@@ -3154,24 +3295,25 @@ class ChatProvider extends ChangeNotifier {
             //   3. Fallback: the orchestrator processes tool
             //      calls sequentially, so the `toolDone` event
             //      updates the *last running* `ToolCall` on the
-            //      assistant message. This is what catches the
-            //      case where the transport emitted a completely
-            //      empty id AND we somehow lost the mapping.
+            //      current round's assistant message. This is
+            //      what catches the case where the transport
+            //      emitted a completely empty id AND we somehow
+            //      lost the mapping.
             final rawId = event.toolId ?? '';
-            final mapping = _transportToUiToolCallId[assistantId];
+            final mapping = _transportToUiToolCallId[roundBubbleId];
             String toolId = (mapping != null && mapping.containsKey(rawId))
                 ? mapping[rawId]!
                 : (rawId.isNotEmpty ? rawId : '');
             if (toolId.isEmpty ||
                 !s.messages
                     .firstWhere(
-                      (m) => m.id == assistantId,
+                      (m) => m.id == roundBubbleId,
                       orElse: () => s.messages.first,
                     )
                     .toolCalls
                     .any((tc) => tc.id == toolId)) {
               final assistant = s.messages.firstWhere(
-                (m) => m.id == assistantId,
+                (m) => m.id == roundBubbleId,
                 orElse: () => s.messages.first,
               );
               final lastRunning = assistant.toolCalls.lastWhere(
@@ -3186,7 +3328,7 @@ class ChatProvider extends ChangeNotifier {
             final now = DateTime.now();
             _replaceMessages([
               for (final mm in s.messages)
-                if (mm.id == assistantId)
+                if (mm.id == roundBubbleId)
                   mm.copyWith(
                     toolCalls: [
                       for (final tc in mm.toolCalls)
@@ -3210,7 +3352,7 @@ class ChatProvider extends ChangeNotifier {
           if (s != null) {
             _replaceMessages([
               for (final mm in s.messages)
-                if (mm.id == assistantId)
+                if (mm.id == roundBubbleId)
                   mm.copyWith(thinking: mm.thinking + event.thinkingDelta!)
                 else
                   mm,
@@ -3235,7 +3377,7 @@ class ChatProvider extends ChangeNotifier {
           if (s != null) {
             _replaceMessages([
               for (final mm in s.messages)
-                if (mm.id == assistantId)
+                if (mm.id == roundBubbleId)
                   mm.copyWith(content: mm.content + event.contentDelta!)
                 else
                   mm,
@@ -3263,7 +3405,9 @@ class ChatProvider extends ChangeNotifier {
           // "⚡ cache hit N token" chip. Only the LATEST usage
           // matters — the orchestrator may emit one per
           // tool-call round, but the chat UI shows only the
-          // snapshot from the final, content-bearing turn.
+          // snapshot from the final, content-bearing turn. With
+          // round-aware bubbles that snapshot lands on the
+          // final round's bubble (which holds the answer text).
           final s = _activeSession;
           // Cache the latest server-reported counts in local
           // closure variables so the final [MessageMetrics]
@@ -3280,7 +3424,7 @@ class ChatProvider extends ChangeNotifier {
           if (s != null) {
             _replaceMessages([
               for (final mm in s.messages)
-                if (mm.id == assistantId)
+                if (mm.id == roundBubbleId)
                   mm.copyWith(
                     metrics: MessageMetrics(
                       turnStartedAt: turnStartedAt,
@@ -3314,7 +3458,13 @@ class ChatProvider extends ChangeNotifier {
           if (!useLocal && isRetryableNetworkError(raw)) {
             recordOutcome(_TurnOutcome.retryable(raw));
             _setRetryStateOnMessage(
-              assistantId,
+              // The retry banner should land on the bubble that
+              // was actively streaming when the error fired —
+              // i.e. the current round's bubble. Falling back to
+              // `assistantId` keeps the legacy single-bubble
+              // contract for callers that didn't go through
+              // `_runAssistantTurnStreamAttempt`.
+              _currentRoundBubbleId ?? assistantId,
               attempt + 1,
               DateTime.now().add(computeRetryBackoff(attempt + 1)),
             );
@@ -3326,7 +3476,7 @@ class ChatProvider extends ChangeNotifier {
             final errText = l10n.messageErrorPrefix(raw);
             _replaceMessages([
               for (final mm in s.messages)
-                if (mm.id == assistantId)
+                if (mm.id == roundBubbleId)
                   mm.copyWith(
                     content: mm.content.isEmpty
                         ? errText
@@ -3348,7 +3498,7 @@ class ChatProvider extends ChangeNotifier {
         if (!useLocal && isRetryableNetworkError(raw)) {
           recordOutcome(_TurnOutcome.retryable(raw));
           _setRetryStateOnMessage(
-            assistantId,
+            _currentRoundBubbleId ?? assistantId,
             attempt + 1,
             DateTime.now().add(computeRetryBackoff(attempt + 1)),
           );
@@ -3357,9 +3507,15 @@ class ChatProvider extends ChangeNotifier {
         final s = _activeSession;
         if (s != null) {
           final errText = l10n.messageErrorPrefix(raw);
+          // Write the error into the CURRENT round's bubble (the
+          // one that was actively streaming when the error fired),
+          // not the round-0 placeholder. With multi-round turns
+          // this keeps the failure localised to the round where it
+          // happened instead of stranding it on a stale bubble.
+          final roundBubbleId = _currentRoundBubbleId ?? assistantId;
           _replaceMessages([
             for (final mm in s.messages)
-              if (mm.id == assistantId)
+              if (mm.id == roundBubbleId)
                 mm.copyWith(
                   content: mm.content.isEmpty
                       ? errText
@@ -3415,6 +3571,13 @@ class ChatProvider extends ChangeNotifier {
       // matches the pattern used everywhere else in this
       // method.
       //
+      // With round-aware bubbles, metrics land on the FINAL
+      // round's bubble (the one that carries the actual answer
+      // text). All other bubbles in the turn are flipped to
+      // `streaming: false` so the typing indicator doesn't
+      // linger on intermediate tool-only rounds, but keep their
+      // tool cards / thinking panels for the user to revisit.
+      //
       // Skipped on retryable outcomes — those already wrote
       // streaming=false + null metrics into the bubble via
       // [_setRetryStateOnMessage], so re-stamping would
@@ -3434,14 +3597,35 @@ class ChatProvider extends ChangeNotifier {
         cacheCreationInputTokens: usageCacheCreationInputTokens,
         cacheReadInputTokens: usageCacheReadInputTokens,
       );
+      final finalBubbleId = _currentRoundBubbleId ?? assistantId;
+      // Stamp `roundFinishedAt` on every bubble of this turn so
+      // the footer can render a stable duration chip. The final
+      // round's bubble also gets the full [MessageMetrics] (TTFT
+      // / tokens/sec / cache hit chip) — intermediate rounds
+      // get just the duration. `closedAt` is captured once so
+      // the chips on consecutive bubbles don't drift apart by
+      // the milliseconds between `_replaceMessages` calls.
+      final closedAt = DateTime.now();
       _replaceMessages([
         for (final m in s.messages)
-          if (m.id == assistantId)
-            m.copyWith(streaming: false, metrics: finalMetrics)
+          if (_currentTurnBubbleIds.contains(m.id))
+            m.copyWith(
+              streaming: false,
+              roundFinishedAt: closedAt,
+              metrics: m.id == finalBubbleId ? finalMetrics : m.metrics,
+            )
           else
             m,
       ]);
     }
+    // Reset round-aware tracking so the next user turn starts
+    // from a clean slate. The `_currentTurnBubbleIds` list keeps
+    // appending during the turn; clearing it here ensures the
+    // next `_runAssistantTurnStreamAttempt` call doesn't carry
+    // over stale bubble ids from this turn.
+    _currentRoundBubbleId = null;
+    _currentTurnBubbleIds.clear();
+    _transportToUiToolCallId.clear();
     return outcome;
   }
 
@@ -3485,6 +3669,13 @@ class ChatProvider extends ChangeNotifier {
     // Mark the in-flight assistant message as done (remove streaming
     // flag, add a truncated marker; clear any auto-retry state
     // so the bubble doesn't keep showing a stale countdown).
+    //
+    // With round-aware bubbles, "the in-flight assistant message"
+    // is the current round's bubble — but EVERY bubble of this
+    // turn must flip streaming=false so the typing indicator
+    // doesn't linger on intermediate rounds. The "*(stopped)*"
+    // marker only attaches to the last round's bubble (the one
+    // actually being written when the user hit stop).
     final s = _activeSession;
     if (s != null && s.messages.isNotEmpty) {
       final last = s.messages.last;
@@ -3492,14 +3683,18 @@ class ChatProvider extends ChangeNotifier {
         final truncated = (last.streaming || last.isRetrying)
             ? (last.content.isEmpty ? '' : '${last.content}\n\n*(stopped)*')
             : last.content;
+        final closedAt = DateTime.now();
         _replaceMessages([
           for (var i = 0; i < s.messages.length; i++)
-            if (i == s.messages.length - 1)
-              last.copyWith(
-                content: truncated,
+            if (_currentTurnBubbleIds.contains(s.messages[i].id))
+              s.messages[i].copyWith(
                 streaming: false,
                 retryAttempt: 0,
                 clearNextRetryAt: true,
+                roundFinishedAt: closedAt,
+                content: i == s.messages.length - 1
+                    ? truncated
+                    : s.messages[i].content,
               )
             else
               s.messages[i],
@@ -3508,6 +3703,12 @@ class ChatProvider extends ChangeNotifier {
     }
     _sending = false;
     _maybeStopRetryTickTimer();
+    // Reset round-aware tracking so the next user turn starts
+    // from a clean slate (mirrors the cleanup at the end of
+    // `_runAssistantTurnStreamAttempt`).
+    _currentRoundBubbleId = null;
+    _currentTurnBubbleIds.clear();
+    _transportToUiToolCallId.clear();
     if (!_disposed) notifyListeners();
   }
 

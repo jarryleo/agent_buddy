@@ -570,6 +570,12 @@ class LocalLlmService extends ChangeNotifier {
                   );
                 }
                 break;
+              case OrchestratorEventKind.roundStart:
+                // Boundary marker so ChatProvider can mint a fresh
+                // per-round assistant bubble. Mirrors the API
+                // service path.
+                outbound.add(StreamEvent.roundStart(ev.roundIndex ?? 0));
+                break;
               case OrchestratorEventKind.turnDone:
                 // Internal sentinel; never forwarded to the chat UI.
                 break;

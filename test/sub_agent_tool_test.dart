@@ -96,6 +96,13 @@ StreamEvent _toStreamEvent(OrchestratorEvent ev) {
       return const StreamEvent(type: 'usage');
     case OrchestratorEventKind.turnDone:
       return const StreamEvent(type: 'done', done: true);
+    case OrchestratorEventKind.roundStart:
+      // Round boundary — the sub-agent chat UI keeps a single
+      // bubble for the report (see
+      // [ChatProvider.formatSubAgentSnapshot]), so the round
+      // marker is forwarded as a stream event for exhaustiveness
+      // but the bridge doesn't act on it.
+      return StreamEvent.roundStart(ev.roundIndex ?? 0);
   }
 }
 

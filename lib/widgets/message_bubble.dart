@@ -596,7 +596,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                     children: [
                       Container(
                         margin: EdgeInsets.only(
-                          top: (hasThinking || hasTools || hasEditedImages) ? 6 : 0,
+                          top: (hasThinking || hasTools || hasEditedImages)
+                              ? 6
+                              : 0,
                         ),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 14,
@@ -653,6 +655,20 @@ class _MessageBubbleState extends State<MessageBubble> {
                 // so a turn that produced only reasoning tokens
                 // still surfaces its timestamp + chips to the
                 // user.
+                //
+                // Multi-round layout: a turn can span several
+                // bubbles (one per orchestrator round). The
+                // FINAL round's bubble gets the full
+                // [MessageMetrics] footer (TTFT, tokens/sec,
+                // cache hit). Intermediate round bubbles are
+                // tool-only / thinking-only — they show a
+                // compact "time · copy · ⏱ duration" footer so
+                // the user can still see how long the round
+                // took and grab its visible text (thinking +
+                // tool args/result snippets) without the metrics
+                // chips. The duration is computed from
+                // [roundFinishedAt] - [createdAt] so the chip
+                // doesn't keep ticking after the round ends.
                 Padding(
                   padding: const EdgeInsets.only(top: 4, left: 4),
                   child: Row(
@@ -664,6 +680,15 @@ class _MessageBubbleState extends State<MessageBubble> {
                           fontSize: 11,
                         ),
                       ),
+                      // Copy button: visible only on bubbles
+                      // that have 正文 (the actual reply text).
+                      // Intermediate round bubbles that only
+                      // show thinking + tool cards don't need a
+                      // whole-bubble copy — the tool-call section
+                      // already exposes a per-tool copy
+                      // affordance, and the thinking is
+                      // "scratch work" rather than the model's
+                      // answer.
                       if (m.content.isNotEmpty) ...[
                         const SizedBox(width: 6),
                         InkWell(
@@ -677,6 +702,18 @@ class _MessageBubbleState extends State<MessageBubble> {
                               color: context.textSecondary,
                             ),
                           ),
+                        ),
+                      ],
+                      // Duration chip: visible on intermediate
+                      // round bubbles (i.e. anything that
+                      // doesn't carry the full metrics footer).
+                      // Skipped for the final round — that one
+                      // gets the richer metrics chips below.
+                      if (m.metrics == null && m.roundFinishedAt != null) ...[
+                        const SizedBox(width: 6),
+                        _buildDurationChip(
+                          context,
+                          m.roundFinishedAt!.difference(m.createdAt),
                         ),
                       ],
                       if (m.metrics != null) ...[
@@ -950,7 +987,7 @@ class _MessageBubbleState extends State<MessageBubble> {
             ),
           ),
           ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: 24.0 * maxLines + 8),
+            constraints: BoxConstraints(maxHeight: 20.0 * maxLines),
             child: SingleChildScrollView(
               controller: _thinkingScroll,
               padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
@@ -1252,13 +1289,35 @@ class _MessageBubbleState extends State<MessageBubble> {
   static String _formatSeconds(Duration d) {
     if (d.inSeconds < 60) {
       // Always show two decimals so the user can read "0.50s"
-      // vs "0.05s" at a glance �?the small TTFT case is the
+      // vs "0.05s" at a glance — the small TTFT case is the
       // most informative one for cache-hit comparisons.
       return '${(d.inMicroseconds / 1000000).toStringAsFixed(2)}s';
     }
     final mins = d.inMinutes;
     final secs = d.inSeconds - mins * 60;
     return '${mins}m${secs.toString().padLeft(2, '0')}s';
+  }
+
+  /// Compact "⏱ 1.2s" duration chip used in the footer of
+  /// INTERMEDIATE round bubbles (the final round's bubble
+  /// gets the full [MessageMetrics] footer instead). Lives
+  /// to the right of the timestamp — pushed by a `Spacer` so
+  /// it hugs the right edge of the bubble width.
+  Widget _buildDurationChip(BuildContext context, Duration d) {
+    final secondary = context.textSecondary;
+    final isNegative = d.isNegative;
+    final positive = isNegative ? Duration.zero : d;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.schedule_outlined, size: 12, color: secondary),
+        const SizedBox(width: 2),
+        Text(
+          _formatSeconds(positive),
+          style: TextStyle(color: secondary, fontSize: 11),
+        ),
+      ],
+    );
   }
 
   Widget _buildToolCalls(BuildContext context, List<ToolCall> calls) {
@@ -1454,8 +1513,83 @@ class _GroupedToolCallsState extends State<_GroupedToolCalls> {
               if (m.toolCalls.isNotEmpty) _buildToolCalls(context, m.toolCalls),
             ],
           ],
+          // Footer with time + total duration. Mirrors the
+          // intermediate-round bubble footer — only rendered
+          // when the grouped cards have actually closed (every
+          // bubble in the group has `roundFinishedAt` set). The
+          // duration spans the earliest bubble's `createdAt`
+          // to the LATEST bubble's `roundFinishedAt` — i.e. the
+          // wall-clock window in which the multi-round group
+          // ran, not the sum of per-round durations. Lives
+          // outside the card so it gets the page background
+          // color (matches the per-bubble footer styling).
+          if (_groupHasFinishedDuration(widget.messages)) ...[
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Row(
+                children: [
+                  Text(
+                    DateFormat(
+                      'HH:mm',
+                    ).format(widget.messages.first.createdAt.toLocal()),
+                    style: TextStyle(
+                      color: context.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const Spacer(),
+                  _buildGroupDurationChip(context, widget.messages),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  /// True when every bubble in the group has been closed
+  /// (i.e. its `roundFinishedAt` is set), so the footer can
+  /// render a stable duration chip. Mid-stream groups
+  /// (streaming == true) leave the footer off — the chip
+  /// would otherwise tick live and look noisy on a card that
+  /// is still actively updating.
+  static bool _groupHasFinishedDuration(List<ChatMessage> messages) {
+    if (messages.isEmpty) return false;
+    return messages.every((m) => m.roundFinishedAt != null && !m.streaming);
+  }
+
+  /// Compact "⏱ 1.2s" duration chip for a grouped card.
+  /// Window is first `createdAt` → last `roundFinishedAt`
+  /// across the group; negative durations (clock skew on
+  /// restore) clamp to zero.
+  Widget _buildGroupDurationChip(
+    BuildContext context,
+    List<ChatMessage> messages,
+  ) {
+    final firstAt = messages.first.createdAt;
+    DateTime? lastAt;
+    for (final m in messages) {
+      final closed = m.roundFinishedAt;
+      if (closed == null) continue;
+      if (lastAt == null || closed.isAfter(lastAt)) lastAt = closed;
+    }
+    final secondary = context.textSecondary;
+    if (lastAt == null) return const SizedBox.shrink();
+    final delta = lastAt.difference(firstAt);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.schedule_outlined, size: 12, color: secondary),
+        const SizedBox(width: 2),
+        Text(
+          _MessageBubbleState._formatSeconds(
+            delta.isNegative ? Duration.zero : delta,
+          ),
+          style: TextStyle(color: secondary, fontSize: 11),
+        ),
+      ],
     );
   }
 
@@ -1487,6 +1621,7 @@ class _ToolCallCard extends StatefulWidget {
   });
 
   final ToolCall toolCall;
+
   // id of the assistant [ChatMessage] that owns this tool call.
   // The download card needs it so the chat provider can route
   // "save" / "discard" / "cancel" actions back to the right
@@ -1856,6 +1991,7 @@ class _StreamingMarkdownState extends State<_StreamingMarkdown>
     with SingleTickerProviderStateMixin {
   String _rendered = '';
   Timer? _throttle;
+
   // Eagerly initialized in [initState] rather than as a `late final`
   // field. The late-initializer form would only run on first access
   // �?and if the widget is disposed before any tick fires (e.g. the
@@ -2307,6 +2443,7 @@ class _OptionChip extends StatelessWidget {
 /// it's a 1:1 view-model for the gallery section above.
 class _EditedImageEntry {
   const _EditedImageEntry({required this.toolId, required this.image});
+
   final String toolId;
   final EditedImage image;
 }

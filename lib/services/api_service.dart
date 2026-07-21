@@ -28,6 +28,14 @@ class StreamEvent {
   final bool? toolSuccess;
   final String? toolError;
 
+  /// Zero-indexed round number. Populated when
+  /// `type == 'roundStart'` — fired at the start of every
+  /// tool-calling round by the orchestrator. ChatProvider uses it
+  /// to mint a fresh per-round assistant bubble so multi-round
+  /// tool-calling sequences stop stacking everything into a
+  /// single ever-growing bubble. `0` for the very first round.
+  final int? roundIndex;
+
   /// Per-turn token usage. Populated when type == 'usage' with
   /// the cumulative counts reported by the provider:
   ///   * [usageInputTokens] — uncached input tokens (i.e. the
@@ -66,6 +74,7 @@ class StreamEvent {
     this.toolResult,
     this.toolSuccess,
     this.toolError,
+    this.roundIndex,
     this.usageInputTokens,
     this.usageCacheCreationInputTokens,
     this.usageCacheReadInputTokens,
@@ -75,6 +84,12 @@ class StreamEvent {
   factory StreamEvent.error(String msg) =>
       StreamEvent(type: 'error', error: msg);
   factory StreamEvent.done() => const StreamEvent(type: 'done', done: true);
+
+  /// Fired at the start of every tool-calling round. ChatProvider
+  /// uses it to mint a fresh per-round assistant bubble. Round 0
+  /// is the first round; intermediate rounds index 1, 2, ...
+  factory StreamEvent.roundStart(int roundIndex) =>
+      StreamEvent(type: 'roundStart', roundIndex: roundIndex);
   factory StreamEvent.toolStart({
     required String id,
     required String name,
@@ -400,6 +415,13 @@ class ApiService {
               outputTokens: u.outputTokens,
             );
           }
+          break;
+        case OrchestratorEventKind.roundStart:
+          // Boundary marker so ChatProvider can mint a fresh
+          // per-round assistant bubble. Forwarded as a
+          // `StreamEvent.roundStart` carrying the zero-indexed
+          // round number.
+          yield StreamEvent.roundStart(ev.roundIndex ?? 0);
           break;
         case OrchestratorEventKind.turnDone:
           // Internal sentinel; never forwarded to the chat UI.
