@@ -13,9 +13,9 @@ import '../models/message.dart';
 import '../providers/chat_provider.dart';
 import '../services/tts_service.dart';
 import '../theme/app_theme.dart';
-import 'image_preview.dart';
 import 'download_card.dart';
 import 'edit_image_card.dart';
+import 'image_preview.dart';
 import 'markdown_content.dart';
 
 class MessageBubble extends StatefulWidget {
@@ -596,7 +596,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                     children: [
                       Container(
                         margin: EdgeInsets.only(
-                          top: (hasThinking || hasTools) ? 6 : 0,
+                          top: (hasThinking || hasTools || hasEditedImages) ? 6 : 0,
                         ),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 14,
@@ -711,6 +711,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         .where((c) => c.status == ToolCallStatus.running)
         .length;
     return Container(
+      margin: EdgeInsets.only(top: 6),
       decoration: BoxDecoration(
         color: context.toolCallBg,
         borderRadius: BorderRadius.circular(10),
@@ -813,7 +814,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
     if (entries.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.only(top: 0),
       child: Wrap(
         spacing: 6,
         runSpacing: 6,
@@ -1265,6 +1266,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     final assistantId = widget.message.id;
     final keys = MessageBubble.disambiguateToolCallKeys(calls);
     return Column(
+      spacing: 6,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (var i = 0; i < calls.length; i++) ...[
@@ -1276,7 +1278,6 @@ class _MessageBubbleState extends State<MessageBubble> {
                 ? () => chat.retryToolCall(context, assistantId, calls[i].id)
                 : null,
           ),
-          SizedBox(height: 6),
         ],
       ],
     );
