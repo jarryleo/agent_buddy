@@ -101,11 +101,9 @@ typedef FileSystemChecker = Future<bool> Function(String path);
 /// 1. **Git Bash** (`bash.exe` / `sh.exe`) — preferred. The
 ///    AI's typical shell recipes just work and Git for Windows
 ///    ships the standard unix utilities on PATH.
-///    - Probe order: `where.exe bash.exe` → `where.exe sh.exe` →
-///      hard-coded candidate paths under
-///      `C:\Program Files\Git\bin\`,
-///      `C:\Program Files\Git\usr\bin\`,
-///      `C:\Program Files (x86)\Git\bin\`.
+///    - Probe order: hard-coded canonical paths →
+///      `where.exe git.exe` (derive bash from the install root) →
+///      `where.exe bash.exe` → `where.exe sh.exe`.
 /// 2. **PowerShell Core** (`pwsh.exe`) — modern preferred. Falls
 ///    back to Windows PowerShell 5 (`powershell.exe`) if Core is
 ///    not present.
@@ -196,13 +194,54 @@ class WindowsShellResolver {
         return _gitBashShell(fallback);
       }
     }
-    // PATH-based probe — only used as a backstop. Likely points
-    // at the WSL bash stub on machines that have both Git and
-    // WSL installed, but that's still a usable POSIX shell.
+    // Probe `where.exe git.exe` to discover Git installs that
+    // don't live under the canonical `C:\Program Files\Git\`
+    // path (e.g. a user-installed `D:\Git\`). Derive the install
+    // root from `git.exe`'s location, then look for `bash.exe`
+    // / `sh.exe` next to it. This sits BEFORE the `where.exe
+    // bash.exe` backstop because that backstop resolves to the
+    // WSL stub on hosts that have both Git and WSL installed —
+    // and the WSL stub errors out instead of running when WSL
+    // isn't actually configured.
+    final fromGit = await _probeGitBashFromGit();
+    if (fromGit != null) return fromGit;
+    // PATH-based probe — last backstop for Git Bash. Likely
+    // points at the WSL bash stub on machines that have both
+    // Git and WSL installed, but that's still a usable POSIX
+    // shell.
     for (final name in <String>['bash.exe', 'sh.exe']) {
       final resolved = await _resolveByProbe(name);
       if (resolved != null) {
         return _gitBashShell(resolved);
+      }
+    }
+    return null;
+  }
+
+  /// Probe `where.exe git.exe` and derive a Git for Windows
+  /// install root from the resolved path, then check the usual
+  /// `bash.exe` / `sh.exe` locations under that root.
+  ///
+  /// Handles every Git-for-Windows layout we know about:
+  ///
+  ///   `<root>\cmd\git.exe`            — the `cmd/` shim most
+  ///                                       installs put on PATH
+  ///   `<root>\bin\git.exe`            — older / PortableGit
+  ///   `<root>\mingw64\bin\git.exe`    — newer installs, where
+  ///                                       the real git binary lives
+  Future<WindowsShell?> _probeGitBashFromGit() async {
+    final gitPath = await _resolveByProbe('git.exe');
+    if (gitPath == null) return null;
+    final installRoot = _gitInstallPathFromGit(gitPath);
+    if (installRoot == null) return null;
+    for (final candidate in <String>[
+      '$installRoot\\bin\\bash.exe',
+      '$installRoot\\usr\\bin\\bash.exe',
+      '$installRoot\\bin\\sh.exe',
+      '$installRoot\\usr\\bin\\sh.exe',
+    ]) {
+      if (await _exists(candidate)) {
+        return _gitBashShell(candidate);
       }
     }
     return null;
@@ -357,6 +396,37 @@ String? _gitBashInstallPath(String bashPath) {
     return parts.take(parts.length - 3).join(r'\');
   }
   if (lower.endsWith(r'\bin\bash.exe') || lower.endsWith(r'\bin\sh.exe')) {
+    return parts.take(parts.length - 2).join(r'\');
+  }
+  return null;
+}
+
+/// Walks a resolved `git.exe` path back to the Git for Windows
+/// install root. Returns `null` when the path doesn't match any
+/// known layout (which means we can't usefully point at a
+/// `bash.exe` next to it).
+@visibleForTesting
+String? gitInstallPathFromGit(String gitPath) =>
+    _gitInstallPathFromGit(gitPath);
+
+String? _gitInstallPathFromGit(String gitPath) {
+  final normalised = gitPath.replaceAll('/', r'\');
+  final lower = normalised.toLowerCase();
+  final parts =
+      normalised.split(r'\').where((p) => p.isNotEmpty).toList();
+  // <root>\cmd\git.exe — the most common layout, where Git for
+  // Windows drops the `git.exe` shim on PATH. Drop two segments.
+  if (lower.endsWith(r'\cmd\git.exe')) {
+    return parts.take(parts.length - 2).join(r'\');
+  }
+  // <root>\mingw64\bin\git.exe — where the real git binary
+  // actually lives on modern installs. Drop three segments.
+  if (lower.endsWith(r'\mingw64\bin\git.exe')) {
+    return parts.take(parts.length - 3).join(r'\');
+  }
+  // <root>\bin\git.exe — older Git for Windows / PortableGit.
+  // Drop two segments.
+  if (lower.endsWith(r'\bin\git.exe')) {
     return parts.take(parts.length - 2).join(r'\');
   }
   return null;

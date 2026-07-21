@@ -98,6 +98,42 @@ void main() {
     });
   });
 
+  group('gitInstallPathFromGit', () {
+    test('<root>\\cmd\\git.exe → <root>', () {
+      expect(
+        gitInstallPathFromGit(r'D:\Git\cmd\git.exe'),
+        r'D:\Git',
+      );
+    });
+
+    test('<root>\\mingw64\\bin\\git.exe → <root>', () {
+      expect(
+        gitInstallPathFromGit(r'C:\Program Files\Git\mingw64\bin\git.exe'),
+        r'C:\Program Files\Git',
+      );
+    });
+
+    test('<root>\\bin\\git.exe (PortableGit) → <root>', () {
+      expect(
+        gitInstallPathFromGit(r'E:\portable\Git\bin\git.exe'),
+        r'E:\portable\Git',
+      );
+    });
+
+    test('forward slashes are normalised', () {
+      expect(
+        gitInstallPathFromGit(r'D:/Git/cmd/git.exe'),
+        r'D:\Git',
+      );
+    });
+
+    test('unrecognised layouts return null', () {
+      expect(gitInstallPathFromGit(r'C:\Windows\System32\git.exe'), isNull);
+      expect(gitInstallPathFromGit('git.exe'), isNull);
+      expect(gitInstallPathFromGit(r'C:\foo\bar\git.exe'), isNull);
+    });
+  });
+
   group('WindowsShell.buildArgv', () {
     test('gitBash: --noprofile -c <cmd> (long opts go BEFORE -c)', () {
       final shell = WindowsShell(
@@ -215,6 +251,59 @@ void main() {
         shell.executable,
         r'C:\Program Files\Git\bin\bash.exe',
         reason: 'Git for Windows must win over the WSL bash stub',
+      );
+    });
+
+    test(
+        'derives bash from git.exe when Git is installed off-canonical '
+        '(e.g. D:\\Git\\)', () async {
+      // Simulates a host where Git lives under D:\Git\ — the
+      // canonical-path fallback misses it AND `where.exe bash.exe`
+      // resolves to the WSL relay (broken when WSL isn't
+      // installed). The git-derived path must take priority.
+      final shell = await resolve(
+        probeMap: <String, String>{
+          'where.exe git.exe': r'D:\Git\cmd\git.exe',
+          'where.exe bash.exe': r'C:\Windows\System32\bash.exe',
+          'where.exe sh.exe': '',
+        },
+        existingPaths: <String>{
+          r'D:\Git\bin\bash.exe',
+          r'D:\Git\usr\bin',
+        },
+      );
+      expect(shell.kind, WindowsShellKind.gitBash);
+      expect(
+        shell.executable,
+        r'D:\Git\bin\bash.exe',
+        reason: 'must derive bash from the git.exe install root',
+      );
+      // Path additions must point at the D:\Git\ install, not
+      // any C:\Program Files\Git\ path.
+      expect(shell.pathAdditions, <String>[
+        r'D:\Git\usr\bin',
+        r'D:\Git\mingw64\bin',
+        r'D:\Git\bin',
+      ]);
+    });
+
+    test('falls through to where.exe bash.exe when git.exe is not on PATH',
+        () async {
+      // WSL bash stub on PATH, no Git install anywhere. Resolver
+      // should still find a POSIX shell via the bash.exe
+      // backstop.
+      final shell = await resolve(
+        probeMap: <String, String>{
+          'where.exe git.exe': '',
+          'where.exe bash.exe':
+              r'C:\Users\foo\AppData\Local\Microsoft\WindowsApps\bash.exe',
+          'where.exe sh.exe': '',
+        },
+      );
+      expect(shell.kind, WindowsShellKind.gitBash);
+      expect(
+        shell.executable,
+        r'C:\Users\foo\AppData\Local\Microsoft\WindowsApps\bash.exe',
       );
     });
 
