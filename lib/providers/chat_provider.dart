@@ -195,6 +195,7 @@ class ChatProvider extends ChangeNotifier {
   final SettingsProvider _settings;
   final DownloadService _downloads;
   final FileAttachmentService _fileAttachments;
+
   /// Optional bridge into the desktop pet window. When the user
   /// has the pet toggle on, the [PetWindowController] injects
   /// itself here so the chat flow can flip the pet into the right
@@ -1186,11 +1187,8 @@ class ChatProvider extends ChangeNotifier {
     final currentId = _currentRoundBubbleId ?? fallbackRoundZeroBubbleId;
     final currentBubble = s.messages.firstWhere(
       (m) => m.id == currentId,
-      orElse: () => ChatMessage(
-        id: currentId,
-        role: MessageRole.assistant,
-        content: '',
-      ),
+      orElse: () =>
+          ChatMessage(id: currentId, role: MessageRole.assistant, content: ''),
     );
 
     // 正文-merge rule: keep using the current bubble if it has
@@ -3286,6 +3284,7 @@ class ChatProvider extends ChangeNotifier {
   }) async {
     final l10n = AppLocalizations.of(context);
     bool updated = false;
+    var petBodyText = '';
 
     // Per-turn metrics (TTFT, tokens/sec, token counts). The
     // turnStartedAt timestamp anchors time-to-first-token;
@@ -3648,6 +3647,8 @@ class ChatProvider extends ChangeNotifier {
             // Pet sees the model streaming output → loop
             // `review`. Idempotent across deltas.
             _petHooks?.playLooping('review');
+            petBodyText += event.contentDelta!;
+            _petHooks?.showText(petBodyText);
             // Content delta is the canonical TTFT trigger.
             // lastTokenAt is stamped on every chunk so the
             // tokens/sec denominator is always the latest

@@ -1,13 +1,17 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../models/pet.dart';
 import '../services/pet_animation_controller.dart';
 import '../services/pet_service.dart';
+import '../services/pet_window_state_store.dart';
+import '../widgets/pet_speech_bubble.dart';
 import '../widgets/spritesheet_animation.dart';
 
 /// Sentinel passed as `--type=pet` in the spawn arguments so the
@@ -18,16 +22,18 @@ const String _kPetWindowType = 'pet';
 /// Argument key for the pet id.
 const String _kPetIdArg = 'pet_id';
 
-/// Cross-window channel for the pet window. The main engine sends
-/// `close` here when the user flips the toggle off; the pet window
-/// receives it and runs `windowManager.close()`.
-const String _kPetChannel = 'agent_buddy/pet_window';
-
 const String _kCloseMethod = 'close';
 const String _kPlayOneShotMethod = 'playOneShot';
 const String _kPlayLoopingMethod = 'playLooping';
 const String _kResetMethod = 'reset';
+const String _kSwitchPetMethod = 'switchPet';
+const String _kShowTextMethod = 'showText';
 const String _kShowMainMethod = 'showMain';
+const double _kBubbleAreaHeight = 72;
+const double _kBubbleMinWidth = 220;
+const Duration _kBubbleAutoHide = Duration(seconds: 10);
+
+final PetWindowStateStore _windowStateStore = PetWindowStateStore();
 
 /// Entry-point invoked by `desktop_multi_window` when a sub-window
 /// is spawned. The CLI passes `--type=pet --pet_id=<id>` and we
@@ -71,6 +77,7 @@ Future<void> _configurePetWindow(Pet pet) async {
   // The OS-level window is exactly one sprite frame wide/tall so
   // there's no extra chrome to click on.
   final size = _resolveWindowSize(pet);
+  final position = await _resolveWindowPosition(size);
   await windowManager.ensureInitialized();
   await windowManager.waitUntilReadyToShow(
     WindowOptions(
@@ -91,16 +98,51 @@ Future<void> _configurePetWindow(Pet pet) async {
       await windowManager.setResizable(false);
       await windowManager.setMinimumSize(size);
       await windowManager.setMaximumSize(size);
+      await windowManager.setPosition(position);
       await windowManager.show(inactive: true);
     },
   );
 }
 
 Size _resolveWindowSize(Pet pet) {
-  final scale = pet.scale <= 0 ? 1.0 : pet.scale;
-  final w = (pet.frameWidth * scale).clamp(48.0, 1024.0);
-  final h = (pet.frameHeight * scale).clamp(48.0, 1024.0);
-  return Size(w, h);
+  final sprite = petDisplaySize(pet);
+  final width = sprite.width < _kBubbleMinWidth
+      ? _kBubbleMinWidth
+      : sprite.width;
+  return Size(width, sprite.height + _kBubbleAreaHeight);
+}
+
+Future<Offset> _resolveWindowPosition(Size windowSize) async {
+  final displays = await screenRetriever.getAllDisplays();
+  final primary = await screenRetriever.getPrimaryDisplay();
+  final saved = await _windowStateStore.loadPosition();
+  var display = primary;
+  if (saved != null) {
+    for (final candidate in displays) {
+      final origin = candidate.visiblePosition ?? Offset.zero;
+      final size = candidate.visibleSize ?? candidate.size;
+      if ((origin & size).contains(saved)) {
+        display = candidate;
+        break;
+      }
+    }
+  }
+  final origin = display.visiblePosition ?? Offset.zero;
+  final workSize = display.visibleSize ?? display.size;
+  final maxX = origin.dx + workSize.width - windowSize.width;
+  final maxY = origin.dy + workSize.height - windowSize.height;
+  final right = maxX < origin.dx ? origin.dx : maxX;
+  final bottom = maxY < origin.dy ? origin.dy : maxY;
+  if (saved == null) {
+    return Offset(
+      (right - 16).clamp(origin.dx, right),
+      (bottom - 16).clamp(origin.dy, bottom),
+    );
+  }
+  return Offset(
+    saved.dx.clamp(origin.dx, right),
+    saved.dy.clamp(origin.dy, bottom),
+  );
 }
 
 Map<String, String> _parseArgs(String? args) {
@@ -159,7 +201,10 @@ class _PetWindowApp extends StatelessWidget {
     // app's instance is in a different isolate and we can't share.
     // The two instances are kept in sync via the on-disk
     // manifest, which the provider reads on demand.
-    return _PetWindow(pet: pet, controller: controller);
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: _PetWindow(pet: pet, controller: controller),
+    );
   }
 }
 
@@ -175,16 +220,26 @@ class _PetWindow extends StatefulWidget {
 class _PetWindowState extends State<_PetWindow> with WindowListener {
   late final PetAnimationController _anim;
   bool _clickThrough = false;
+  String _speechText = '';
+  bool _speechVisible = false;
+  Timer? _speechHideTimer;
+  int _pointerButton = 0;
   bool _dragging = false;
-  double _dragDx = 0;
-  double _dragDy = 0;
-  // The animation we forced while dragging. `null` means the pet
-  // is in its natural state (driving itself). Cleared on pointer up.
   String? _forcedDragAnimation;
   // True once the pointer has moved far enough that we consider
   // this a drag rather than a click. Below the threshold, a
   // pointer up is treated as a left-click (focuses the main app).
   bool _dragExceededClickThreshold = false;
+  bool _hovering = false;
+  Timer? _positionSaveTimer;
+  OverlayEntry? _contextMenuEntry;
+  Offset? _dragWindowPosition;
+  Offset? _dragCursorPosition;
+  Offset? _lastCursorPosition;
+  Offset? _pendingWindowPosition;
+  Timer? _dragPollTimer;
+  bool _pollingDragPosition = false;
+  bool _applyingWindowPosition = false;
   static const double _kClickThreshold = 6;
 
   @override
@@ -203,11 +258,7 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
     // the pet's animation state machine. Bidirectional because
     // we also send `showMain` back when the user left-clicks the
     // pet.
-    const channel = WindowMethodChannel(
-      _kPetChannel,
-      mode: ChannelMode.bidirectional,
-    );
-    channel.setMethodCallHandler((call) async {
+    widget.controller.setWindowMethodHandler((call) async {
       switch (call.method) {
         case _kCloseMethod:
           await windowManager.close();
@@ -223,6 +274,20 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
           }
         case _kResetMethod:
           _anim.reset();
+        case _kSwitchPetMethod:
+          final id = (call.arguments as Map?)?['id'] as String?;
+          if (id != null && id.isNotEmpty) {
+            await _switchPet(id);
+          }
+        case _kShowTextMethod:
+          final text = (call.arguments as Map?)?['text'] as String?;
+          if (text != null && mounted) {
+            setState(() {
+              _speechText = text;
+              _speechVisible = text.trim().isNotEmpty;
+            });
+            _scheduleSpeechHide();
+          }
         case _kShowMainMethod:
           // No-op inside the pet window itself; the main engine
           // is the one that listens for this on its own channel
@@ -238,131 +303,235 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
 
   @override
   void dispose() {
+    unawaited(widget.controller.setWindowMethodHandler(null));
+    _removeContextMenu();
+    _speechHideTimer?.cancel();
+    _positionSaveTimer?.cancel();
+    _dragPollTimer?.cancel();
     windowManager.removeListener(this);
     _anim.dispose();
     super.dispose();
   }
 
-  Future<void> _startDrag(PointerDownEvent event) async {
-    _dragging = true;
-    _dragDx = 0;
-    _dragDy = 0;
-    _dragExceededClickThreshold = false;
-    _forcedDragAnimation = null;
+  @override
+  void onWindowMove() {
+    _positionSaveTimer?.cancel();
+    _positionSaveTimer = Timer(
+      const Duration(milliseconds: 250),
+      () => unawaited(_savePosition()),
+    );
   }
 
-  Future<void> _onDrag(PointerMoveEvent event) async {
-    if (!_dragging) return;
-    if (_clickThrough) return;
-    _dragDx += event.delta.dx;
-    _dragDy += event.delta.dy;
-    final totalDelta = _dragDx.abs() + _dragDy.abs();
-    if (!_dragExceededClickThreshold && totalDelta >= _kClickThreshold) {
-      _dragExceededClickThreshold = true;
+  @override
+  void onWindowMoved() {
+    _positionSaveTimer?.cancel();
+    unawaited(_savePosition());
+  }
+
+  Future<void> _switchPet(String id) async {
+    final pet = await _resolvePet(id);
+    if (pet == null || pet.id == _anim.pet.id) return;
+    final size = _resolveWindowSize(pet);
+    _anim.setPet(pet);
+    await windowManager.setMinimumSize(size);
+    await windowManager.setMaximumSize(size);
+    await windowManager.setSize(size);
+    await _savePosition();
+  }
+
+  Future<void> _savePosition() async {
+    final position = await windowManager.getPosition();
+    await _windowStateStore.savePosition(position);
+  }
+
+  void _applyInteractionAnimation() {
+    final dragAnimation = _forcedDragAnimation;
+    if (dragAnimation != null) {
+      _anim.forceLooping(dragAnimation);
+    } else if (_hovering) {
+      _anim.forceLooping('jumping');
+    } else {
+      _anim.clearForce();
     }
-    if (_dragExceededClickThreshold) {
-      // Pick the dominant axis. We only swap to a run animation
-      // when the dominant axis wins by a 1.4× margin so a slightly
-      // diagonal drag doesn't flicker between run_left / run_right.
-      final animName = _dragDx.abs() >= _dragDy.abs() * 1.4
-          ? (_dragDx >= 0 ? 'run_right' : 'run_left')
-          : null;
-      if (animName != _forcedDragAnimation) {
-        _forcedDragAnimation = animName;
-        if (animName != null) {
-          _anim.playLooping(animName);
+  }
+
+  Future<void> _startDrag(PointerDownEvent event) async {
+    _pointerButton = event.buttons;
+    if (event.buttons & kSecondaryButton != 0) {
+      await _openContextMenu(event.position);
+      return;
+    }
+    if (event.buttons & kPrimaryButton == 0) return;
+    _dragging = true;
+    _dragExceededClickThreshold = false;
+    _forcedDragAnimation = null;
+    _dragWindowPosition = await windowManager.getPosition();
+    _dragCursorPosition = await screenRetriever.getCursorScreenPoint();
+    _lastCursorPosition = _dragCursorPosition;
+    _dragPollTimer?.cancel();
+    _dragPollTimer = Timer.periodic(
+      const Duration(milliseconds: 16),
+      (_) => unawaited(_pollDragPosition()),
+    );
+  }
+
+  Future<void> _pollDragPosition() async {
+    if (!_dragging || _pollingDragPosition) return;
+    _pollingDragPosition = true;
+    try {
+      final cursor = await screenRetriever.getCursorScreenPoint();
+      final cursorOrigin = _dragCursorPosition;
+      final windowOrigin = _dragWindowPosition;
+      final previous = _lastCursorPosition;
+      if (cursorOrigin == null || windowOrigin == null || previous == null) {
+        return;
+      }
+      _lastCursorPosition = cursor;
+      final totalDx = cursor.dx - cursorOrigin.dx;
+      final totalDy = cursor.dy - cursorOrigin.dy;
+      if (totalDx.abs() + totalDy.abs() >= _kClickThreshold) {
+        _dragExceededClickThreshold = true;
+      }
+      final frameDx = cursor.dx - previous.dx;
+      if (frameDx.abs() >= 0.5) {
+        final animation = frameDx < 0 ? 'run_left' : 'run_right';
+        if (_forcedDragAnimation != animation) {
+          _forcedDragAnimation = animation;
+          _applyInteractionAnimation();
         }
       }
-      final pos = await windowManager.getPosition();
-      await windowManager.setPosition(
-        Offset(pos.dx + event.delta.dx, pos.dy + event.delta.dy),
+      _pendingWindowPosition = Offset(
+        windowOrigin.dx + totalDx,
+        windowOrigin.dy + totalDy,
       );
+      unawaited(_applyPendingWindowPosition());
+    } finally {
+      _pollingDragPosition = false;
+    }
+  }
+
+  Future<void> _applyPendingWindowPosition() async {
+    if (_applyingWindowPosition) return;
+    _applyingWindowPosition = true;
+    try {
+      while (_pendingWindowPosition != null) {
+        final target = _pendingWindowPosition!;
+        _pendingWindowPosition = null;
+        await windowManager.setPosition(target);
+      }
+    } finally {
+      _applyingWindowPosition = false;
     }
   }
 
   Future<void> _endDrag(PointerUpEvent event) async {
     if (!_dragging) return;
     _dragging = false;
+    _dragPollTimer?.cancel();
+    _dragPollTimer = null;
+    await _applyPendingWindowPosition();
+    while (_applyingWindowPosition) {
+      await Future<void>.delayed(Duration.zero);
+    }
     final wasClick = !_dragExceededClickThreshold;
-    final hadForcedAnim = _forcedDragAnimation != null;
+    _dragWindowPosition = null;
+    _dragCursorPosition = null;
+    _lastCursorPosition = null;
     _forcedDragAnimation = null;
-    if (hadForcedAnim) {
-      // Drop back to whatever the chat provider last picked.
-      // `reset()` returns to the pet's default (idle); for the
-      // thinking / streaming overrides the chat provider will
-      // re-assert its looping animation as soon as it sees the
-      // next event.
-      _anim.reset();
+    _applyInteractionAnimation();
+    if (!wasClick) {
+      await _savePosition();
     }
     if (wasClick && event.kind == PointerDeviceKind.mouse) {
-      if (event.buttons & kPrimaryButton != 0) {
+      if (_pointerButton & kPrimaryButton != 0) {
         await _requestShowMain();
-      } else if (event.buttons & kSecondaryButton != 0) {
-        // Right-click without drag opens the menu.
-        await _openContextMenu(event.position);
       }
     }
+    _pointerButton = 0;
   }
 
   Future<void> _requestShowMain() async {
-    const channel = WindowMethodChannel(
-      _kPetChannel,
-      mode: ChannelMode.bidirectional,
-    );
     try {
-      await channel.invokeMethod<bool>(_kShowMainMethod);
-    } catch (_) {
-      // The main window may not have a handler registered yet.
-      // The fallback is that the OS-level "show main" shortcut
-      // (e.g. clicking the taskbar icon) still works.
+      await widget.controller.invokeMethod<bool>(_kShowMainMethod);
+    } catch (_) {}
+  }
+
+  void _removeContextMenu() {
+    _contextMenuEntry?.remove();
+    _contextMenuEntry = null;
+  }
+
+  void _scheduleSpeechHide() {
+    _speechHideTimer?.cancel();
+    if (_speechText.trim().isEmpty) {
+      if (mounted) setState(() => _speechVisible = false);
+      return;
     }
+    _speechHideTimer = Timer(_kBubbleAutoHide, () {
+      if (!mounted) return;
+      setState(() => _speechVisible = false);
+    });
   }
 
   Future<void> _openContextMenu(Offset position) async {
-    // We use a synthetic Overlay rather than a long-press-style
-    // menu because the pet window is frameless and has no
-    // Material chrome to anchor against. The popup is positioned
-    // at the right-click point so muscle memory still works.
+    _removeContextMenu();
     final overlay = Overlay.of(context, rootOverlay: true);
-    late OverlayEntry entry;
-    entry = OverlayEntry(
-      builder: (ctx) {
-        return Positioned(
-          left: position.dx,
-          top: position.dy,
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _MenuItem(
-                    label: _clickThrough ? '取消穿透' : '鼠标穿透',
-                    onTap: () {
-                      entry.remove();
-                      _toggleClickThrough();
-                    },
-                  ),
-                  _MenuItem(
-                    label: '关闭桌宠',
-                    color: Colors.redAccent,
-                    onTap: () {
-                      entry.remove();
-                      _hideWindow();
-                    },
-                  ),
-                ],
+    final size = MediaQuery.sizeOf(context);
+    final left = position.dx.clamp(
+      0.0,
+      (size.width - 96).clamp(0.0, size.width),
+    );
+    final top = position.dy.clamp(
+      0.0,
+      (size.height - 76).clamp(0.0, size.height),
+    );
+    final entry = OverlayEntry(
+      builder: (ctx) => Stack(
+        children: [
+          Positioned.fill(
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerDown: (_) => _removeContextMenu(),
+            ),
+          ),
+          Positioned(
+            left: left,
+            top: top,
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _MenuItem(
+                      label: _clickThrough ? '取消穿透' : '鼠标穿透',
+                      onTap: () {
+                        _removeContextMenu();
+                        _toggleClickThrough();
+                      },
+                    ),
+                    _MenuItem(
+                      label: '关闭桌宠',
+                      color: Colors.redAccent,
+                      onTap: () {
+                        _removeContextMenu();
+                        _hideWindow();
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        );
-      },
+        ],
+      ),
     );
+    _contextMenuEntry = entry;
     overlay.insert(entry);
   }
 
@@ -381,37 +550,68 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      // Transparent scaffold so the OS-level window background
-      // (also transparent) shows through everywhere except the
-      // sprite itself.
-      home: Scaffold(
-        backgroundColor: const Color(0x00000000),
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            Positioned.fill(
-              child: Listener(
-                behavior: HitTestBehavior.opaque,
-                onPointerDown: _startDrag,
-                onPointerMove: _onDrag,
-                onPointerUp: _endDrag,
-                onPointerCancel: (event) {
-                  _dragging = false;
-                  _forcedDragAnimation = null;
-                  _anim.reset();
+    return Scaffold(
+      backgroundColor: const Color(0x00000000),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned.fill(
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerDown: _startDrag,
+              onPointerUp: _endDrag,
+              onPointerCancel: (event) {
+                _dragging = false;
+                _pointerButton = 0;
+                _dragWindowPosition = null;
+                _dragCursorPosition = null;
+                _lastCursorPosition = null;
+                _pendingWindowPosition = null;
+                _dragPollTimer?.cancel();
+                _dragPollTimer = null;
+                _forcedDragAnimation = null;
+                _applyInteractionAnimation();
+              },
+              child: MouseRegion(
+                onEnter: (_) {
+                  _hovering = true;
+                  _applyInteractionAnimation();
                 },
-                child: Center(child: SpritesheetAnimation(controller: _anim)),
+                onExit: (_) {
+                  _hovering = false;
+                  _applyInteractionAnimation();
+                },
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: petDisplaySize(widget.pet).height,
+                      child: Center(
+                        child: SpritesheetAnimation(controller: _anim),
+                      ),
+                    ),
+                    Positioned(
+                      left: 6,
+                      right: 6,
+                      top: 0,
+                      height: _kBubbleAreaHeight,
+                      child: IgnorePointer(
+                        child: _speechVisible
+                            ? PetSpeechBubble(text: _speechText)
+                            : const SizedBox.shrink(),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            // Small click-through badge so the user always knows
-            // whether pointer events pass through. Hidden when
-            // normal so it doesn't steal focus.
-            if (_clickThrough)
-              const Positioned(right: 2, top: 2, child: _ClickThroughBadge()),
-          ],
-        ),
+          ),
+          if (_clickThrough)
+            const Positioned(right: 2, top: 2, child: _ClickThroughBadge()),
+        ],
       ),
     );
   }
@@ -506,12 +706,8 @@ Future<WindowController> spawnPetWindow({required String petId}) async {
 /// is dispatched (does not wait for the window to actually go
 /// away — the `onWindowsChanged` stream surfaces that).
 Future<void> closePetWindow(WindowController controller) async {
-  const channel = WindowMethodChannel(
-    _kPetChannel,
-    mode: ChannelMode.bidirectional,
-  );
   try {
-    await channel.invokeMethod<bool>(_kCloseMethod);
+    await controller.invokeMethod<bool>(_kCloseMethod);
   } catch (_) {
     // The window may already be gone. The lifecycle owner will
     // notice via `onWindowsChanged` and clean up.
@@ -524,12 +720,8 @@ Future<void> sendPetPlayOneShot(
   WindowController controller,
   String name,
 ) async {
-  const channel = WindowMethodChannel(
-    _kPetChannel,
-    mode: ChannelMode.bidirectional,
-  );
   try {
-    await channel.invokeMethod<bool>(_kPlayOneShotMethod, {'name': name});
+    await controller.invokeMethod<bool>(_kPlayOneShotMethod, {'name': name});
   } catch (_) {
     // The pet window may have been closed between the
     // `showDesktopPet` flip and the tool finishing — ignore.
@@ -542,23 +734,30 @@ Future<void> sendPetPlayLooping(
   WindowController controller,
   String name,
 ) async {
-  const channel = WindowMethodChannel(
-    _kPetChannel,
-    mode: ChannelMode.bidirectional,
-  );
   try {
-    await channel.invokeMethod<bool>(_kPlayLoopingMethod, {'name': name});
+    await controller.invokeMethod<bool>(_kPlayLoopingMethod, {'name': name});
   } catch (_) {}
+}
+
+Future<void> sendPetShowText(WindowController controller, String text) async {
+  try {
+    await controller.invokeMethod<bool>(_kShowTextMethod, {'text': text});
+  } catch (_) {}
+}
+
+Future<bool> sendPetSwitch(WindowController controller, String id) async {
+  try {
+    await controller.invokeMethod<bool>(_kSwitchPetMethod, {'id': id});
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 /// Resets the pet to its default animation (typically `idle`).
 Future<void> sendPetReset(WindowController controller) async {
-  const channel = WindowMethodChannel(
-    _kPetChannel,
-    mode: ChannelMode.bidirectional,
-  );
   try {
-    await channel.invokeMethod<bool>(_kResetMethod);
+    await controller.invokeMethod<bool>(_kResetMethod);
   } catch (_) {}
 }
 

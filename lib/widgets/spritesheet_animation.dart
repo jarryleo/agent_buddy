@@ -6,6 +6,19 @@ import 'package:flutter/widgets.dart';
 import '../models/pet.dart';
 import '../services/pet_animation_controller.dart';
 
+Size petDisplaySize(Pet pet) {
+  if (pet.frameWidth <= 0 || pet.frameHeight <= 0) return const Size(0, 0);
+  var width = pet.frameWidth.toDouble();
+  var height = pet.frameHeight.toDouble();
+  final largest = width > height ? width : height;
+  if (largest > 160) {
+    final reduction = 160 / largest;
+    width *= reduction;
+    height *= reduction;
+  }
+  return Size(width, height);
+}
+
 /// Renders the currently-active animation strip from a pet's
 /// spritesheet. Steps through the strip at the pet's `fps`. For
 /// looping animations the controller `repeat()`s forever; for
@@ -38,11 +51,13 @@ class _SpritesheetAnimationState extends State<SpritesheetAnimation>
     frameCount: 1,
   );
   bool _oneShotActive = false;
+  late int _revision;
 
   @override
   void initState() {
     super.initState();
     _animation = widget.controller.current;
+    _revision = widget.controller.revision;
     _controller = AnimationController(vsync: this);
     _configureForCurrentAnimation();
     widget.controller.addListener(_onControllerChanged);
@@ -51,7 +66,8 @@ class _SpritesheetAnimationState extends State<SpritesheetAnimation>
 
   void _configureForCurrentAnimation() {
     final animation = _animation;
-    final fps = widget.controller.pet.fps <= 0 ? 4.0 : widget.controller.pet.fps;
+    final configuredFps = widget.controller.pet.fps;
+    final fps = configuredFps <= 6.0 ? 5.0 : configuredFps;
     final durationMs = ((animation.frameCount / fps) * 1000).round();
     _controller.duration = Duration(
       milliseconds: durationMs <= 0 ? 1 : durationMs,
@@ -78,12 +94,15 @@ class _SpritesheetAnimationState extends State<SpritesheetAnimation>
 
   void _onControllerChanged() {
     final newAnim = widget.controller.current;
-    if (newAnim.name == _animation.name &&
+    final newRevision = widget.controller.revision;
+    if (newRevision == _revision &&
+        newAnim.name == _animation.name &&
         newAnim.row == _animation.row &&
         newAnim.frameCount == _animation.frameCount &&
         newAnim.loop == _animation.loop) {
       return;
     }
+    _revision = newRevision;
     setState(() {
       _animation = newAnim;
       _configureForCurrentAnimation();
@@ -164,9 +183,10 @@ class _SpritesheetAnimationState extends State<SpritesheetAnimation>
   int _currentFrame() {
     if (_animation.frameCount <= 0) return 0;
     final value = _controller.value.clamp(0.0, 1.0);
-    return (value * _animation.frameCount)
-        .floor()
-        .clamp(0, _animation.frameCount - 1);
+    return (value * _animation.frameCount).floor().clamp(
+      0,
+      _animation.frameCount - 1,
+    );
   }
 
   @override
@@ -175,14 +195,12 @@ class _SpritesheetAnimationState extends State<SpritesheetAnimation>
       return const SizedBox.shrink();
     }
     final pet = widget.controller.pet;
-    final scale = pet.scale <= 0 ? 1.0 : pet.scale;
     final frameW = pet.frameWidth.toDouble();
     final frameH = pet.frameHeight.toDouble();
-    final paintedW = frameW * scale;
-    final paintedH = frameH * scale;
+    final displaySize = petDisplaySize(pet);
     return SizedBox(
-      width: paintedW,
-      height: paintedH,
+      width: displaySize.width,
+      height: displaySize.height,
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {

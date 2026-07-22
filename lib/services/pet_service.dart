@@ -37,9 +37,7 @@ class PetService {
 
   static const String _userPetFolder = 'pets';
   static const String _manifestFileName = 'pets.json';
-  static const String _builtinAnyaAssetJson = 'assets/pet/anya/pet.json';
-  static const String _builtinAnyaAssetSheet =
-      'assets/pet/anya/spritesheet.webp';
+  static const String _builtinAnyaAssetZip = 'assets/pet/anya.zip';
 
   /// Marker prefix on built-in pet ids (`builtin:anya`) so a
   /// user-imported `anya.zip` cannot collide with the seeded one.
@@ -196,27 +194,32 @@ class PetService {
       throw PetImportException('内置宠物 id 以 $builtinIdPrefix 开头,不允许使用');
     }
 
-    final petId = _uuid.v4();
-    final petFolder = Directory(p.join(dir.path, petId));
+    final petId = draft.id;
+    final folderName = _safeFolderName(petId);
+    if (folderName.isEmpty) {
+      throw PetImportException('pet id 不能作为文件夹名称');
+    }
+    final petFolder = Directory(p.join(dir.path, folderName));
+    final existingManifest = File(p.join(petFolder.path, 'pet.json'));
+    if (await existingManifest.exists()) {
+      try {
+        final existingRaw =
+            jsonDecode(await existingManifest.readAsString())
+                as Map<String, dynamic>;
+        if (existingRaw['isBuiltIn'] == true) {
+          throw PetImportException('桌宠 id $petId 与内置桌宠冲突');
+        }
+      } on PetImportException {
+        rethrow;
+      } catch (_) {}
+    }
     if (await petFolder.exists()) {
       await petFolder.delete(recursive: true);
     }
     await petFolder.create(recursive: true);
 
     try {
-      for (final entry in archive.files) {
-        if (!entry.isFile) continue;
-        final archivePath = _entryPath(entry);
-        final relativePath = archiveRoot.isEmpty
-            ? archivePath
-            : p.posix.relative(archivePath, from: archiveRoot);
-        final safePath = _safeRelativePath(relativePath);
-        if (safePath == null) continue;
-        final outPath = p.joinAll([petFolder.path, ...p.posix.split(safePath)]);
-        final outFile = File(outPath);
-        await outFile.parent.create(recursive: true);
-        await outFile.writeAsBytes(_entryBytes(entry));
-      }
+      await _extractArchive(archive, archiveRoot, petFolder);
 
       final stored = draft.copyWithPetId(
         petId,
@@ -261,72 +264,111 @@ class PetService {
 
   Future<void> _seedBuiltInAnya(Directory dir) async {
     final builtInId = '${builtinIdPrefix}anya';
-    final builtInDirName = _safeFolderName(builtInId);
-    final builtInDir = Directory(p.join(dir.path, builtInDirName));
-    final manifestPath = File(p.join(builtInDir.path, 'pet.json'));
-    await builtInDir.create(recursive: true);
-
-    // Copy the spritesheet out of the asset bundle into the pet's
-    // folder. This keeps the pet on disk so future window code
-    // can read it via `FileImage` like a normal user import.
-    final sheetBytes = await rootBundle.load(_builtinAnyaAssetSheet);
-    final sheetOut = File(p.join(builtInDir.path, 'spritesheet.webp'));
-    final sheetByteList = sheetBytes.buffer.asUint8List(
-      sheetBytes.offsetInBytes,
-      sheetBytes.lengthInBytes,
-    );
-    if (!await sheetOut.exists()) {
-      await sheetOut.writeAsBytes(sheetByteList);
+    final ByteData zipData;
+    try {
+      zipData = await rootBundle.load(_builtinAnyaAssetZip);
+    } catch (_) {
+      return;
     }
 
-    // Materialise or repair the manifest through the same
-    // petdex-compatible path used by zip imports. Older app builds
-    // may have seeded a minimal Anya manifest; rewriting here adds
-    // inferred frame metrics and the shared action table without
-    // depending on Anya-specific parameters.
-    Map<String, dynamic> raw;
+    final archive = ZipDecoder().decodeBytes(
+      zipData.buffer.asUint8List(zipData.offsetInBytes, zipData.lengthInBytes),
+    );
+    final manifestEntry = _findManifestEntry(archive);
+    if (manifestEntry == null) return;
+
+    final Map<String, dynamic> bundledRaw;
+    try {
+      bundledRaw =
+          jsonDecode(utf8.decode(_entryBytes(manifestEntry)))
+              as Map<String, dynamic>;
+    } catch (_) {
+      return;
+    }
+    final bundledId = _readManifestString(bundledRaw, const ['id']);
+    if (bundledId == null) return;
+
+    final builtInDir = Directory(p.join(dir.path, _safeFolderName(bundledId)));
+    final manifestPath = File(p.join(builtInDir.path, 'pet.json'));
     if (await manifestPath.exists()) {
       try {
-        raw =
-            jsonDecode(await manifestPath.readAsString())
-                as Map<String, dynamic>;
-      } catch (_) {
-        raw = const {};
-      }
-    } else {
-      try {
-        final manifestRaw = await rootBundle.loadString(_builtinAnyaAssetJson);
-        raw = jsonDecode(manifestRaw) as Map<String, dynamic>;
-      } catch (_) {
-        raw = const {};
-      }
+        final stored = Pet.fromJson(
+          jsonDecode(await manifestPath.readAsString()) as Map<String, dynamic>,
+        );
+        await _persist(builtInDir, stored);
+      } catch (_) {}
+      return;
     }
 
-    final normalized = _normalizeManifestForSheet(
-      raw,
-      fallbackId: builtInId,
-      spritesheetRelPath: 'spritesheet.webp',
-      sheetBytes: sheetByteList,
+    final archiveRoot = p.posix.dirname(_entryPath(manifestEntry));
+    final normalizedRoot = archiveRoot == '.' ? '' : archiveRoot;
+    final declaredSheet = _readManifestString(bundledRaw, const [
+      'spritesheetPath',
+      'spriteSheetPath',
+      'sprite_sheet_path',
+      'spritesheet',
+      'spriteSheet',
+      'sprite_sheet',
+      'imagePath',
+      'image_path',
+      'image',
+    ]);
+    final sheetEntry = _resolveSpritesheetEntry(
+      archive,
+      archiveRoot: normalizedRoot,
+      declaredRelPath: declaredSheet,
     );
-    normalized['id'] = builtInId;
-    if (_readManifestString(raw, const [
-          'displayName',
-          'display_name',
-          'name',
-          'title',
-        ]) ==
-        null) {
-      normalized['displayName'] = 'Anya';
-    }
-    if (_readManifestString(raw, const ['description', 'desc']) == null) {
-      normalized['description'] = 'A digital pet version of Anya Forger.';
-    }
-    normalized['isBuiltIn'] = true;
-    normalized['directoryPath'] = builtInDir.path;
-    normalized.remove('assetSpritesheetPath');
+    if (sheetEntry == null) return;
+    final sheetRel = _relativeEntryPath(sheetEntry, normalizedRoot);
+    if (sheetRel == null) return;
 
-    final stored = Pet.fromJson(normalized);
-    await manifestPath.writeAsString(jsonEncode(stored.toJson()));
+    final staging = Directory('${builtInDir.path}.tmp-${_uuid.v4()}');
+    try {
+      await staging.create(recursive: true);
+      await _extractArchive(archive, normalizedRoot, staging);
+      final normalized = _normalizeManifestForSheet(
+        bundledRaw,
+        fallbackId: bundledId,
+        spritesheetRelPath: sheetRel,
+        sheetBytes: _entryBytes(sheetEntry),
+      );
+      normalized['id'] = builtInId;
+      normalized['isBuiltIn'] = true;
+      normalized['directoryPath'] = builtInDir.path;
+      normalized.remove('assetSpritesheetPath');
+      final stored = Pet.fromJson(normalized);
+      await File(
+        p.join(staging.path, 'pet.json'),
+      ).writeAsString(jsonEncode(stored.toJson()));
+      if (await builtInDir.exists()) {
+        await builtInDir.delete(recursive: true);
+      }
+      await staging.rename(builtInDir.path);
+      await _persist(builtInDir, stored);
+    } catch (_) {
+      if (await staging.exists()) await staging.delete(recursive: true);
+      rethrow;
+    }
+  }
+
+  Future<void> _extractArchive(
+    Archive archive,
+    String archiveRoot,
+    Directory petFolder,
+  ) async {
+    for (final entry in archive.files) {
+      if (!entry.isFile) continue;
+      final archivePath = _entryPath(entry);
+      final relativePath = archiveRoot.isEmpty
+          ? archivePath
+          : p.posix.relative(archivePath, from: archiveRoot);
+      final safePath = _safeRelativePath(relativePath);
+      if (safePath == null) continue;
+      final outPath = p.joinAll([petFolder.path, ...p.posix.split(safePath)]);
+      final outFile = File(outPath);
+      await outFile.parent.create(recursive: true);
+      await outFile.writeAsBytes(_entryBytes(entry));
+    }
   }
 
   /// Maps a pet id (`builtin:anya`, `momo`, …) to a folder name
@@ -545,7 +587,7 @@ class PetService {
         ]) ??
         normalized['id'];
     normalized['spritesheetPath'] = spritesheetRelPath;
-    normalized['fps'] ??= 4.0;
+    normalized['fps'] ??= 5.0;
     normalized['scale'] ??= 1.0;
     normalized['defaultAnimation'] ??= 'idle';
 

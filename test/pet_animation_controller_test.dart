@@ -89,6 +89,29 @@ void main() {
     ctrl.dispose();
   });
 
+  test('forced animation restores the previous state when cleared', () {
+    final ctrl = PetAnimationController(pet: buildPet());
+    ctrl.playLooping('review');
+    ctrl.forceLooping('jumping');
+    expect(ctrl.current.name, 'jumping');
+    expect(ctrl.current.loop, isTrue);
+    ctrl.clearForce();
+    expect(ctrl.current.name, 'review');
+    ctrl.dispose();
+  });
+
+  test('one-shot repeats before returning to idle', () {
+    final ctrl = PetAnimationController(pet: buildPet());
+    ctrl.playOneShot('jumping', repeats: 3);
+    ctrl.notifyOneShotCompleted();
+    expect(ctrl.current.name, 'jumping');
+    ctrl.notifyOneShotCompleted();
+    expect(ctrl.current.name, 'jumping');
+    ctrl.notifyOneShotCompleted();
+    expect(ctrl.current.name, 'idle');
+    ctrl.dispose();
+  });
+
   test('listeners fire on every animation change', () {
     final ctrl = PetAnimationController(pet: buildPet());
     var fires = 0;

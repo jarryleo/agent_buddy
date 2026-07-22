@@ -30,21 +30,29 @@ import '../models/pet.dart';
 /// multi-window boundary.
 class PetAnimationController extends ChangeNotifier {
   PetAnimationController({required Pet pet})
-      : _pet = pet,
-        _current = pet.animationByName(pet.defaultAnimation) ??
-            (pet.animations.isNotEmpty
-                ? pet.animations.first
-                : _missingAnimation);
+    : _pet = pet,
+      _current =
+          pet.animationByName(pet.defaultAnimation) ??
+          (pet.animations.isNotEmpty
+              ? pet.animations.first
+              : _missingAnimation);
 
-  static final PetAnimation _missingAnimation =
-      PetAnimation(name: 'missing', row: 0, frameCount: 1, loop: true);
+  static final PetAnimation _missingAnimation = PetAnimation(
+    name: 'missing',
+    row: 0,
+    frameCount: 1,
+    loop: true,
+  );
 
   Pet _pet;
   PetAnimation _current;
+  PetAnimation? _override;
+  int _oneShotRepeatsRemaining = 0;
+  int _revision = 0;
 
-  /// The currently-playing animation. Listeners (the widget tree)
-  /// rebuild on every change so a new animation strip can render.
-  PetAnimation get current => _current;
+  PetAnimation get current => _override ?? _current;
+
+  int get revision => _revision;
 
   Pet get pet => _pet;
 
@@ -53,8 +61,12 @@ class PetAnimationController extends ChangeNotifier {
   /// different animation table, so we reset to its default.
   void setPet(Pet pet) {
     _pet = pet;
-    _current = pet.animationByName(pet.defaultAnimation) ??
+    _current =
+        pet.animationByName(pet.defaultAnimation) ??
         (pet.animations.isNotEmpty ? pet.animations.first : _missingAnimation);
+    _override = null;
+    _oneShotRepeatsRemaining = 0;
+    _revision++;
     notifyListeners();
   }
 
@@ -62,15 +74,12 @@ class PetAnimationController extends ChangeNotifier {
   /// looping animation. If [name] isn't a known animation on the
   /// current pet (e.g. an importer left it out), the call is a
   /// silent no-op — the pet stays in its default animation.
-  void playOneShot(String name) {
+  void playOneShot(String name, {int repeats = 1}) {
     final animation = _pet.animationByName(name);
-    if (animation == null) return;
-    // One-shot animations must play exactly once. If the chat
-    // provider hands us the same one-shot twice in quick
-    // succession (e.g. two consecutive tool successes), the
-    // widget still restarts cleanly because the renderer resets
-    // its frame counter on every notify.
+    if (animation == null || repeats < 1) return;
     _current = animation;
+    _oneShotRepeatsRemaining = repeats;
+    _revision++;
     notifyListeners();
   }
 
@@ -80,6 +89,28 @@ class PetAnimationController extends ChangeNotifier {
     final animation = _pet.animationByName(name);
     if (animation == null) return;
     _current = animation;
+    _oneShotRepeatsRemaining = 0;
+    _revision++;
+    notifyListeners();
+  }
+
+  void forceLooping(String name) {
+    final animation = _pet.animationByName(name);
+    if (animation == null) return;
+    _override = PetAnimation(
+      name: animation.name,
+      row: animation.row,
+      frameCount: animation.frameCount,
+      loop: true,
+    );
+    _revision++;
+    notifyListeners();
+  }
+
+  void clearForce() {
+    if (_override == null) return;
+    _override = null;
+    _revision++;
     notifyListeners();
   }
 
@@ -88,6 +119,8 @@ class PetAnimationController extends ChangeNotifier {
     final fallback = _pet.animationByName(_pet.defaultAnimation);
     if (fallback == null) return;
     _current = fallback;
+    _oneShotRepeatsRemaining = 0;
+    _revision++;
     notifyListeners();
   }
 
@@ -98,10 +131,18 @@ class PetAnimationController extends ChangeNotifier {
   /// (they `repeat()` forever), so calling [reset] is a no-op for
   /// them.
   void notifyOneShotCompleted() {
+    if (_oneShotRepeatsRemaining > 1) {
+      _oneShotRepeatsRemaining--;
+      _revision++;
+      notifyListeners();
+      return;
+    }
     final fallback = _pet.animationByName(_pet.defaultAnimation);
     if (fallback == null) return;
     if (_current == fallback) return;
     _current = fallback;
+    _oneShotRepeatsRemaining = 0;
+    _revision++;
     notifyListeners();
   }
 }

@@ -21,16 +21,10 @@ class _FakeAssetLoader {
   static void install() {
     if (_installed) return;
     _installed = true;
-    final sheetFile = File('assets/pet/anya/spritesheet.webp');
-    final jsonFile = File('assets/pet/anya/pet.json');
-    if (sheetFile.existsSync()) {
-      _bytes['assets/pet/anya/spritesheet.webp'] = Uint8List.fromList(
-        sheetFile.readAsBytesSync(),
-      );
-    }
-    if (jsonFile.existsSync()) {
-      _bytes['assets/pet/anya/pet.json'] = Uint8List.fromList(
-        utf8.encode(jsonFile.readAsStringSync()),
+    final zipFile = File('assets/pet/anya.zip');
+    if (zipFile.existsSync()) {
+      _bytes['assets/pet/anya.zip'] = Uint8List.fromList(
+        zipFile.readAsBytesSync(),
       );
     }
     const channel = MethodChannel('flutter/assets');
@@ -103,8 +97,7 @@ void main() {
     expect(builtin!.isBuiltIn, isTrue);
     expect(builtin.id, 'builtin:anya');
     expect(builtin.directoryPath, isNotNull);
-    // The seeder should have copied the bundled spritesheet onto
-    // disk so the runtime window can open it via FileImage.
+    expect(p.basename(builtin.directoryPath!), 'anya');
     final sheetPath = builtin.resolveAbsoluteSpritesheetPath();
     expect(sheetPath, isNotNull);
     expect(File(sheetPath!).existsSync(), isTrue);
@@ -192,7 +185,8 @@ void main() {
     await service.ensureReady();
     final pet = await service.importFromZip(path);
 
-    expect(pet.id, isNot('momo'));
+    expect(pet.id, 'momo');
+    expect(p.basename(pet.directoryPath!), 'momo');
     expect(pet.id.startsWith(PetService.builtinIdPrefix), isFalse);
     expect(pet.displayName, 'Momo');
     expect(pet.description, contains('boxes'));
@@ -339,7 +333,7 @@ void main() {
       });
       expect(pet.frameWidth, 200);
       expect(pet.frameHeight, 200);
-      expect(pet.fps, 4.0);
+      expect(pet.fps, 5.0);
       expect(pet.scale, 1.0);
       expect(pet.animations.length, 9);
       expect(pet.animations.first.name, 'idle');

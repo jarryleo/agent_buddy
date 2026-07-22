@@ -5,7 +5,14 @@ import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart';
 
 import '../pages/pet_window_page.dart'
-    show closePetWindow, sendPetPlayLooping, sendPetPlayOneShot, sendPetReset, spawnPetWindow;
+    show
+        closePetWindow,
+        sendPetPlayLooping,
+        sendPetPlayOneShot,
+        sendPetReset,
+        sendPetShowText,
+        sendPetSwitch,
+        spawnPetWindow;
 import '../providers/settings_provider.dart';
 
 /// Owns the lifecycle of the desktop pet window.
@@ -25,7 +32,7 @@ import '../providers/settings_provider.dart';
 /// hot-reload by being wired up once in `mainApp`.
 class PetWindowController {
   PetWindowController({required SettingsProvider settings})
-      : _settings = settings {
+    : _settings = settings {
     _settings.addListener(_onSettingsChanged);
     _windowsChangedSub = onWindowsChanged.listen(_onWindowsChanged);
   }
@@ -37,6 +44,9 @@ class PetWindowController {
   bool _syncing = false;
   bool _disposed = false;
   StreamSubscription<void>? _windowsChangedSub;
+  Completer<void>? _windowClosed;
+  Timer? _textDispatchTimer;
+  String _pendingText = '';
 
   /// Tear down the sub-window + listener. Called from `mainApp` on
   /// dispose (the app owns this for its lifetime, so it's mostly a
@@ -45,6 +55,7 @@ class PetWindowController {
     if (_disposed) return;
     _disposed = true;
     _settings.removeListener(_onSettingsChanged);
+    _textDispatchTimer?.cancel();
     await _windowsChangedSub?.cancel();
     _windowsChangedSub = null;
     await _closeWindow();
@@ -84,23 +95,37 @@ class PetWindowController {
     await sendPetReset(controller);
   }
 
+  Future<void> showText(String text) async {
+    _pendingText = text;
+    if (_textDispatchTimer != null) return;
+    _textDispatchTimer = Timer(const Duration(milliseconds: 60), () async {
+      _textDispatchTimer = null;
+      final controller = _controller;
+      if (controller == null) return;
+      await sendPetShowText(controller, _pendingText);
+    });
+  }
+
   Future<void> _onSettingsChanged() async {
     if (_disposed) return;
     await _reconcile();
   }
 
-  void _onWindowsChanged(void _) {
+  Future<void> _onWindowsChanged(void _) async {
+    final pendingClose = _windowClosed;
+    if (pendingClose != null && !pendingClose.isCompleted) {
+      pendingClose.complete();
+    }
     if (_disposed) return;
-    if (_controller == null) return;
-    // The user closed the window via the X / OS chrome. The
-    // controller we still hold is stale; null it out so the next
-    // reconcile either respawns or stays closed depending on the
-    // toggle.
+    final controller = _controller;
+    if (controller == null) return;
+    final windows = await WindowController.getAll();
+    if (windows.any((window) => window.windowId == controller.windowId)) return;
+    if (!identical(_controller, controller)) return;
     _controller = null;
     _controllerPetId = null;
     if (_settings.showDesktopPet) {
-      // Flip the toggle off so the UI matches reality.
-      _settings.setShowDesktopPet(false);
+      await _settings.setShowDesktopPet(false);
     }
   }
 
@@ -125,8 +150,11 @@ class PetWindowController {
         // Already showing the right pet. Nothing to do.
         return;
       }
-      // Pet changed (or first launch). Tear down the old window
-      // and spawn a fresh one.
+      final controller = _controller;
+      if (controller != null && await sendPetSwitch(controller, petId)) {
+        _controllerPetId = petId;
+        return;
+      }
       await _closeWindow();
       await _spawn(petId);
     } finally {
@@ -163,11 +191,19 @@ class PetWindowController {
     _controller = null;
     _controllerPetId = null;
     if (controller == null) return;
+    final closed = Completer<void>();
+    _windowClosed = closed;
     try {
       await closePetWindow(controller);
+      await closed.future.timeout(const Duration(seconds: 2));
     } catch (_) {
-      // The controller may already be closed (e.g. user X-ed the
-      // window); ignore.
+      if (identical(_windowClosed, closed)) {
+        _windowClosed = null;
+      }
+    } finally {
+      if (identical(_windowClosed, closed)) {
+        _windowClosed = null;
+      }
     }
   }
 }

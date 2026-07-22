@@ -131,7 +131,7 @@ class Pet {
     required this.frameHeight,
     required this.animations,
     required this.defaultAnimation,
-    this.fps = 4.0,
+    this.fps = 5.0,
     this.scale = 1.0,
     this.directoryPath,
     this.assetSpritesheetPath,
@@ -303,7 +303,7 @@ class Pet {
         _readInt(json['frameWidth']) ?? _readInt(json['frame_width']) ?? 200;
     final frameHeight =
         _readInt(json['frameHeight']) ?? _readInt(json['frame_height']) ?? 200;
-    final fps = _readDouble(json['fps']) ?? 4.0;
+    final fps = _readDouble(json['fps']) ?? 5.0;
     final scale = _readDouble(json['scale']) ?? 1.0;
     final isBuiltIn = json['isBuiltIn'] as bool? ?? false;
 

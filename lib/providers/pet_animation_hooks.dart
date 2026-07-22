@@ -23,6 +23,7 @@ abstract class PetAnimationHooks {
   Future<void> playLooping(String name);
   Future<void> playOneShot(String name);
   Future<void> reset();
+  Future<void> showText(String text) async {}
 }
 
 /// Adapter that forwards calls into a [PetWindowController]. The
@@ -40,6 +41,9 @@ class _PetWindowHooksAdapter implements PetAnimationHooks {
 
   @override
   Future<void> reset() => _controller.reset();
+
+  @override
+  Future<void> showText(String text) => _controller.showText(text);
 }
 
 PetAnimationHooks? petAnimationHooksFromController(

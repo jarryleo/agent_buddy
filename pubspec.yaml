@@ -31,7 +31,7 @@ dependencies:
   path_provider: ^2.1.4
   path: ^1.9.0
   file_picker: ^8.1.4
-  llamadart: ^0.8.16
+  llamadart: ^0.8.17
   flutter_local_notifications: ^22.0.1
   # Windows-only local notifications via the WinToast C++/WinRT
   # library. Replaces our previous PowerShell balloon approach,
@@ -44,6 +44,7 @@ dependencies:
   hive_ce_flutter: ^2.3.4
   package_info_plus: ^9.0.1
   window_manager: ^0.5.0
+  screen_retriever: ^0.2.2
   # Speech-to-text + text-to-speech on every Flutter target. The
   # `stts` plugin (`llfbandit/stts`) wraps the platform-native
   # recognizer (`SpeechRecognizer` on Android, `SFSpeechRecognizer`
