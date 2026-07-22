@@ -43,7 +43,7 @@ class PetAnimation {
   final bool loop;
 
   factory PetAnimation.fromJson(Map<String, dynamic> json) {
-    final name = (json['name'] as String?)?.trim() ?? '';
+    final name = normalizeName((json['name'] as String?)?.trim() ?? '');
     if (name.isEmpty) {
       throw const FormatException('pet animation is missing required "name"');
     }
@@ -68,6 +68,43 @@ class PetAnimation {
   @override
   String toString() =>
       'PetAnimation(name=$name, row=$row, frameCount=$frameCount, loop=$loop)';
+
+  static String normalizeName(String raw) {
+    final key = raw
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[\s\-]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_');
+    switch (key) {
+      case 'run_right':
+      case 'running_right':
+        return 'run_right';
+      case 'run_left':
+      case 'running_left':
+        return 'run_left';
+      case 'wave':
+      case 'waving':
+        return 'waving';
+      case 'jump':
+      case 'jumping':
+        return 'jumping';
+      case 'fail':
+      case 'failure':
+      case 'failed':
+        return 'failed';
+      case 'wait':
+      case 'waiting':
+        return 'waiting';
+      case 'run':
+      case 'running':
+        return 'running';
+      case 'review':
+      case 'reviewing':
+        return 'review';
+      default:
+        return key;
+    }
+  }
 }
 
 /// A pet profile. The pet lives in its own directory on disk so the
@@ -100,6 +137,23 @@ class Pet {
     this.assetSpritesheetPath,
     this.isBuiltIn = false,
   });
+
+  /// The petdex/Codex spritesheet contract used by every bundled
+  /// and imported desktop pet in this app: 8 columns by 9 standard
+  /// rows, ordered top-to-bottom as described in TODO.md.
+  static const int standardColumns = 8;
+  static const int standardRows = 9;
+  static const List<PetAnimation> standardAnimations = [
+    PetAnimation(name: 'idle', row: 0, frameCount: 6, loop: true),
+    PetAnimation(name: 'run_right', row: 1, frameCount: 8, loop: true),
+    PetAnimation(name: 'run_left', row: 2, frameCount: 8, loop: true),
+    PetAnimation(name: 'waving', row: 3, frameCount: 4, loop: false),
+    PetAnimation(name: 'jumping', row: 4, frameCount: 5, loop: false),
+    PetAnimation(name: 'failed', row: 5, frameCount: 8, loop: false),
+    PetAnimation(name: 'waiting', row: 6, frameCount: 6, loop: true),
+    PetAnimation(name: 'running', row: 7, frameCount: 6, loop: true),
+    PetAnimation(name: 'review', row: 8, frameCount: 6, loop: true),
+  ];
 
   /// Stable identifier. For built-ins this is prefixed with
   /// `builtin:` (e.g. `builtin:anya`) so it can never collide with a
@@ -161,8 +215,9 @@ class Pet {
   /// as a silent no-op (a pet that doesn't know how to `waving`
   /// just stays in its default animation rather than throwing).
   PetAnimation? animationByName(String name) {
+    final normalized = PetAnimation.normalizeName(name);
     for (final a in animations) {
-      if (a.name == name) return a;
+      if (a.name == normalized) return a;
     }
     return null;
   }
@@ -225,12 +280,29 @@ class Pet {
     if (id.isEmpty) {
       throw const FormatException('pet.json is missing required "id"');
     }
-    final displayName = (json['displayName'] as String?)?.trim() ?? id;
-    final description = (json['description'] as String?) ?? '';
+    final displayName =
+        _readString(json['displayName']) ??
+        _readString(json['display_name']) ??
+        _readString(json['name']) ??
+        _readString(json['title']) ??
+        id;
+    final description =
+        _readString(json['description']) ?? _readString(json['desc']) ?? '';
     final spritesheetRelPath =
-        (json['spritesheetPath'] as String?)?.trim() ?? 'spritesheet.webp';
-    final frameWidth = _readInt(json['frameWidth']) ?? 200;
-    final frameHeight = _readInt(json['frameHeight']) ?? 200;
+        _readString(json['spritesheetPath']) ??
+        _readString(json['spriteSheetPath']) ??
+        _readString(json['sprite_sheet_path']) ??
+        _readString(json['spritesheet']) ??
+        _readString(json['spriteSheet']) ??
+        _readString(json['sprite_sheet']) ??
+        _readString(json['imagePath']) ??
+        _readString(json['image_path']) ??
+        _readString(json['image']) ??
+        'spritesheet.webp';
+    final frameWidth =
+        _readInt(json['frameWidth']) ?? _readInt(json['frame_width']) ?? 200;
+    final frameHeight =
+        _readInt(json['frameHeight']) ?? _readInt(json['frame_height']) ?? 200;
     final fps = _readDouble(json['fps']) ?? 4.0;
     final scale = _readDouble(json['scale']) ?? 1.0;
     final isBuiltIn = json['isBuiltIn'] as bool? ?? false;
@@ -243,25 +315,20 @@ class Pet {
           .map(PetAnimation.fromJson)
           .toList();
     } else {
-      // Backward-compat fallback for v1 manifests that only
-      // declared a uniform grid. We synthesise a single `idle`
-      // animation that covers the whole grid so the pet still
-      // animates (just one strip instead of nine).
-      final columns = _readInt(json['columns']) ?? 7;
-      final rows = _readInt(json['rows']) ?? 1;
-      final frames = (columns * rows).clamp(1, 1 << 20);
-      animations = [
-        PetAnimation(
-          name: 'idle',
-          row: 0,
-          frameCount: frames,
-          loop: true,
-        ),
-      ];
+      // petdex zip files only need to carry the pet metadata and
+      // spritesheet path. The sheet layout is fixed, so synthesize
+      // the shared nine-animation table instead of relying on the
+      // bundled Anya manifest to spell it out.
+      animations = standardAnimations;
     }
 
-    final defaultAnimation = (json['defaultAnimation'] as String?)?.trim();
-    final resolvedDefault = defaultAnimation == null || defaultAnimation.isEmpty
+    final defaultAnimation = PetAnimation.normalizeName(
+      _readString(json['defaultAnimation']) ??
+          _readString(json['default_animation']) ??
+          '',
+    );
+    final hasDefault = animations.any((a) => a.name == defaultAnimation);
+    final resolvedDefault = defaultAnimation.isEmpty || !hasDefault
         ? animations.first.name
         : defaultAnimation;
 
@@ -300,6 +367,12 @@ class Pet {
     if (v is num) return v.toDouble();
     if (v is String) return double.tryParse(v.trim());
     return null;
+  }
+
+  static String? _readString(Object? v) {
+    if (v is! String) return null;
+    final value = v.trim();
+    return value.isEmpty ? null : value;
   }
 
   @override

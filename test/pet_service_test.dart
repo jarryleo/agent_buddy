@@ -6,6 +6,7 @@ import 'package:agent_buddy/services/pet_service.dart';
 import 'package:archive/archive.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 /// Stub of the platform asset bundle so the bundled Anya can be
@@ -115,12 +116,10 @@ void main() {
     await service.ensureReady();
     final first = service.builtInAnya!;
     final manifestFile = File(p.join(first.directoryPath!, 'pet.json'));
-    final originalJson = await manifestFile.readAsString();
-    final mutated = originalJson.replaceFirst(
-      '"displayName":',
-      '"displayName":"Renamed",',
-    );
-    await manifestFile.writeAsString(mutated);
+    final raw =
+        jsonDecode(await manifestFile.readAsString()) as Map<String, dynamic>;
+    raw['displayName'] = 'Renamed';
+    await manifestFile.writeAsString(jsonEncode(raw));
 
     final service2 = PetService(appDir: tempDir);
     await service2.ensureReady();
@@ -219,6 +218,37 @@ void main() {
     expect(all.any((p) => p.isBuiltIn), isTrue);
   });
 
+  test('importFromZip accepts minimal petdex png and infers layout', () async {
+    final archive = Archive();
+    final manifestBytes = utf8.encode(
+      jsonEncode({
+        'name': 'Pixel Friend',
+        'description': 'A tiny imported pet.',
+      }),
+    );
+    archive.addFile(
+      ArchiveFile('pet.json', manifestBytes.length, manifestBytes),
+    );
+    final sheet = Uint8List.fromList(
+      img.encodePng(img.Image(width: 800, height: 900)),
+    );
+    archive.addFile(ArchiveFile('images/spritesheet.png', sheet.length, sheet));
+    final out = File(p.join(tempDir.path, 'pixel-friend.zip'));
+    await out.writeAsBytes(ZipEncoder().encode(archive));
+
+    await service.ensureReady();
+    final pet = await service.importFromZip(out.path);
+
+    expect(pet.displayName, 'Pixel Friend');
+    expect(pet.frameWidth, 100);
+    expect(pet.frameHeight, 100);
+    expect(pet.spritesheetRelPath, 'images/spritesheet.png');
+    expect(pet.animations, Pet.standardAnimations);
+    expect(pet.animationByName('run_right')?.frameCount, 8);
+    expect(pet.animationByName('jumping')?.loop, isFalse);
+    expect(File(pet.resolveAbsoluteSpritesheetPath()!).existsSync(), isTrue);
+  });
+
   test('importFromZip preserves paths relative to a nested manifest', () async {
     final archive = Archive();
     final manifestBytes = utf8.encode(
@@ -301,7 +331,7 @@ void main() {
   });
 
   test(
-    'Pet.fromJson synthesises a single idle animation when no animations list',
+    'Pet.fromJson synthesises the standard petdex animations when omitted',
     () {
       final pet = Pet.fromJson(const {
         'id': 'minimal',
@@ -311,8 +341,10 @@ void main() {
       expect(pet.frameHeight, 200);
       expect(pet.fps, 4.0);
       expect(pet.scale, 1.0);
-      expect(pet.animations.length, 1);
+      expect(pet.animations.length, 9);
       expect(pet.animations.first.name, 'idle');
+      expect(pet.animationByName('run_right')?.frameCount, 8);
+      expect(pet.animationByName('failed')?.loop, isFalse);
       expect(pet.defaultAnimation, 'idle');
     },
   );

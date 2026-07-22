@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -150,32 +152,48 @@ class PetService {
       throw PetImportException('pet.json 解析失败:$e');
     }
 
+    final manifestPath = _entryPath(manifestEntry);
+    final manifestDirectory = p.posix.dirname(manifestPath);
+    final archiveRoot = manifestDirectory == '.' ? '' : manifestDirectory;
+    final declaredSheet = _readManifestString(raw, const [
+      'spritesheetPath',
+      'spriteSheetPath',
+      'sprite_sheet_path',
+      'spritesheet',
+      'spriteSheet',
+      'sprite_sheet',
+      'imagePath',
+      'image_path',
+      'image',
+    ]);
+    final sheetEntry = _resolveSpritesheetEntry(
+      archive,
+      archiveRoot: archiveRoot,
+      declaredRelPath: declaredSheet,
+    );
+    if (sheetEntry == null) {
+      final suffix = declaredSheet == null ? '' : ' ${declaredSheet.trim()}';
+      throw PetImportException('找不到精灵图$suffix');
+    }
+    final sheetRel = _relativeEntryPath(sheetEntry, archiveRoot);
+    if (sheetRel == null) {
+      throw PetImportException('精灵图路径不合法 ${_entryPath(sheetEntry)}');
+    }
+    final sheetBytes = _entryBytes(sheetEntry);
+    final normalizedRaw = _normalizeManifestForSheet(
+      raw,
+      fallbackId: _fallbackIdForImport(zipPath),
+      spritesheetRelPath: sheetRel,
+      sheetBytes: sheetBytes,
+    );
     Pet draft;
     try {
-      draft = Pet.fromJson(raw);
+      draft = Pet.fromJson(normalizedRaw);
     } on FormatException catch (e) {
       throw PetImportException(e.message);
     }
     if (draft.id.startsWith(builtinIdPrefix)) {
       throw PetImportException('内置宠物 id 以 $builtinIdPrefix 开头,不允许使用');
-    }
-    if (draft.id.isEmpty) {
-      throw PetImportException('pet.json 缺少 id');
-    }
-
-    final manifestPath = _entryPath(manifestEntry);
-    final manifestDirectory = p.posix.dirname(manifestPath);
-    final archiveRoot = manifestDirectory == '.' ? '' : manifestDirectory;
-    final sheetRel = _safeRelativePath(draft.spritesheetRelPath);
-    if (sheetRel == null) {
-      throw PetImportException('精灵图路径不合法 ${draft.spritesheetRelPath}');
-    }
-    final sheetArchivePath = archiveRoot.isEmpty
-        ? sheetRel
-        : p.posix.join(archiveRoot, sheetRel);
-    final sheetEntry = _findEntry(archive, sheetArchivePath);
-    if (sheetEntry == null) {
-      throw PetImportException('找不到精灵图 ${draft.spritesheetRelPath}');
     }
 
     final petId = _uuid.v4();
@@ -197,7 +215,7 @@ class PetService {
         final outPath = p.joinAll([petFolder.path, ...p.posix.split(safePath)]);
         final outFile = File(outPath);
         await outFile.parent.create(recursive: true);
-        await outFile.writeAsBytes(entry.content as List<int>);
+        await outFile.writeAsBytes(_entryBytes(entry));
       }
 
       final stored = draft.copyWithPetId(
@@ -246,12 +264,6 @@ class PetService {
     final builtInDirName = _safeFolderName(builtInId);
     final builtInDir = Directory(p.join(dir.path, builtInDirName));
     final manifestPath = File(p.join(builtInDir.path, 'pet.json'));
-    if (await manifestPath.exists()) {
-      // Already seeded. Trust the on-disk copy (it carries the
-      // user's tweaks, if any — we still only expose the
-      // built-in id namespace).
-      return;
-    }
     await builtInDir.create(recursive: true);
 
     // Copy the spritesheet out of the asset bundle into the pet's
@@ -259,34 +271,61 @@ class PetService {
     // can read it via `FileImage` like a normal user import.
     final sheetBytes = await rootBundle.load(_builtinAnyaAssetSheet);
     final sheetOut = File(p.join(builtInDir.path, 'spritesheet.webp'));
-    await sheetOut.writeAsBytes(
-      sheetBytes.buffer.asUint8List(
-        sheetBytes.offsetInBytes,
-        sheetBytes.lengthInBytes,
-      ),
+    final sheetByteList = sheetBytes.buffer.asUint8List(
+      sheetBytes.offsetInBytes,
+      sheetBytes.lengthInBytes,
     );
-
-    // Materialise the manifest. We patch the asset-bundled JSON so
-    // the importer's `directoryPath` / `assetSpritesheetPath` /
-    // `isBuiltIn` are populated. If the bundled JSON is missing
-    // (someone removed the asset), fall back to a synthetic record.
-    Map<String, dynamic> raw;
-    try {
-      final manifestRaw = await rootBundle.loadString(_builtinAnyaAssetJson);
-      raw = jsonDecode(manifestRaw) as Map<String, dynamic>;
-    } catch (_) {
-      raw = const {};
+    if (!await sheetOut.exists()) {
+      await sheetOut.writeAsBytes(sheetByteList);
     }
-    raw['id'] = builtInId;
-    raw['displayName'] = raw['displayName'] ?? 'Anya';
-    raw['description'] =
-        raw['description'] ?? 'A digital pet version of Anya Forger.';
-    raw['spritesheetPath'] = 'spritesheet.webp';
-    raw['isBuiltIn'] = true;
-    raw['directoryPath'] = builtInDir.path;
-    raw.remove('assetSpritesheetPath');
 
-    final stored = Pet.fromJson(raw);
+    // Materialise or repair the manifest through the same
+    // petdex-compatible path used by zip imports. Older app builds
+    // may have seeded a minimal Anya manifest; rewriting here adds
+    // inferred frame metrics and the shared action table without
+    // depending on Anya-specific parameters.
+    Map<String, dynamic> raw;
+    if (await manifestPath.exists()) {
+      try {
+        raw =
+            jsonDecode(await manifestPath.readAsString())
+                as Map<String, dynamic>;
+      } catch (_) {
+        raw = const {};
+      }
+    } else {
+      try {
+        final manifestRaw = await rootBundle.loadString(_builtinAnyaAssetJson);
+        raw = jsonDecode(manifestRaw) as Map<String, dynamic>;
+      } catch (_) {
+        raw = const {};
+      }
+    }
+
+    final normalized = _normalizeManifestForSheet(
+      raw,
+      fallbackId: builtInId,
+      spritesheetRelPath: 'spritesheet.webp',
+      sheetBytes: sheetByteList,
+    );
+    normalized['id'] = builtInId;
+    if (_readManifestString(raw, const [
+          'displayName',
+          'display_name',
+          'name',
+          'title',
+        ]) ==
+        null) {
+      normalized['displayName'] = 'Anya';
+    }
+    if (_readManifestString(raw, const ['description', 'desc']) == null) {
+      normalized['description'] = 'A digital pet version of Anya Forger.';
+    }
+    normalized['isBuiltIn'] = true;
+    normalized['directoryPath'] = builtInDir.path;
+    normalized.remove('assetSpritesheetPath');
+
+    final stored = Pet.fromJson(normalized);
     await manifestPath.writeAsString(jsonEncode(stored.toJson()));
   }
 
@@ -345,7 +384,33 @@ class PetService {
         final raw =
             jsonDecode(await manifestFile.readAsString())
                 as Map<String, dynamic>;
-        var pet = Pet.fromJson(raw);
+        final declaredSheet = _readManifestString(raw, const [
+          'spritesheetPath',
+          'spriteSheetPath',
+          'sprite_sheet_path',
+          'spritesheet',
+          'spriteSheet',
+          'sprite_sheet',
+          'imagePath',
+          'image_path',
+          'image',
+        ]);
+        final sheetRel = _safeRelativePath(declaredSheet ?? 'spritesheet.webp');
+        var normalized = raw;
+        if (sheetRel != null) {
+          final sheetFile = File(
+            p.joinAll([entry.path, ...p.posix.split(sheetRel)]),
+          );
+          if (await sheetFile.exists()) {
+            normalized = _normalizeManifestForSheet(
+              raw,
+              fallbackId: p.basename(entry.path),
+              spritesheetRelPath: sheetRel,
+              sheetBytes: await sheetFile.readAsBytes(),
+            );
+          }
+        }
+        var pet = Pet.fromJson(normalized);
         if (byId.containsKey(pet.id)) {
           pet = byId[pet.id]!;
         }
@@ -386,6 +451,187 @@ class PetService {
       if (_entryPath(entry) == normalized) return entry;
     }
     return null;
+  }
+
+  ArchiveFile? _resolveSpritesheetEntry(
+    Archive archive, {
+    required String archiveRoot,
+    required String? declaredRelPath,
+  }) {
+    final declared = declaredRelPath?.trim();
+    if (declared != null && declared.isNotEmpty) {
+      final safe = _safeRelativePath(declared);
+      if (safe == null) {
+        throw PetImportException('精灵图路径不合法 $declared');
+      }
+      final archivePath = archiveRoot.isEmpty
+          ? safe
+          : p.posix.join(archiveRoot, safe);
+      final direct = _findEntry(archive, archivePath);
+      if (direct != null) return direct;
+    }
+
+    final candidates = <ArchiveFile>[];
+    for (final entry in archive.files) {
+      if (!entry.isFile) continue;
+      final rel = _relativeEntryPath(entry, archiveRoot);
+      if (rel == null) continue;
+      if (!_isSupportedSpritesheetPath(rel)) continue;
+      candidates.add(entry);
+    }
+    if (candidates.isEmpty) return null;
+    candidates.sort((a, b) {
+      final ap = p.posix.basename(_entryPath(a)).toLowerCase();
+      final bp = p.posix.basename(_entryPath(b)).toLowerCase();
+      return _spritesheetNameScore(bp).compareTo(_spritesheetNameScore(ap));
+    });
+    return candidates.first;
+  }
+
+  String? _relativeEntryPath(ArchiveFile entry, String archiveRoot) {
+    final archivePath = _entryPath(entry);
+    final relativePath = archiveRoot.isEmpty
+        ? archivePath
+        : p.posix.relative(archivePath, from: archiveRoot);
+    return _safeRelativePath(relativePath);
+  }
+
+  bool _isSupportedSpritesheetPath(String path) {
+    final parts = p.posix.split(path);
+    if (parts.any(
+      (part) => part.startsWith('__MACOSX') || part.startsWith('.'),
+    )) {
+      return false;
+    }
+    final ext = p.posix.extension(path).toLowerCase();
+    return ext == '.png' || ext == '.webp';
+  }
+
+  int _spritesheetNameScore(String basename) {
+    var score = 0;
+    if (basename == 'spritesheet.png' || basename == 'spritesheet.webp') {
+      score += 100;
+    }
+    if (basename.contains('spritesheet')) score += 50;
+    if (basename.contains('sprite')) score += 30;
+    if (basename.contains('sheet')) score += 20;
+    return score;
+  }
+
+  Map<String, dynamic> _normalizeManifestForSheet(
+    Map<String, dynamic> raw, {
+    required String fallbackId,
+    required String spritesheetRelPath,
+    required List<int> sheetBytes,
+  }) {
+    final normalized = Map<String, dynamic>.from(raw);
+    normalized['id'] =
+        _readManifestString(normalized, const ['id']) ??
+        _slugify(
+          _readManifestString(normalized, const [
+                'displayName',
+                'display_name',
+                'name',
+                'title',
+              ]) ??
+              fallbackId,
+        );
+    normalized['displayName'] =
+        _readManifestString(normalized, const [
+          'displayName',
+          'display_name',
+          'name',
+          'title',
+        ]) ??
+        normalized['id'];
+    normalized['spritesheetPath'] = spritesheetRelPath;
+    normalized['fps'] ??= 4.0;
+    normalized['scale'] ??= 1.0;
+    normalized['defaultAnimation'] ??= 'idle';
+
+    final dimensions = _decodeImageDimensions(sheetBytes);
+    if (dimensions != null) {
+      normalized['frameWidth'] ??= _inferFrameWidth(
+        normalized,
+        dimensions.width,
+      );
+      normalized['frameHeight'] ??= _inferFrameHeight(
+        normalized,
+        dimensions.height,
+      );
+    }
+    return normalized;
+  }
+
+  ({int width, int height})? _decodeImageDimensions(List<int> bytes) {
+    try {
+      final decoded = img.decodeImage(Uint8List.fromList(bytes));
+      if (decoded == null) return null;
+      return (width: decoded.width, height: decoded.height);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  int _inferFrameWidth(Map<String, dynamic> raw, int imageWidth) {
+    final existing =
+        _readInt(raw['frameWidth']) ?? _readInt(raw['frame_width']);
+    if (existing != null && existing > 0) return existing;
+    final columns = _readInt(raw['columns']) ?? Pet.standardColumns;
+    if (columns > 0 && imageWidth % columns == 0) {
+      return imageWidth ~/ columns;
+    }
+    return imageWidth;
+  }
+
+  int _inferFrameHeight(Map<String, dynamic> raw, int imageHeight) {
+    final existing =
+        _readInt(raw['frameHeight']) ?? _readInt(raw['frame_height']);
+    if (existing != null && existing > 0) return existing;
+    final rows = _readInt(raw['rows']) ?? Pet.standardRows;
+    if (rows > 0 && imageHeight % rows == 0) {
+      return imageHeight ~/ rows;
+    }
+    return imageHeight;
+  }
+
+  String _fallbackIdForImport(String zipPath) {
+    final stem = p.basenameWithoutExtension(zipPath);
+    return _slugify(stem.isEmpty ? 'pet' : stem);
+  }
+
+  String _slugify(String raw) {
+    final out = raw
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9_\-]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+    return out.isEmpty ? 'pet' : out;
+  }
+
+  String? _readManifestString(Map<String, dynamic> raw, List<String> keys) {
+    for (final key in keys) {
+      final value = raw[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+    return null;
+  }
+
+  int? _readInt(Object? v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v.trim());
+    return null;
+  }
+
+  Uint8List _entryBytes(ArchiveFile entry) {
+    final content = entry.content as List<int>;
+    if (content is Uint8List) return content;
+    return Uint8List.fromList(content);
   }
 
   String _entryPath(ArchiveFile entry) {

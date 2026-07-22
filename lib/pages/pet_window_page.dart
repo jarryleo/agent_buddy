@@ -91,8 +91,7 @@ Future<void> _configurePetWindow(Pet pet) async {
       await windowManager.setResizable(false);
       await windowManager.setMinimumSize(size);
       await windowManager.setMaximumSize(size);
-      await windowManager.show();
-      await windowManager.focus();
+      await windowManager.show(inactive: true);
     },
   );
 }
@@ -116,10 +115,26 @@ Map<String, String> _parseArgs(String? args) {
     if (eq < 0) {
       out[body] = '';
     } else {
-      out[body.substring(0, eq)] = body.substring(eq + 1);
+      out[body.substring(0, eq)] = _decodeArgValue(body.substring(eq + 1));
     }
   }
   return out;
+}
+
+String _decodeArgValue(String raw) {
+  final value = raw.trim();
+  if (value.isEmpty) return value;
+  try {
+    final decoded = Uri.decodeComponent(value);
+    if (decoded != value || !decoded.startsWith('"')) return decoded;
+  } catch (_) {}
+  if (value.startsWith('"') && value.endsWith('"')) {
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is String) return decoded;
+    } catch (_) {}
+  }
+  return value;
 }
 
 class _PetWindowApp extends StatelessWidget {
@@ -479,7 +494,8 @@ class _PetMissingPageState extends State<_PetMissingPage> {
 /// the multi-window bootstrap and the main-window lifecycle code
 /// share a single definition of the spawn arguments.
 Future<WindowController> spawnPetWindow({required String petId}) async {
-  final args = '$_kPetWindowType --$_kPetIdArg=${jsonEncode(petId)}';
+  final encodedPetId = Uri.encodeComponent(petId);
+  final args = '--type=$_kPetWindowType --$_kPetIdArg=$encodedPetId';
   final controller = await WindowController.create(
     WindowConfiguration(hiddenAtLaunch: true, arguments: args),
   );

@@ -54,17 +54,23 @@ Future<void> main(List<String> args) async {
   // so we can route them into the pet-window bootstrap before
   // touching `Hive` or the settings provider — the pet window only
   // needs `PetService`, not the full app plumbing.
-  if (args.isNotEmpty) {
-    for (final token in args) {
-      if (token == '--type=$petWindowType') {
-        final controller = await WindowController.fromCurrentEngine();
-        await runPetWindow(controller);
-        return;
-      }
-    }
+  if (_hasPetWindowArg(args)) {
+    WidgetsFlutterBinding.ensureInitialized();
+    final controller = await WindowController.fromCurrentEngine();
+    await runPetWindow(controller);
+    return;
   }
 
   await mainApp();
+}
+
+bool _hasPetWindowArg(List<String> args) {
+  for (final arg in args) {
+    for (final token in arg.split(RegExp(r'\s+'))) {
+      if (token == '--type=$petWindowType') return true;
+    }
+  }
+  return false;
 }
 
 Future<void> mainApp() async {
@@ -214,15 +220,16 @@ class _AgentBuddyAppState extends State<AgentBuddyApp> {
   @override
   void initState() {
     super.initState();
-    _settings = SettingsProvider(
-      widget.storage,
-      widget.googleSheets,
-      widget.autostartService,
-    )..load()
-      ..attachAutostartService(widget.autostartService);
+    _settings =
+        SettingsProvider(
+            widget.storage,
+            widget.googleSheets,
+            widget.autostartService,
+          )
+          ..load()
+          ..attachAutostartService(widget.autostartService);
     if (petWindowSupportedOnCurrentPlatform()) {
-      _petController = PetWindowController(settings: _settings)
-        ..syncOnStart();
+      _petController = PetWindowController(settings: _settings)..syncOnStart();
     }
   }
 
