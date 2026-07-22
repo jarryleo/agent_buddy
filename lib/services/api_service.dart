@@ -526,6 +526,17 @@ class ApiService {
     final payload = <String, dynamic>{
       'model': model,
       'stream': true,
+      // Output budget for the OpenAI wire. The provider default
+      // is typically 4–8K which silently truncates long tool_use
+      // payloads (e.g. a `file(action=write, content=<long HTML>)`
+      // call). Pin to 16K so realistic single-file writes fit on
+      // the happy path; the orchestrator refuses to execute
+      // truncated calls regardless of the budget, so the only
+      // downside of bumping this is a higher per-turn cost
+      // ceiling. Skipped when thinking is enabled because the
+      // reasoning budget already consumes part of the output
+      // window on models that surface it (o1/o3/gpt-5/etc.).
+      'max_tokens': 16384,
       'messages': _buildOpenAIMessages(history, systemPrompts, inlineFileTypes),
     };
     _applyOpenAIThinking(payload, model, enableThinking);
@@ -777,10 +788,20 @@ class ApiService {
     // for the auto-prefix-matching rules.
     final promptCacheEnabled = provider.promptCacheEnabled;
 
+    // Output budget for the Anthropic wire. 4096 was the original
+    // hardcoded value but it mid-stream truncates any tool_use
+    // whose `input` JSON is large (e.g. a `file(action=write,
+    // content=<long HTML>)` from the agent), which silently shows
+    // up in the bubble as `{ok:true, size:0}` because the
+    // orchestrator used to execute the half-written tool call.
+    // 16K keeps realistic single-file writes on the happy path;
+    // the orchestrator now refuses to execute truncated calls
+    // regardless of the budget, so the only downside of bumping
+    // this is a higher per-turn cost ceiling.
     final payload = <String, dynamic>{
       'model': model,
       'stream': true,
-      'max_tokens': 4096,
+      'max_tokens': 65536,
       'messages': _buildAnthropicMessages(
         history,
         inlineFileTypes,

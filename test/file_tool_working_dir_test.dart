@@ -400,6 +400,127 @@ void main() {
       expect(pathDesc, contains('相对路径'));
     });
   });
+
+  // Regression guard for the "long HTML truncated" bug. When
+  // Anthropic / OpenAI hit `max_tokens` mid-tool_use the JSON
+  // parser leaves the `content` field as missing or empty, and
+  // the file tool used to silently write a zero-byte file and
+  // return `ok:true, size:0`. Pin down the loud failure for both
+  // desktop and mobile branches.
+  group('write/append content validation', () {
+    test('desktop write rejects a missing content field (truncated '
+        'tool_use symptom)', () async {
+      await storage.setModelWorkingDirectory(workingDir.path);
+      final toolService = ToolService(storage: storage);
+      addTearDown(toolService.dispose);
+
+      final tool = FileTool();
+      try {
+        await tool.execute({
+          'action': 'write',
+          'path': 'hi.html',
+          // 'content' deliberately missing — the API layer's
+          // JSON-fallback dropped the field because the
+          // surrounding tool_use was truncated mid-stream.
+        }, toolService);
+        fail('expected ToolException');
+      } on Object catch (e) {
+        expect(e.toString(), contains('"content" is required'));
+        expect(e.toString(), contains('content'));
+      }
+
+      // The guard must run BEFORE any disk write — the file
+      // must not exist after the call returns.
+      expect(
+        File(p.join(workingDir.path, 'hi.html')).existsSync(),
+        isFalse,
+        reason: 'truncated-call guard must abort before writing an empty file',
+      );
+    });
+
+    test('desktop write rejects an explicitly empty content string', () async {
+      await storage.setModelWorkingDirectory(workingDir.path);
+      final toolService = ToolService(storage: storage);
+      addTearDown(toolService.dispose);
+
+      final tool = FileTool();
+      try {
+        await tool.execute({
+          'action': 'write',
+          'path': 'empty.html',
+          'content': '',
+        }, toolService);
+        fail('expected ToolException');
+      } on Object catch (e) {
+        expect(e.toString(), contains('"content" is required'));
+        expect(e.toString(), contains('empty string'));
+      }
+
+      expect(File(p.join(workingDir.path, 'empty.html')).existsSync(), isFalse);
+    });
+
+    test(
+      'desktop append accepts an explicit empty string as a no-op',
+      () async {
+        await storage.setModelWorkingDirectory(workingDir.path);
+        final toolService = ToolService(storage: storage);
+        addTearDown(toolService.dispose);
+
+        // Seed a file so append has something to land on.
+        final seed = File(p.join(workingDir.path, 'note.txt'))
+          ..writeAsStringSync('seed');
+        addTearDown(() {
+          if (seed.existsSync()) seed.deleteSync();
+        });
+
+        final tool = FileTool();
+        final raw = await tool.execute({
+          'action': 'append',
+          'path': 'note.txt',
+          'content': '', // explicit empty append is allowed
+        }, toolService);
+
+        final envelope = jsonDecode(raw) as Map<String, dynamic>;
+        expect(envelope['ok'], true);
+        expect(envelope['size'], 0);
+        // The seed body is preserved untouched.
+        expect(seed.readAsStringSync(), 'seed');
+      },
+    );
+
+    test('mobile write rejects a missing content field via the '
+        'FileService bridge', () async {
+      overridePlatform(isMobileValue: true, isDesktopValue: false);
+      addTearDown(resetPlatformOverrides);
+
+      // Force the mobile branch through a fake FileService
+      // that records every write so we can assert that the
+      // content check runs BEFORE the bridge is touched.
+      final fake = _FakeFileService()..workingDir = workingDir.path;
+      final toolService = ToolService(
+        storage: storage,
+        fileBuilder: () => fake,
+      );
+      addTearDown(toolService.dispose);
+
+      final tool = FileTool();
+      try {
+        await tool.execute({
+          'action': 'write',
+          'path': 'mobile.html',
+          // 'content' missing — same regression scenario as
+          // above but through the mobile branch.
+        }, toolService);
+        fail('expected ToolException');
+      } on Object catch (e) {
+        expect(e.toString(), contains('"content" is required'));
+      }
+
+      // The bridge must NOT have been called for this write.
+      expect(fake.lastWriteId, isNull);
+      expect(fake.lastWriteBytes, isNull);
+    });
+  });
 }
 
 class _FakeFileService implements FileService {

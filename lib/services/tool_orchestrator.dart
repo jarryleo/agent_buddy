@@ -395,7 +395,51 @@ class ToolOrchestrator {
       }
 
       if (turn.truncated) {
-        yield OrchestratorEvent.content('*(response truncated)*');
+        yield OrchestratorEvent.content(
+          '*(response truncated; some content may be missing)*',
+        );
+      }
+
+      // Truncation guard: when the server hits `max_tokens` (or
+      // `length`) mid-tool-call, the JSON streamed into
+      // `tool_calls` is incomplete — every `input_json_delta` /
+      // `arguments` chunk after the cut-off is missing. The
+      // tool-call *shape* may be syntactically valid JSON once we
+      // parse it (see `args = {'raw': argsRaw}` fallbacks in
+      // `ApiService`), but the values are at best partial. If we
+      // blindly execute that, the bubble reports `ok:true,
+      // size:0` for an empty `file.write` and the model keeps
+      // walking a workflow that silently wiped the user's data.
+      //
+      // Commit the partial assistant turn so the user sees the
+      // truncation marker in context, then bail. We do NOT append
+      // a tool-result message — most protocols reject an
+      // assistant `tool_use` with no matching `tool_result` on
+      // the next round, so the safe recovery is to stop the loop
+      // and let the user (or model on its next user-driven turn)
+      // retry.
+      if (turn.truncated && turn.toolCalls.isNotEmpty) {
+        if (turn.assistantTurn != null) {
+          history = [...history, turn.assistantTurn!];
+          onTurnCommitted(history);
+        }
+        // Build a human-readable summary of which calls were
+        // blocked — the model and the user both want to know
+        // which tool call ids were caught (especially when
+        // multiple were emitted in the same turn), so the
+        // message includes the id AND the tool name. Falls back
+        // gracefully when ids are missing (some local-LLM
+        // backends ship empty / null ids).
+        final blocked = turn.toolCalls
+            .map((c) => c.id.isNotEmpty ? '${c.id}:${c.name}' : c.name)
+            .toList();
+        yield OrchestratorEvent.error(
+          'tool call(s) truncated by the server '
+          '(${blocked.length} blocked: $blocked); '
+          'not executing with partial input — retry with shorter '
+          'content or split the write into chunks',
+        );
+        return;
       }
 
       // No tool calls → model wants to stop. Done.

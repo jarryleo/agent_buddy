@@ -1,3 +1,4 @@
+import 'package:agent_buddy/models/message.dart';
 import 'package:agent_buddy/services/api_service.dart';
 import 'package:agent_buddy/services/tool_orchestrator.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -527,6 +528,159 @@ void main() {
           OrchestratorEventKind.roundStart, // round 1
           OrchestratorEventKind.content,
         ]);
+      });
+    });
+
+    group('truncation guard', () {
+      test('refuses to execute tool calls when the turn was truncated by '
+          'max_tokens / length; emits an error event instead of '
+          'running on partial JSON', () async {
+        // Regression: the orchestrator used to fire the
+        // executor anyway when `turn.truncated == true` and
+        // the model also happened to emit (partial) tool calls
+        // before the cut-off. The wire layer's JSON parser then
+        // fell back to `{'raw': '<half-string>'}` for every
+        // affected call, which made e.g. `file.write` look like
+        // it wrote 0 bytes (silent `ok:true, size:0` result)
+        // and quietly destroy the user's data. Now the loop
+        // short-circuits with an error event that names the
+        // affected tools.
+        final events = <OrchestratorEvent>[];
+        final orch = ToolOrchestrator();
+
+        final executorCalls = <ParsedToolCall>[];
+
+        Stream<OrchestratorEvent> runOneTurn(
+          List<ChatRequestMessage> history,
+        ) async* {
+          // The stream mirrors what Anthropic / OpenAI emit
+          // when `max_tokens` is hit mid-tool-call: a content
+          // marker, a tool_call whose `arguments` JSON was
+          // never closed, and `stop_reason == max_tokens`
+          // (`finish_reason == 'length'`).
+          yield OrchestratorEvent.content('partial body…');
+          yield OrchestratorEvent.turnDone(
+            TurnResult(
+              assistantTurn: ChatRequestMessage(
+                role: MessageRole.assistant,
+                content: 'partial body…',
+              ),
+              toolCalls: [
+                // Half-written JSON (`{"path":"x.html",
+                // "content":"<` was all the model managed to
+                // squeeze in before the budget ran out). The
+                // API parser leaves this as `{'raw':
+                // '<half-string>'}` so the file tool's
+                // `args['content']` is `null` — exactly the
+                // bug surface.
+                const ParsedToolCall(
+                  id: 'call_truncated',
+                  name: 'file',
+                  argumentsRaw: '{"path":"x.html","content":"<',
+                  arguments: <String, dynamic>{
+                    'raw': '{"path":"x.html","content":"<',
+                  },
+                ),
+              ],
+              truncated: true,
+              emittedAnyContent: true,
+            ),
+          );
+        }
+
+        await for (final ev in orch.run(
+          runOneTurn: runOneTurn,
+          initialHistory: const <ChatRequestMessage>[],
+          executor: (call) async {
+            executorCalls.add(call);
+            return 'should not run';
+          },
+          onTurnCommitted: (_) {},
+        )) {
+          events.add(ev);
+        }
+
+        // The orchestrator must NOT have invoked the executor
+        // for any of the truncated tool calls — running them
+        // is exactly what wipes the user's file with an empty
+        // string and returns `ok:true, size:0`.
+        expect(executorCalls, isEmpty);
+
+        // Event sequence:
+        //   1. roundStart(0) (the run loop emits the round
+        //      boundary BEFORE the inner stream is consumed).
+        //   2. content('partial body…') — forwarded verbatim.
+        //   3. content('*(response truncated…)*') — the
+        //      `truncated` marker so the user sees the cut.
+        //   4. error event naming the affected tool(s).
+        // No toolStart / toolDone events because the executor
+        // never ran.
+        final kinds = events.map((e) => e.kind).toList();
+        expect(kinds, [
+          OrchestratorEventKind.roundStart,
+          OrchestratorEventKind.content,
+          OrchestratorEventKind.content,
+          OrchestratorEventKind.error,
+        ]);
+
+        // Two `content` events: the partial body the model
+        // emitted, then our truncation marker.
+        expect(events[1].contentDelta, 'partial body…');
+        expect(events[2].contentDelta, contains('truncated'));
+
+        // The error event must name the tool that was
+        // blocked — otherwise the model has no signal that
+        // it's the truncated write call it needs to retry
+        // shorter.
+        final errorEvent = events.last;
+        expect(errorEvent.error, contains('file'));
+        expect(errorEvent.error, contains('truncated'));
+        expect(errorEvent.error, contains('call_truncated'));
+      });
+
+      test('truncation with NO tool calls still proceeds normally (the '
+          'normal "model said something then ran out of tokens" '
+          'case keeps yielding its truncation marker)', () async {
+        // Sanity: the truncation guard only fires when
+        // BOTH `turn.truncated` and a non-empty tool-call list
+        // are present. A text-only reply that gets cut should
+        // keep its existing semantics: a content marker
+        // indicating truncation, then the loop terminates.
+        final events = <OrchestratorEvent>[];
+        final orch = ToolOrchestrator();
+
+        Stream<OrchestratorEvent> runOneTurn(
+          List<ChatRequestMessage> history,
+        ) async* {
+          yield OrchestratorEvent.content('cut off here');
+          yield const OrchestratorEvent.turnDone(
+            TurnResult(
+              assistantTurn: ChatRequestMessage(
+                role: MessageRole.assistant,
+                content: 'cut off here',
+              ),
+              toolCalls: [],
+              truncated: true,
+              emittedAnyContent: true,
+            ),
+          );
+        }
+
+        await for (final ev in orch.run(
+          runOneTurn: runOneTurn,
+          initialHistory: const <ChatRequestMessage>[],
+          executor: (_) async => 'unused',
+          onTurnCommitted: (_) {},
+        )) {
+          events.add(ev);
+        }
+
+        expect(events.map((e) => e.kind).toList(), [
+          OrchestratorEventKind.roundStart,
+          OrchestratorEventKind.content,
+          OrchestratorEventKind.content, // truncation marker
+        ]);
+        expect(events.last.contentDelta, contains('truncated'));
       });
     });
   });

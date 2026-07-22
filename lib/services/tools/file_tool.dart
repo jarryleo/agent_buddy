@@ -449,7 +449,33 @@ read 返回:
         if (path.isEmpty) {
           throw ToolException('"path" is required for write');
         }
+        // `content` must be present and non-empty. A missing or
+        // empty content was the symptom of a `max_tokens`-
+        // truncated tool_use (the half-parsed JSON keeps the
+        // surrounding keys but the `content` value never made it
+        // over the wire, so the protocol layer falls back to
+        // `{'raw': '...'}` and `args['content']` becomes null).
+        // Silently writing an empty file to disk in that case
+        // returns `{ok:true, size:0}` which fools the model into
+        // believing the file was written successfully. Refuse
+        // loud instead.
+        if (!args.containsKey('content')) {
+          throw ToolException(
+            '"content" is required for write; '
+            'received keys: ${args.keys.toList()} '
+            '(a missing content field usually means the tool call '
+            'was truncated by the server)',
+          );
+        }
         final content = args['content'] as String? ?? '';
+        if (content.isEmpty) {
+          throw ToolException(
+            '"content" is required for write '
+            '(received an empty string; '
+            'an explicit empty file should be created with the '
+            'shell `touch` command instead)',
+          );
+        }
         await file.write(path, utf8.encode(content));
         return jsonEncode({
           'action': 'write',
@@ -462,6 +488,19 @@ read 返回:
         final path = (args['path'] as String? ?? '').trim();
         if (path.isEmpty) {
           throw ToolException('"path" is required for append');
+        }
+        // Same content-must-be-present guard as `write`. We
+        // accept an explicit empty `content` here (an empty
+        // append is a no-op the model might use to "probe" the
+        // tool), but a missing key is still a bug — usually the
+        // same `max_tokens` truncation artifact.
+        if (!args.containsKey('content')) {
+          throw ToolException(
+            '"content" is required for append; '
+            'received keys: ${args.keys.toList()} '
+            '(a missing content field usually means the tool call '
+            'was truncated by the server)',
+          );
         }
         final content = args['content'] as String? ?? '';
         await file.write(path, utf8.encode(content), append: true);
@@ -585,9 +624,42 @@ read 返回:
         final ops = _parseEdits(args['edits']);
         return _editDesktop(path, ops);
       case 'write':
+        // Same `content`-must-be-present guard as the mobile
+        // branch — see the long-form comment in `_executeMobile`.
+        // A missing `content` field is the symptom of a
+        // `max_tokens`-truncated tool_use; an empty string is
+        // almost always a model bug. Refuse loudly instead of
+        // silently overwriting the user's file with nothing.
+        if (!args.containsKey('content')) {
+          throw ToolException(
+            '"content" is required for write; '
+            'received keys: ${args.keys.toList()} '
+            '(a missing content field usually means the tool call '
+            'was truncated by the server)',
+          );
+        }
         final content = args['content'] as String? ?? '';
+        if (content.isEmpty) {
+          throw ToolException(
+            '"content" is required for write '
+            '(received an empty string; '
+            'an explicit empty file should be created with the '
+            'shell `touch` command instead)',
+          );
+        }
         return _writeDesktop(path, content);
       case 'append':
+        // Append tolerates an explicit empty `content` (no-op
+        // write) but still requires the key to be present —
+        // otherwise we silently accept a malformed call.
+        if (!args.containsKey('content')) {
+          throw ToolException(
+            '"content" is required for append; '
+            'received keys: ${args.keys.toList()} '
+            '(a missing content field usually means the tool call '
+            'was truncated by the server)',
+          );
+        }
         final content = args['content'] as String? ?? '';
         return _appendDesktop(path, content);
       case 'delete':
