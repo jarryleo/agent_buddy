@@ -9,12 +9,17 @@ import '../models/skill.dart';
 import '../models/tool.dart';
 import '../models/google_sheet_config.dart';
 import '../services/google_sheets_service.dart';
+import '../services/platform/autostart_service.dart';
 import '../services/storage_service.dart';
 import '../services/tools/tool_registry.dart';
 
 class SettingsProvider extends ChangeNotifier {
-  SettingsProvider(this._storage, [GoogleSheetsService? googleSheets])
-    : _googleSheets = googleSheets {
+  SettingsProvider(
+    this._storage, [
+    GoogleSheetsService? googleSheets,
+    AutostartService? autostart,
+  ]) : _googleSheets = googleSheets,
+       _autostart = autostart {
     // Mirror the Google Sheet config into our cached copy so the
     // tools tab + auth-state UI see the latest state. The service
     // owns the persistence path (writes go through `_storage`); we
@@ -25,6 +30,7 @@ class SettingsProvider extends ChangeNotifier {
 
   final StorageService _storage;
   final GoogleSheetsService? _googleSheets;
+  AutostartService? _autostart;
   final _uuid = const Uuid();
 
   List<ModelProvider> _providers = [];
@@ -46,6 +52,7 @@ class SettingsProvider extends ChangeNotifier {
   String? _modelWorkingDirectory;
   String? _modelWorkingTreeUri;
   bool _thinkingModeEnabled = false;
+  bool _autoStartEnabled = false;
   GoogleSheetConfig _googleSheetConfig = GoogleSheetConfig.empty;
 
   List<ModelProvider> get providers => List.unmodifiable(_providers);
@@ -74,6 +81,7 @@ class SettingsProvider extends ChangeNotifier {
   String? get modelWorkingTreeUri => _modelWorkingTreeUri;
 
   bool get thinkingModeEnabled => _thinkingModeEnabled;
+  bool get autoStartEnabled => _autoStartEnabled;
   GoogleSheetConfig get googleSheetConfig => _googleSheetConfig;
 
   /// Called whenever `GoogleSheetsService` notifies (config writes,
@@ -158,6 +166,7 @@ class SettingsProvider extends ChangeNotifier {
     _modelWorkingDirectory = _storage.modelWorkingDirectory;
     _modelWorkingTreeUri = _storage.modelWorkingTreeUri;
     _thinkingModeEnabled = _storage.thinkingModeEnabled;
+    _autoStartEnabled = _storage.autoStartEnabled;
     _googleSheetConfig = _storage.loadGoogleSheetConfig();
 
     // Seed built-in tools. Fresh installs hit the `isEmpty` branch and
@@ -755,5 +764,61 @@ class SettingsProvider extends ChangeNotifier {
     _thinkingModeEnabled = enabled;
     await _storage.setThinkingModeEnabled(enabled);
     notifyListeners();
+  }
+
+  /// Inject the concrete [AutostartService] used to talk to the
+  /// OS-level startup hook. Wired up after construction because
+  /// `createAutostartService()` consults [Platform.isWindows] etc.,
+  /// which aren't fully resolved inside `main()` until after
+  /// `WidgetsFlutterBinding.ensureInitialized()` runs. Tests can
+  /// pass a fake via the third positional arg of the constructor.
+  ///
+  /// If the user has previously enabled auto-start, we *re-apply*
+  /// it on every startup so the OS state and our cached
+  /// preference stay in sync — e.g. the user could have wiped the
+  /// `~/.config/autostart/agent-buddy.desktop` file from another
+  /// tool, and we'd want the next launch to put it back. If the
+  /// service says it failed to apply, we silently swallow the
+  /// error: the cached preference stays at the user's last
+  /// intent, and the toggle in settings still works — they can
+  /// re-toggle to retry.
+  void attachAutostartService(AutostartService? service) {
+    _autostart = service;
+    if (service != null && service.isSupported && _autoStartEnabled) {
+      // Fire-and-forget: we don't want settings load to block on
+      // a slow `reg add` round-trip. The user-facing toggle in
+      // the general settings tab awaits the same call.
+      // ignore: discarded_futures
+      service.setEnabled(true);
+    }
+  }
+
+  /// Toggle the "launch at login" preference. Calls into the
+  /// [AutostartService] so the OS state and the cached preference
+  /// are kept in lock-step. Returns `true` when the OS state was
+  /// successfully updated; `false` when the write failed (the
+  /// caller can surface a snackbar). On non-desktop platforms
+  /// (`_autostart == null` or `isSupported == false`) we still
+  /// persist the preference so a desktop upgrade on the same
+  /// device restores it.
+  Future<bool> setAutoStartEnabled(bool enabled) async {
+    _autoStartEnabled = enabled;
+    await _storage.setAutoStartEnabled(enabled);
+    final svc = _autostart;
+    if (svc == null || !svc.isSupported) {
+      notifyListeners();
+      return true;
+    }
+    final result = await svc.setEnabled(enabled);
+    // `null` = write failed; the OS state may be out of sync
+    // with our cached value. Surface the failure to the caller
+    // so the settings tab can roll the switch back. On success
+    // we trust the OS verdict (true / false) and mirror it.
+    if (result != null) {
+      _autoStartEnabled = result;
+      await _storage.setAutoStartEnabled(result);
+    }
+    notifyListeners();
+    return result != null;
   }
 }

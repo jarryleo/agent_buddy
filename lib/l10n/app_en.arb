@@ -577,6 +577,18 @@
     }
   },
 
+  "generalSectionDesktop": "Desktop",
+  "generalAutoStart": "Launch at login",
+  "generalAutoStartDescription": "Start Agent Buddy automatically when you sign in to your computer.",
+  "generalAutoStartUnsupported": "Auto-start is not available on this platform.",
+  "generalAutoStartFailed": "Couldn't change auto-start setting: {error}",
+  "@generalAutoStartFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "generalAutoStartApplyFailed": "Auto-start was not registered with the system. The preference is saved, but the OS hook is missing — try toggling again.",
+
   "memoryListEmpty": "No memories yet.\nThe AI will write useful information here as you chat.",
   "memorySearchEmpty": "No memories match \"{keyword}\".",
   "@memorySearchEmpty": {

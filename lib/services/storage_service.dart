@@ -45,6 +45,12 @@ class StorageService {
   // re-authorization), so this key mirrors that value.
   static const _kModelWorkingTreeUri = 'model_working_tree_uri';
   static const _kThinkingModeEnabled = 'thinking_mode_enabled';
+  // Desktop-only: persisted toggle for "launch at login / auto-start".
+  // Ignored on mobile / web — the general settings UI only renders
+  // the switch on desktop platforms, but the key still lives in
+  // SharedPreferences so the value survives a reinstall / cross-
+  // platform dev build (rare but possible).
+  static const _kAutoStartEnabled = 'auto_start_enabled';
 
   late final SharedPreferences _prefs;
   final ChatSessionRepository _sessions = ChatSessionRepository();
@@ -311,5 +317,14 @@ class StorageService {
 
   Future<void> setThinkingModeEnabled(bool enabled) async {
     await _prefs.setBool(_kThinkingModeEnabled, enabled);
+  }
+
+  /// Desktop-only: persisted "launch at login" toggle. Defaults to
+  /// `false` so a fresh install doesn't surprise the user with an
+  /// OS-level startup hook the app quietly installed.
+  bool get autoStartEnabled => _prefs.getBool(_kAutoStartEnabled) ?? false;
+
+  Future<void> setAutoStartEnabled(bool enabled) async {
+    await _prefs.setBool(_kAutoStartEnabled, enabled);
   }
 }

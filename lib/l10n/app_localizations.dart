@@ -2244,6 +2244,42 @@ abstract class AppLocalizations {
   /// **'Version {version}'**
   String generalAboutVersion(String version);
 
+  /// No description provided for @generalSectionDesktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Desktop'**
+  String get generalSectionDesktop;
+
+  /// No description provided for @generalAutoStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Launch at login'**
+  String get generalAutoStart;
+
+  /// No description provided for @generalAutoStartDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Start Agent Buddy automatically when you sign in to your computer.'**
+  String get generalAutoStartDescription;
+
+  /// No description provided for @generalAutoStartUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-start is not available on this platform.'**
+  String get generalAutoStartUnsupported;
+
+  /// No description provided for @generalAutoStartFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t change auto-start setting: {error}'**
+  String generalAutoStartFailed(String error);
+
+  /// No description provided for @generalAutoStartApplyFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-start was not registered with the system. The preference is saved, but the OS hook is missing — try toggling again.'**
+  String get generalAutoStartApplyFailed;
+
   /// No description provided for @memoryListEmpty.
   ///
   /// In en, this message translates to:

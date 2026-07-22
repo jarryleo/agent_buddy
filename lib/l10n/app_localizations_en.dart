@@ -1228,6 +1228,29 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get generalSectionDesktop => 'Desktop';
+
+  @override
+  String get generalAutoStart => 'Launch at login';
+
+  @override
+  String get generalAutoStartDescription =>
+      'Start Agent Buddy automatically when you sign in to your computer.';
+
+  @override
+  String get generalAutoStartUnsupported =>
+      'Auto-start is not available on this platform.';
+
+  @override
+  String generalAutoStartFailed(String error) {
+    return 'Couldn\'t change auto-start setting: $error';
+  }
+
+  @override
+  String get generalAutoStartApplyFailed =>
+      'Auto-start was not registered with the system. The preference is saved, but the OS hook is missing — try toggling again.';
+
+  @override
   String get memoryListEmpty =>
       'No memories yet.\nThe AI will write useful information here as you chat.';
 

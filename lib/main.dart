@@ -30,6 +30,8 @@ import 'services/memory_repository.dart';
 import 'services/notification_service.dart';
 import 'services/platform/notes_service.dart';
 import 'services/platform/tasks_service.dart';
+import 'services/platform/autostart_service.dart';
+import 'services/platform/autostart_service_io.dart';
 import 'services/storage_service.dart';
 import 'services/sub_agent_service.dart';
 import 'services/platform/voice_service.dart';
@@ -91,6 +93,12 @@ Future<void> main() async {
   // re-opening the page reattaches to the in-flight state
   // instead of starting a fresh download.
   final builtinDownloadService = BuiltinModelDownloadService();
+  // Desktop-only "launch at login" service. Built eagerly so
+  // SettingsProvider can re-apply the user's persisted choice
+  // on every cold start (see [SettingsProvider.attachAutostartService]).
+  // The factory returns a stub on mobile / web — the whole
+  // surface is gated to desktop in the settings UI.
+  final autostartService = createAutostartService();
   runApp(
     AgentBuddyApp(
       storage: storage,
@@ -102,6 +110,7 @@ Future<void> main() async {
       timerService: timerService,
       googleSheets: googleSheets,
       builtinDownloadService: builtinDownloadService,
+      autostartService: autostartService,
     ),
   );
 }
@@ -147,6 +156,7 @@ class AgentBuddyApp extends StatelessWidget {
     required this.timerService,
     required this.googleSheets,
     required this.builtinDownloadService,
+    required this.autostartService,
   });
   final StorageService storage;
   final Box<Note> notesBox;
@@ -157,13 +167,17 @@ class AgentBuddyApp extends StatelessWidget {
   final TimerService timerService;
   final GoogleSheetsService googleSheets;
   final BuiltinModelDownloadService builtinDownloadService;
+  final AutostartService autostartService;
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(
-          create: (_) => SettingsProvider(storage, googleSheets)..load(),
+          create: (_) =>
+              SettingsProvider(storage, googleSheets, autostartService)
+                ..load()
+                ..attachAutostartService(autostartService),
         ),
         Provider<ApiService>(create: (_) => ApiService()),
         ChangeNotifierProvider<TimerService>.value(value: timerService),

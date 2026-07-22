@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
 import '../providers/settings_provider.dart';
+import '../services/platform/autostart_service.dart';
 import '../theme/app_theme.dart';
 import 'settings_page.dart';
 
@@ -39,11 +40,45 @@ class GeneralTab extends StatelessWidget {
               ),
             ],
           ),
+          if (isAutostartSupportedOnCurrentPlatform())
+            ..._buildDesktopSection(context, settings, l10n),
           SectionTitle(l10n.generalSectionAbout),
           _AboutCard(l10n: l10n),
         ],
       ),
     );
+  }
+
+  /// Desktop-only chunk: a single grouped card with the "Launch at
+  /// login" switch. Hidden on mobile / web via the
+  /// [AutostartService.isSupportedOn] gate above. Returned as a
+  /// list so the parent can splice section + card with one
+  /// `...` spread.
+  List<Widget> _buildDesktopSection(
+    BuildContext context,
+    SettingsProvider settings,
+    AppLocalizations l10n,
+  ) {
+    return [
+      SectionTitle(l10n.generalSectionDesktop),
+      _GroupedCard(
+        children: [
+          _AutoStartRow(
+            current: settings.autoStartEnabled,
+            onChanged: (value) async {
+              final messenger = ScaffoldMessenger.of(context);
+              final ok = await settings.setAutoStartEnabled(value);
+              if (!ok && context.mounted) {
+                messenger.showSnackBar(
+                  SnackBar(content: Text(l10n.generalAutoStartApplyFailed)),
+                );
+              }
+            },
+            l10n: l10n,
+          ),
+        ],
+      ),
+    ];
   }
 }
 
@@ -311,6 +346,57 @@ class _AboutCard extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _AutoStartRow extends StatelessWidget {
+  const _AutoStartRow({
+    required this.current,
+    required this.onChanged,
+    required this.l10n,
+  });
+
+  final bool current;
+  final ValueChanged<bool> onChanged;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: Row(
+        children: [
+          Icon(
+            Icons.power_settings_new_rounded,
+            size: 20,
+            color: context.textPrimary,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.generalAutoStart,
+                  style: TextStyle(fontSize: 14, color: context.textPrimary),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  l10n.generalAutoStartDescription,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: context.textSecondary,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Switch.adaptive(value: current, onChanged: onChanged),
+        ],
+      ),
     );
   }
 }

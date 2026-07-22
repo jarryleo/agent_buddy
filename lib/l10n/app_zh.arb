@@ -420,6 +420,18 @@
     }
   },
 
+  "generalSectionDesktop": "桌面",
+  "generalAutoStart": "开机自启动",
+  "generalAutoStartDescription": "登录系统时自动启动 Agent Buddy。",
+  "generalAutoStartUnsupported": "当前平台不支持开机自启动。",
+  "generalAutoStartFailed": "无法修改开机自启动设置:{error}",
+  "@generalAutoStartFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "generalAutoStartApplyFailed": "系统开机启动项未生效。偏好已保存,但系统的钩子没有写入成功 — 可以再切换一次重试。",
+
   "memoryListEmpty": "暂无记忆\nAI 会在聊天过程中把有用信息写入这里",
   "memorySearchEmpty": "没有匹配 \"{keyword}\" 的记忆",
   "memoryAddTitle": "新增记忆",

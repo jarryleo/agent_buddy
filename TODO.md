@@ -32,6 +32,7 @@ Agent Buddy
 - 检查系统内是否有 git bash,如果有优先用 git bash 做命令行工具，其次用 PowerShell. 其次再用cmd 兜底。
 - 询问用户问题工具增加可以同时询问多个问题功能：回答完一个展示下一个，顶部展示问题总数，用户回答问题除了AI给出的选项，还可以手动输入答案。
 - Windows 环境中有 Wsl的bash,也有 git的bash,项目的命令行工具识别的bash工具错误,识别到了wsl的bash工具,但是不可用,请通过git的路径找到对应的bash工具位置.
+- 常规设置页加入桌面端开机启动功能开关，并实现对应逻辑，适配不同桌面端开机启动（Windows 注册表 Run / macOS LaunchAgent / Linux XDG autostart）
 
 
 #### BUG修复
@@ -47,10 +48,15 @@ Agent Buddy
 Flutter 就能自动帮你裁剪并播放出流畅的动画了
 https://petdex.dev/pets/anya-2 阿尼亚
 
+我需要开发桌面端桌宠功能：
+- 在项目设置页增加桌宠tab，放置在角色tab右侧
+- 桌宠设置页：顶部开关显示桌宠，还要展示一个链接跳转下载宠物的网址：https://petdex.dev/ ，下方是宠物列表，右下角是新增按钮，可以从文件导入 导入的宠物文件是zip，里面有json和png。
+- json里面有桌宠名称和介绍等，展示在列表内，png是角色精灵图 Spritesheet，宠物文件范例见assets/pet/anya.zip，你解压看看格式。默认内置这个宠物。
+- 技术方案可能需要实现flutter多窗体组件，宠物用一个透明窗体展示，精灵动画可以试试 lutter_spritesheet_animation: ^1.0.3
+
 
 #### 未完成
 - 后续功能开发方向，桌面的加一个桌宠。做一个真正的AI桌宠。
-- 常规设置页加入桌面端开机启动功能
 
 - 怎么处理 word,excel,pdf 文件,
 - 怎么解包zip文件,相关的类zip文件,jar,apk等

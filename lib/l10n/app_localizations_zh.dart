@@ -1179,6 +1179,27 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get generalSectionDesktop => '桌面';
+
+  @override
+  String get generalAutoStart => '开机自启动';
+
+  @override
+  String get generalAutoStartDescription => '登录系统时自动启动 Agent Buddy。';
+
+  @override
+  String get generalAutoStartUnsupported => '当前平台不支持开机自启动。';
+
+  @override
+  String generalAutoStartFailed(String error) {
+    return '无法修改开机自启动设置:$error';
+  }
+
+  @override
+  String get generalAutoStartApplyFailed =>
+      '系统开机启动项未生效。偏好已保存,但系统的钩子没有写入成功 — 可以再切换一次重试。';
+
+  @override
   String get memoryListEmpty => '暂无记忆\nAI 会在聊天过程中把有用信息写入这里';
 
   @override
