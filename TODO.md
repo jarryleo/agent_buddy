@@ -38,7 +38,19 @@ Agent Buddy
 - mac 上无法选择工作目录问题， 点击工作目录没有反应。
 - mac Google Sheet 工具无法授权问题，无法启动本地服务授权
 
+
+#### 桌宠开发：
+开源桌宠素材下载网站：https://petdex.dev/
+下载的素材是  Spritesheet（精灵图）：一张png有角色各种动作。
+在 Flutter 中，你可以使用 sprite_sheet 或 flutter_animate 等相关插件 ：flutter_spritesheet_animation: ^1.0.3
+只需提供这张大图，并配置好每张小图的宽高（frameWidth/frameHeight）、列数（columns）以及动作对应的帧范围（startFrame - endFrame），
+Flutter 就能自动帮你裁剪并播放出流畅的动画了
+https://petdex.dev/pets/anya-2 阿尼亚
+
+
 #### 未完成
+- 后续功能开发方向，桌面的加一个桌宠。做一个真正的AI桌宠。
+- 常规设置页加入桌面端开机启动功能
 
 - 怎么处理 word,excel,pdf 文件,
 - 怎么解包zip文件,相关的类zip文件,jar,apk等
