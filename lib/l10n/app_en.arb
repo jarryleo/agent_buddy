@@ -61,6 +61,7 @@
   "settingsTabGeneral": "General",
   "settingsTabProvider": "Models",
   "settingsTabRole": "Role",
+  "settingsTabPet": "Pet",
   "settingsTabTools": "Tools",
   "settingsTabSkill": "Skill",
   "settingsTabMcp": "MCP",
@@ -266,6 +267,39 @@
   "roleDeleteTitle": "Delete Role",
   "roleDeleteConfirm": "Delete \"{name}\"?",
   "@roleDeleteConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+
+  "petListEmpty": "No pets yet.\nTap \"Add\" in the bottom right to import a .zip from petdex.dev.",
+  "petDesktopOnly": "Desktop pets are only available on desktop (Windows / macOS / Linux).",
+  "petMasterToggle": "Show desktop pet",
+  "petMasterToggleDescription": "Open a transparent window above the chat so your pet can roam.",
+  "petBrowseGallery": "Browse more pets",
+  "petLinkFailed": "Could not open the link",
+  "petImportSuccess": "Imported \"{name}\"",
+  "@petImportSuccess": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "petImportFailed": "Import failed: {message}",
+  "@petImportFailed": {
+    "placeholders": {
+      "message": { "type": "String" }
+    }
+  },
+  "petImportNeedPath": "Could not read the picked file. Try a local .zip from disk.",
+  "petDeletedSnackbar": "Deleted \"{name}\"",
+  "@petDeletedSnackbar": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "petDeleteTitle": "Delete pet",
+  "petDeleteConfirm": "Delete \"{name}\"?",
+  "@petDeleteConfirm": {
     "placeholders": {
       "name": { "type": "String" }
     }

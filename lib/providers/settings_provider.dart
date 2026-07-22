@@ -53,6 +53,8 @@ class SettingsProvider extends ChangeNotifier {
   String? _modelWorkingTreeUri;
   bool _thinkingModeEnabled = false;
   bool _autoStartEnabled = false;
+  bool _showDesktopPet = false;
+  String? _activePetId;
   GoogleSheetConfig _googleSheetConfig = GoogleSheetConfig.empty;
 
   List<ModelProvider> get providers => List.unmodifiable(_providers);
@@ -82,6 +84,8 @@ class SettingsProvider extends ChangeNotifier {
 
   bool get thinkingModeEnabled => _thinkingModeEnabled;
   bool get autoStartEnabled => _autoStartEnabled;
+  bool get showDesktopPet => _showDesktopPet;
+  String? get activePetId => _activePetId;
   GoogleSheetConfig get googleSheetConfig => _googleSheetConfig;
 
   /// Called whenever `GoogleSheetsService` notifies (config writes,
@@ -167,6 +171,8 @@ class SettingsProvider extends ChangeNotifier {
     _modelWorkingTreeUri = _storage.modelWorkingTreeUri;
     _thinkingModeEnabled = _storage.thinkingModeEnabled;
     _autoStartEnabled = _storage.autoStartEnabled;
+    _showDesktopPet = _storage.showDesktopPet;
+    _activePetId = _storage.activePetId;
     _googleSheetConfig = _storage.loadGoogleSheetConfig();
 
     // Seed built-in tools. Fresh installs hit the `isEmpty` branch and
@@ -820,5 +826,29 @@ class SettingsProvider extends ChangeNotifier {
     }
     notifyListeners();
     return result != null;
+  }
+
+  /// Master toggle for the desktop pet window. Persists the
+  /// preference and notifies so the lifecycle owner can spawn or
+  /// close the pet window accordingly. Pass `activePetId: null` to
+  /// fall back to the bundled Anya; pass an explicit id to lock
+  /// the choice to a specific pet.
+  Future<void> setShowDesktopPet(bool enabled, {String? activePetId}) async {
+    _showDesktopPet = enabled;
+    await _storage.setShowDesktopPet(enabled);
+    if (activePetId != null) {
+      _activePetId = activePetId;
+      await _storage.setActivePetId(activePetId);
+    }
+    notifyListeners();
+  }
+
+  /// Records the user's pick. `null` clears the selection; the
+  /// pet lifecycle code falls back to the bundled Anya in that
+  /// case so the toggle still has something to render.
+  Future<void> setActivePetId(String? id) async {
+    _activePetId = (id == null || id.isEmpty) ? null : id;
+    await _storage.setActivePetId(_activePetId);
+    notifyListeners();
   }
 }

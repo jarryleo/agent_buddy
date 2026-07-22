@@ -50,6 +50,7 @@
   "settingsTabGeneral": "常规",
   "settingsTabProvider": "模型",
   "settingsTabRole": "角色",
+  "settingsTabPet": "桌宠",
   "settingsTabTools": "工具",
   "settingsTabSkill": "技能",
   "settingsTabMcp": "MCP",
@@ -198,6 +199,39 @@
   "roleUnuseRole": "取消使用",
   "roleDeleteTitle": "删除角色",
   "roleDeleteConfirm": "确认删除 \"{name}\"?",
+
+  "petListEmpty": "还没有宠物\n点击右下角\"新增\"从 petdex.dev 下载的 .zip 导入。",
+  "petDesktopOnly": "桌宠功能仅在桌面端(Windows / macOS / Linux)可用。",
+  "petMasterToggle": "显示桌宠",
+  "petMasterToggleDescription": "在桌面开一个透明窗体,让宠物可以在屏幕上闲逛。",
+  "petBrowseGallery": "浏览更多宠物",
+  "petLinkFailed": "无法打开链接",
+  "petImportSuccess": "已导入 \"{name}\"",
+  "@petImportSuccess": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "petImportFailed": "导入失败:{message}",
+  "@petImportFailed": {
+    "placeholders": {
+      "message": { "type": "String" }
+    }
+  },
+  "petImportNeedPath": "无法读取所选文件,请从本地 .zip 导入。",
+  "petDeletedSnackbar": "已删除 \"{name}\"",
+  "@petDeletedSnackbar": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "petDeleteTitle": "删除桌宠",
+  "petDeleteConfirm": "确认删除 \"{name}\"?",
+  "@petDeleteConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
 
   "toolsListEmpty": "暂无内置工具",
   "toolsMasterSwitchTitle": "使用工具",

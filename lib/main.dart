@@ -1,3 +1,4 @@
+import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,8 +15,11 @@ import 'models/note_adapter.dart';
 import 'models/task.dart';
 import 'models/task_adapter.dart';
 import 'pages/home_page.dart';
+import 'pages/pet_window_page.dart';
 import 'providers/chat_provider.dart';
 import 'providers/memory_provider.dart';
+import 'providers/pet_animation_hooks.dart';
+import 'providers/pet_provider.dart';
 import 'providers/settings_provider.dart';
 import 'services/api_service.dart';
 import 'services/tts_service.dart';
@@ -28,10 +32,12 @@ import 'services/image_service.dart';
 import 'services/local_llm_service.dart';
 import 'services/memory_repository.dart';
 import 'services/notification_service.dart';
+import 'services/pet_service.dart';
 import 'services/platform/notes_service.dart';
 import 'services/platform/tasks_service.dart';
 import 'services/platform/autostart_service.dart';
 import 'services/platform/autostart_service_io.dart';
+import 'services/pet_window_controller.dart';
 import 'services/storage_service.dart';
 import 'services/sub_agent_service.dart';
 import 'services/platform/voice_service.dart';
@@ -42,7 +48,26 @@ import 'theme/app_theme.dart';
 import 'widgets/notification_host.dart';
 import 'widgets/phone_frame.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
+  // `desktop_multi_window` respawns `main()` for every sub-window.
+  // Sub-windows pass `--type=pet` (defined in pet_window_page.dart)
+  // so we can route them into the pet-window bootstrap before
+  // touching `Hive` or the settings provider — the pet window only
+  // needs `PetService`, not the full app plumbing.
+  if (args.isNotEmpty) {
+    for (final token in args) {
+      if (token == '--type=$petWindowType') {
+        final controller = await WindowController.fromCurrentEngine();
+        await runPetWindow(controller);
+        return;
+      }
+    }
+  }
+
+  await mainApp();
+}
+
+Future<void> mainApp() async {
   WidgetsFlutterBinding.ensureInitialized();
   await _setupDesktopWindow();
   await Hive.initFlutter();
@@ -99,6 +124,11 @@ Future<void> main() async {
   // The factory returns a stub on mobile / web — the whole
   // surface is gated to desktop in the settings UI.
   final autostartService = createAutostartService();
+  // Pet service is owned by the main isolate (the pet window is a
+  // separate Flutter engine, see `runPetWindow`). Materialising
+  // the built-in Anya here means the user gets the bundled pet
+  // even if the pet window is launched later.
+  final petService = PetService();
   runApp(
     AgentBuddyApp(
       storage: storage,
@@ -111,6 +141,7 @@ Future<void> main() async {
       googleSheets: googleSheets,
       builtinDownloadService: builtinDownloadService,
       autostartService: autostartService,
+      petService: petService,
     ),
   );
 }
@@ -144,7 +175,7 @@ Future<void> _setupDesktopWindow() async {
   );
 }
 
-class AgentBuddyApp extends StatelessWidget {
+class AgentBuddyApp extends StatefulWidget {
   const AgentBuddyApp({
     super.key,
     required this.storage,
@@ -157,7 +188,9 @@ class AgentBuddyApp extends StatelessWidget {
     required this.googleSheets,
     required this.builtinDownloadService,
     required this.autostartService,
+    required this.petService,
   });
+
   final StorageService storage;
   final Box<Note> notesBox;
   final Box<Task> tasksBox;
@@ -168,30 +201,64 @@ class AgentBuddyApp extends StatelessWidget {
   final GoogleSheetsService googleSheets;
   final BuiltinModelDownloadService builtinDownloadService;
   final AutostartService autostartService;
+  final PetService petService;
+
+  @override
+  State<AgentBuddyApp> createState() => _AgentBuddyAppState();
+}
+
+class _AgentBuddyAppState extends State<AgentBuddyApp> {
+  late final SettingsProvider _settings;
+  PetWindowController? _petController;
+
+  @override
+  void initState() {
+    super.initState();
+    _settings = SettingsProvider(
+      widget.storage,
+      widget.googleSheets,
+      widget.autostartService,
+    )..load()
+      ..attachAutostartService(widget.autostartService);
+    if (petWindowSupportedOnCurrentPlatform()) {
+      _petController = PetWindowController(settings: _settings)
+        ..syncOnStart();
+    }
+  }
+
+  @override
+  void dispose() {
+    // Fire-and-forget: the controller closes the sub-window on
+    // disposal. We can't await in dispose(), so swallow the
+    // future.
+    // ignore: discarded_futures
+    _petController?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (_) =>
-              SettingsProvider(storage, googleSheets, autostartService)
-                ..load()
-                ..attachAutostartService(autostartService),
+        ChangeNotifierProvider<SettingsProvider>.value(value: _settings),
+        ChangeNotifierProvider<PetProvider>(
+          create: (_) => PetProvider(widget.petService),
         ),
         Provider<ApiService>(create: (_) => ApiService()),
-        ChangeNotifierProvider<TimerService>.value(value: timerService),
-        ChangeNotifierProvider<GoogleSheetsService>.value(value: googleSheets),
+        ChangeNotifierProvider<TimerService>.value(value: widget.timerService),
+        ChangeNotifierProvider<GoogleSheetsService>.value(
+          value: widget.googleSheets,
+        ),
         ChangeNotifierProvider<BuiltinModelDownloadService>.value(
-          value: builtinDownloadService,
+          value: widget.builtinDownloadService,
         ),
         Provider<ImageService>(create: (_) => ImageService()),
         Provider<FileAttachmentService>(create: (_) => FileAttachmentService()),
         Provider<DownloadService>(create: (_) => DownloadService()),
         Provider<VoiceService>(create: (_) => createVoiceService()),
-        Provider<TtsService>.value(value: ttsService),
+        Provider<TtsService>.value(value: widget.ttsService),
         ChangeNotifierProvider<MemoryProvider>(
-          create: (_) => MemoryProvider(memoryRepo),
+          create: (_) => MemoryProvider(widget.memoryRepo),
         ),
         ChangeNotifierProvider<LocalLlmService>(
           create: (_) => LocalLlmService(),
@@ -227,12 +294,12 @@ class AgentBuddyApp extends StatelessWidget {
           update: (_, subAgent, prev) =>
               prev ??
               ToolService(
-                notesBox: notesBox,
-                tasksBox: tasksBox,
-                memoriesBox: memoriesBox,
-                timerService: timerService,
-                storage: storage,
-                googleSheets: googleSheets,
+                notesBox: widget.notesBox,
+                tasksBox: widget.tasksBox,
+                memoriesBox: widget.memoriesBox,
+                timerService: widget.timerService,
+                storage: widget.storage,
+                googleSheets: widget.googleSheets,
                 subAgent: subAgent,
               ),
         ),
@@ -246,7 +313,7 @@ class AgentBuddyApp extends StatelessWidget {
           ChatProvider
         >(
           create: (ctx) => ChatProvider(
-            storage,
+            widget.storage,
             ctx.read<ApiService>(),
             ctx.read<ToolService>(),
             ctx.read<ImageService>(),
@@ -254,11 +321,12 @@ class AgentBuddyApp extends StatelessWidget {
             ctx.read<SettingsProvider>(),
             ctx.read<DownloadService>(),
             ctx.read<FileAttachmentService>(),
+            petHooks: petAnimationHooksFromController(_petController),
           ),
           update: (ctx, settings, api, tools, images, downloads, files, prev) =>
               prev ??
               ChatProvider(
-                storage,
+                widget.storage,
                 api,
                 tools,
                 images,
@@ -266,6 +334,7 @@ class AgentBuddyApp extends StatelessWidget {
                 settings,
                 downloads,
                 files,
+                petHooks: petAnimationHooksFromController(_petController),
               ),
         ),
       ],

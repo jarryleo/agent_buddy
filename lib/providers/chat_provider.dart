@@ -19,11 +19,13 @@ import '../models/provider.dart';
 import '../models/skill.dart';
 import '../models/timer_task.dart';
 import '../models/todo_list.dart';
+import '../providers/pet_animation_hooks.dart';
 import '../services/api_service.dart';
 import '../services/download_service.dart';
 import '../services/file_attachment_service.dart';
 import '../services/image_service.dart';
 import '../services/local_llm_service.dart';
+import '../services/pet_window_controller.dart' show PetWindowController;
 import '../services/storage_service.dart';
 import '../services/sub_agent_service.dart';
 import '../services/timer_service.dart';
@@ -173,8 +175,9 @@ class ChatProvider extends ChangeNotifier {
     this._localLlm,
     this._settings,
     this._downloads,
-    this._fileAttachments,
-  ) {
+    this._fileAttachments, {
+    PetAnimationHooks? petHooks,
+  }) : _petHooks = petHooks {
     _restoreActiveSession();
     // Wire the timer queue: when a task fires, the service calls
     // back here so we can append a synthetic user message to the
@@ -192,6 +195,13 @@ class ChatProvider extends ChangeNotifier {
   final SettingsProvider _settings;
   final DownloadService _downloads;
   final FileAttachmentService _fileAttachments;
+  /// Optional bridge into the desktop pet window. When the user
+  /// has the pet toggle on, the [PetWindowController] injects
+  /// itself here so the chat flow can flip the pet into the right
+  /// reaction animation as the conversation progresses (waiting /
+  /// review / jumping / failed). Always null on mobile / web and
+  /// in unit tests where the pet subsystem isn't wired up.
+  final PetAnimationHooks? _petHooks;
   final _uuid = const Uuid();
 
   /// Owns the multi-round tool-calling loop. Stateless from the
@@ -1575,6 +1585,11 @@ class ChatProvider extends ChangeNotifier {
           assistantId: assistantId,
           completer: completer,
         );
+        // Pet waits on the user to answer the inline question.
+        // The user-typed `waiting` is identical visually but the
+        // semantic trigger is different; using the same name is
+        // intentional so the pet doesn't need a new animation.
+        _petHooks?.playLooping('waiting');
         try {
           return await completer.future;
         } finally {
@@ -2851,6 +2866,12 @@ class ChatProvider extends ChangeNotifier {
       return;
     }
     _cachedContext = context;
+    // Pet sees the user sending a message → loop `waiting`. The
+    // streaming / thinking events will override this with
+    // `review` / `waiting` respectively; the key thing is that
+    // the pet shows "something is happening" the moment the
+    // user submits so the chat UI doesn't feel sluggish.
+    _petHooks?.playLooping('waiting');
     // The user just sent a fresh message — this is a new
     // "task", so the chat provider re-arms the supervision
     // loop. The previous-turn "user stopped" flag is cleared
@@ -3410,8 +3431,16 @@ class ChatProvider extends ChangeNotifier {
         final roundBubbleId = _currentRoundBubbleId ?? assistantId;
         if (event.type == 'roundStart') {
           _startNewRound(event.roundIndex ?? 0, assistantId);
+          // Pet sees a tool call starting. `running` is the
+          // ambient "the agent is doing something" loop.
+          _petHooks?.playLooping('running');
           controller.add(null);
         } else if (event.type == 'toolStart') {
+          // Same `running` ambient — toolStart is more specific so
+          // we don't need to override anything here, but call
+          // out the pet transition explicitly so the order is
+          // obvious in the source.
+          _petHooks?.playLooping('running');
           final s = _activeSession;
           if (s != null) {
             // The id hygiene here is load-bearing. Three failure
@@ -3473,6 +3502,16 @@ class ChatProvider extends ChangeNotifier {
                 else
                   mm,
             ]);
+            // Pet waits on the user (e.g. a file picker dialog).
+            // Same `waiting` ambient as ask_user — the pet
+            // doesn't need a separate animation for "blocked on
+            // a system dialog".
+            if (_isAwaitingUserAction(
+              event.toolName ?? '',
+              event.toolArguments ?? '',
+            )) {
+              _petHooks?.playLooping('waiting');
+            }
             // Record the transport→UI id mapping so `toolDone`
             // can find the right bubble even if we synthesized
             // a new id (see the `toolDone` branch below).
@@ -3532,21 +3571,32 @@ class ChatProvider extends ChangeNotifier {
               if (toolId.isEmpty) toolId = _uuid.v4();
             }
             final now = DateTime.now();
+            final updatedToolCalls = <ToolCall>[];
+            for (final mm in s.messages) {
+              if (mm.id != roundBubbleId) continue;
+              for (final tc in mm.toolCalls) {
+                if (tc.id == toolId) {
+                  updatedToolCalls.add(applyToolDoneEvent(tc, event, now));
+                } else {
+                  updatedToolCalls.add(tc);
+                }
+              }
+            }
             _replaceMessages([
               for (final mm in s.messages)
                 if (mm.id == roundBubbleId)
-                  mm.copyWith(
-                    toolCalls: [
-                      for (final tc in mm.toolCalls)
-                        if (tc.id == toolId)
-                          applyToolDoneEvent(tc, event, now)
-                        else
-                          tc,
-                    ],
-                  )
+                  mm.copyWith(toolCalls: updatedToolCalls)
                 else
                   mm,
             ]);
+            // Pet reaction: tool success → jumping, tool failure →
+            // failed. Both are one-shots so the renderer drops
+            // back to the default (idle) once they finish.
+            if (event.toolSuccess ?? false) {
+              _petHooks?.playOneShot('jumping');
+            } else {
+              _petHooks?.playOneShot('failed');
+            }
             // Drop the mapping entry once the tool call is
             // terminal so the map doesn't grow without bound
             // across long sessions.
@@ -3566,6 +3616,10 @@ class ChatProvider extends ChangeNotifier {
             if (!updated) {
               updated = true;
             }
+            // Pet sees the model thinking → loop `waiting`.
+            // Idempotent so successive deltas don't restart the
+            // animation.
+            _petHooks?.playLooping('waiting');
             // Reasoning tokens also count toward TTFT — the
             // user sees the model "thinking", which is the
             // first user-visible signal that the request has
@@ -3591,6 +3645,9 @@ class ChatProvider extends ChangeNotifier {
             if (!updated) {
               updated = true;
             }
+            // Pet sees the model streaming output → loop
+            // `review`. Idempotent across deltas.
+            _petHooks?.playLooping('review');
             // Content delta is the canonical TTFT trigger.
             // lastTokenAt is stamped on every chunk so the
             // tokens/sec denominator is always the latest
@@ -3695,6 +3752,10 @@ class ChatProvider extends ChangeNotifier {
           }
           recordOutcome(_TurnOutcome.hardError(raw));
         } else if (event.type == 'done') {
+          // Stream finished cleanly — drop the pet back to its
+          // default (idle) so a new round / turn starts from a
+          // clean slate.
+          _petHooks?.reset();
           recordOutcome(_TurnOutcome.success);
         }
       },
@@ -3708,6 +3769,9 @@ class ChatProvider extends ChangeNotifier {
             attempt + 1,
             DateTime.now().add(computeRetryBackoff(attempt + 1)),
           );
+          // Reset the pet even on retryable errors so the
+          // animation isn't stuck mid-thought.
+          _petHooks?.reset();
           return;
         }
         final s = _activeSession;
@@ -3732,6 +3796,10 @@ class ChatProvider extends ChangeNotifier {
           ]);
           controller.add(null);
         }
+        // Stream errored — surface as a one-shot `failed` so the
+        // user sees the pet react, then drop back to idle.
+        _petHooks?.playOneShot('failed');
+        _petHooks?.reset();
         recordOutcome(_TurnOutcome.hardError(raw));
       },
     );

@@ -51,6 +51,15 @@ class StorageService {
   // SharedPreferences so the value survives a reinstall / cross-
   // platform dev build (rare but possible).
   static const _kAutoStartEnabled = 'auto_start_enabled';
+  // Desktop-only: master switch that decides whether the desktop
+  // pet window is shown. Mirrors the top-level switch on the pet
+  // tab. Persisted so a cold start re-launches the pet window when
+  // the user expects it.
+  static const _kShowDesktopPet = 'show_desktop_pet';
+  // Id of the currently selected pet (`builtin:anya` for the
+  // bundled one, or a user-imported id). Persisted so the same
+  // pet re-appears after a restart.
+  static const _kActivePetId = 'active_pet_id';
 
   late final SharedPreferences _prefs;
   final ChatSessionRepository _sessions = ChatSessionRepository();
@@ -326,5 +335,28 @@ class StorageService {
 
   Future<void> setAutoStartEnabled(bool enabled) async {
     await _prefs.setBool(_kAutoStartEnabled, enabled);
+  }
+
+  /// Master switch for the desktop pet window. Defaults to `false`
+  /// so a fresh install doesn't pop up a transparent window until
+  /// the user opts in on the pet tab. Survives restarts.
+  bool get showDesktopPet => _prefs.getBool(_kShowDesktopPet) ?? false;
+
+  Future<void> setShowDesktopPet(bool enabled) async {
+    await _prefs.setBool(_kShowDesktopPet, enabled);
+  }
+
+  /// Id of the pet the user has selected on the pet tab. `null`
+  /// means "no pet chosen yet" — the provider falls back to the
+  /// bundled Anya when the toggle is flipped on without an explicit
+  /// pick.
+  String? get activePetId => _prefs.getString(_kActivePetId);
+
+  Future<void> setActivePetId(String? id) async {
+    if (id == null || id.isEmpty) {
+      await _prefs.remove(_kActivePetId);
+    } else {
+      await _prefs.setString(_kActivePetId, id);
+    }
   }
 }

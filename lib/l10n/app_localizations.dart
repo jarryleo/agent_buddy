@@ -350,6 +350,12 @@ abstract class AppLocalizations {
   /// **'Role'**
   String get settingsTabRole;
 
+  /// No description provided for @settingsTabPet.
+  ///
+  /// In en, this message translates to:
+  /// **'Pet'**
+  String get settingsTabPet;
+
   /// No description provided for @settingsTabTools.
   ///
   /// In en, this message translates to:
@@ -1175,6 +1181,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Delete \"{name}\"?'**
   String roleDeleteConfirm(String name);
+
+  /// No description provided for @petListEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No pets yet.\nTap \"Add\" in the bottom right to import a .zip from petdex.dev.'**
+  String get petListEmpty;
+
+  /// No description provided for @petDesktopOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Desktop pets are only available on desktop (Windows / macOS / Linux).'**
+  String get petDesktopOnly;
+
+  /// No description provided for @petMasterToggle.
+  ///
+  /// In en, this message translates to:
+  /// **'Show desktop pet'**
+  String get petMasterToggle;
+
+  /// No description provided for @petMasterToggleDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Open a transparent window above the chat so your pet can roam.'**
+  String get petMasterToggleDescription;
+
+  /// No description provided for @petBrowseGallery.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse more pets'**
+  String get petBrowseGallery;
+
+  /// No description provided for @petLinkFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open the link'**
+  String get petLinkFailed;
+
+  /// No description provided for @petImportSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported \"{name}\"'**
+  String petImportSuccess(String name);
+
+  /// No description provided for @petImportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Import failed: {message}'**
+  String petImportFailed(String message);
+
+  /// No description provided for @petImportNeedPath.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not read the picked file. Try a local .zip from disk.'**
+  String get petImportNeedPath;
+
+  /// No description provided for @petDeletedSnackbar.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted \"{name}\"'**
+  String petDeletedSnackbar(String name);
+
+  /// No description provided for @petDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete pet'**
+  String get petDeleteTitle;
+
+  /// No description provided for @petDeleteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete \"{name}\"?'**
+  String petDeleteConfirm(String name);
 
   /// No description provided for @toolsListEmpty.
   ///

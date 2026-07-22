@@ -8,6 +8,7 @@ import '../widgets/no_focus_icon_button.dart';
 import 'general_tab.dart';
 import 'mcp_tab.dart';
 import 'memory_tab.dart';
+import 'pet_tab.dart';
 import 'providers_tab.dart';
 import 'roles_tab.dart';
 import 'skills_tab.dart';
@@ -20,7 +21,7 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return DefaultTabController(
-      length: 7,
+      length: 8,
       child: Scaffold(
         appBar: AppBar(
           title: Text(l10n.settingsTitle),
@@ -35,6 +36,7 @@ class SettingsPage extends StatelessWidget {
               Tab(text: l10n.settingsTabGeneral),
               Tab(text: l10n.settingsTabProvider),
               Tab(text: l10n.settingsTabRole),
+              Tab(text: l10n.settingsTabPet),
               Tab(text: l10n.settingsTabTools),
               Tab(text: l10n.settingsTabSkill),
               Tab(text: l10n.settingsTabMcp),
@@ -49,6 +51,7 @@ class SettingsPage extends StatelessWidget {
                 const GeneralTab(),
                 ProvidersTab(settings: settings),
                 RolesTab(settings: settings),
+                const PetTab(),
                 ToolsTab(settings: settings),
                 SkillsTab(settings: settings),
                 McpTab(settings: settings),

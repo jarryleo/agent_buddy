@@ -144,6 +144,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsTabRole => 'Role';
 
   @override
+  String get settingsTabPet => 'Pet';
+
+  @override
   String get settingsTabTools => 'Tools';
 
   @override
@@ -603,6 +606,54 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String roleDeleteConfirm(String name) {
+    return 'Delete \"$name\"?';
+  }
+
+  @override
+  String get petListEmpty =>
+      'No pets yet.\nTap \"Add\" in the bottom right to import a .zip from petdex.dev.';
+
+  @override
+  String get petDesktopOnly =>
+      'Desktop pets are only available on desktop (Windows / macOS / Linux).';
+
+  @override
+  String get petMasterToggle => 'Show desktop pet';
+
+  @override
+  String get petMasterToggleDescription =>
+      'Open a transparent window above the chat so your pet can roam.';
+
+  @override
+  String get petBrowseGallery => 'Browse more pets';
+
+  @override
+  String get petLinkFailed => 'Could not open the link';
+
+  @override
+  String petImportSuccess(String name) {
+    return 'Imported \"$name\"';
+  }
+
+  @override
+  String petImportFailed(String message) {
+    return 'Import failed: $message';
+  }
+
+  @override
+  String get petImportNeedPath =>
+      'Could not read the picked file. Try a local .zip from disk.';
+
+  @override
+  String petDeletedSnackbar(String name) {
+    return 'Deleted \"$name\"';
+  }
+
+  @override
+  String get petDeleteTitle => 'Delete pet';
+
+  @override
+  String petDeleteConfirm(String name) {
     return 'Delete \"$name\"?';
   }
 

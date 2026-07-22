@@ -60,6 +60,8 @@ dependencies:
   # `.request()` API with a `permanentlyDenied` state so the UI can
   # offer the right next step.
   permission_handler: ^11.3.1
+  desktop_multi_window: ^0.3.0
+  archive: ^4.0.9
 
 
 dev_dependencies:

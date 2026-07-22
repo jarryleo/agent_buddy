@@ -141,6 +141,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsTabRole => '角色';
 
   @override
+  String get settingsTabPet => '桌宠';
+
+  @override
   String get settingsTabTools => '工具';
 
   @override
@@ -586,6 +589,50 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String roleDeleteConfirm(String name) {
+    return '确认删除 \"$name\"?';
+  }
+
+  @override
+  String get petListEmpty => '还没有宠物\n点击右下角\"新增\"从 petdex.dev 下载的 .zip 导入。';
+
+  @override
+  String get petDesktopOnly => '桌宠功能仅在桌面端(Windows / macOS / Linux)可用。';
+
+  @override
+  String get petMasterToggle => '显示桌宠';
+
+  @override
+  String get petMasterToggleDescription => '在桌面开一个透明窗体,让宠物可以在屏幕上闲逛。';
+
+  @override
+  String get petBrowseGallery => '浏览更多宠物';
+
+  @override
+  String get petLinkFailed => '无法打开链接';
+
+  @override
+  String petImportSuccess(String name) {
+    return '已导入 \"$name\"';
+  }
+
+  @override
+  String petImportFailed(String message) {
+    return '导入失败:$message';
+  }
+
+  @override
+  String get petImportNeedPath => '无法读取所选文件,请从本地 .zip 导入。';
+
+  @override
+  String petDeletedSnackbar(String name) {
+    return '已删除 \"$name\"';
+  }
+
+  @override
+  String get petDeleteTitle => '删除桌宠';
+
+  @override
+  String petDeleteConfirm(String name) {
     return '确认删除 \"$name\"?';
   }
 
