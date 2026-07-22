@@ -34,6 +34,10 @@ Agent Buddy
 - Windows 环境中有 Wsl的bash,也有 git的bash,项目的命令行工具识别的bash工具错误,识别到了wsl的bash工具,但是不可用,请通过git的路径找到对应的bash工具位置.
 
 
+#### BUG修复
+- mac 上无法选择工作目录问题， 点击工作目录没有反应。
+- mac Google Sheet 工具无法授权问题，无法启动本地服务授权
+
 #### 未完成
 
 - 怎么处理 word,excel,pdf 文件,
