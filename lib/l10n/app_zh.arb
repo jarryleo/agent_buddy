@@ -599,5 +599,10 @@
       "pendingCount": { "type": "int" },
       "pendingSummary": { "type": "String" }
     }
-  }
+  },
+
+  "trayShowMain": "打开主窗口",
+  "trayShowPet": "显示桌宠",
+  "trayHidePet": "关闭桌宠",
+  "trayExit": "退出程序"
 }

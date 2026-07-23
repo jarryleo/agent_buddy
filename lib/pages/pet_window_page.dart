@@ -29,8 +29,8 @@ const String _kResetMethod = 'reset';
 const String _kSwitchPetMethod = 'switchPet';
 const String _kShowTextMethod = 'showText';
 const String _kShowMainMethod = 'showMain';
-const double _kBubbleAreaHeight = 72;
-const double _kBubbleMinWidth = 220;
+const double _kBubbleAreaHeight = 80;
+const double _kBubbleMinWidth = 100;
 const Duration _kBubbleAutoHide = Duration(seconds: 10);
 
 final PetWindowStateStore _windowStateStore = PetWindowStateStore();
@@ -105,11 +105,25 @@ Future<void> _configurePetWindow(Pet pet) async {
 }
 
 Size _resolveWindowSize(Pet pet) {
+  // Must match `_resolveWindowSizeWithBubble(false)` so the boot
+  // surface has the same slack as the post-bubble surface — the
+  // native window otherwise clips ~20px off the sprite at launch
+  // (the same `setSize` rebuild that the bubble path triggers is
+  // what makes the sprite appear "normal" once a bubble shows up).
+  // The bubble slot itself is added on demand by
+  // `_applyWindowSizeForBubble`, so an idle pet still has no empty
+  // dead space above the sprite that would block mouse events on
+  // whatever app sits behind it.
+  return _resolveWindowSizeWithBubble(pet, withBubble: false);
+}
+
+Size _resolveWindowSizeWithBubble(Pet pet, {required bool withBubble}) {
   final sprite = petDisplaySize(pet);
   final width = sprite.width < _kBubbleMinWidth
       ? _kBubbleMinWidth
       : sprite.width;
-  return Size(width, sprite.height + _kBubbleAreaHeight);
+  final height = withBubble ? sprite.height + _kBubbleAreaHeight : sprite.height;
+  return Size(width, height + 20);
 }
 
 Future<Offset> _resolveWindowPosition(Size windowSize) async {
@@ -240,6 +254,16 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
   Timer? _dragPollTimer;
   bool _pollingDragPosition = false;
   bool _applyingWindowPosition = false;
+  // Tracks the bubble visibility at the time of the last window
+  // resize so the IPC handler only triggers a resize when the
+  // desired state actually flips — redundant resizes are wasteful
+  // and flicker on some platforms.
+  bool _previousSpeechVisible = false;
+  // `setSize` / `setPosition` both fire `onWindowMove` events,
+  // which would otherwise pollute the saved position with the
+  // bottom-anchored layout during bubble resize. Suppress the
+  // save while the programmatic resize is in flight.
+  bool _suppressPositionSave = false;
   static const double _kClickThreshold = 6;
 
   @override
@@ -282,11 +306,13 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
         case _kShowTextMethod:
           final text = (call.arguments as Map?)?['text'] as String?;
           if (text != null && mounted) {
+            final wantBubble = text.trim().isNotEmpty;
             setState(() {
               _speechText = text;
-              _speechVisible = text.trim().isNotEmpty;
+              _speechVisible = wantBubble;
             });
             _scheduleSpeechHide();
+            _maybeResizeForBubble();
           }
         case _kShowMainMethod:
           // No-op inside the pet window itself; the main engine
@@ -331,17 +357,71 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
   Future<void> _switchPet(String id) async {
     final pet = await _resolvePet(id);
     if (pet == null || pet.id == _anim.pet.id) return;
-    final size = _resolveWindowSize(pet);
     _anim.setPet(pet);
-    await windowManager.setMinimumSize(size);
-    await windowManager.setMaximumSize(size);
-    await windowManager.setSize(size);
+    // Greet the user with a wave before settling into the new
+    // pet's default animation. Mirrors the boot animation so the
+    // visual feedback stays consistent across cold start and a
+    // mid-session pet swap. `playOneShot` is a silent no-op when
+    // the new pet doesn't ship a `waving` strip.
+    _anim.playOneShot('waving');
+    // Re-derive the window size from the current bubble visibility
+    // so a mid-session swap preserves the bubble slot if one is
+    // already on screen.
+    await _applyWindowSizeForBubble();
     await _savePosition();
   }
 
   Future<void> _savePosition() async {
+    if (_suppressPositionSave) return;
     final position = await windowManager.getPosition();
     await _windowStateStore.savePosition(position);
+  }
+
+  /// Resize the OS window to match the current bubble visibility,
+  /// keeping the sprite anchored to the same screen Y. Called
+  /// whenever `_speechVisible` flips (and from `_switchPet` so a
+  /// pet swap doesn't accidentally drop or restore the bubble
+  /// slot).
+  ///
+  /// When the bubble is hidden the window is shrunk to just the
+  /// sprite height, eliminating the empty ~80px strip at the top
+  /// that would otherwise block mouse events on the app behind
+  /// the pet. When the bubble is shown the window grows upward
+  /// by `_kBubbleAreaHeight` and the bottom is held steady so the
+  /// pet doesn't jump.
+  Future<void> _applyWindowSizeForBubble() async {
+    final pet = _anim.pet;
+    final newSize = _resolveWindowSizeWithBubble(
+      pet,
+      withBubble: _speechVisible,
+    );
+
+    final currentPosition = await windowManager.getPosition();
+    final currentSize = await windowManager.getSize();
+    // Anchor to the bottom of the *current* window: the sprite
+    // stays at the same screen Y regardless of bubble visibility.
+    final newY = currentPosition.dy + currentSize.height - newSize.height;
+    final newPosition = Offset(currentPosition.dx, newY);
+
+    _suppressPositionSave = true;
+    try {
+      await windowManager.setMinimumSize(newSize);
+      await windowManager.setMaximumSize(newSize);
+      await windowManager.setSize(newSize, animate: true);
+      await windowManager.setPosition(newPosition, animate: true);
+    } catch (_) {
+      // The window manager plugin can race during fast IPC bursts
+      // (e.g. tool-driven speech loops). The next flip will
+      // re-apply the correct size.
+    } finally {
+      // Keep suppression active long enough for the post-resize
+      // `onWindowMove` echoes to settle, otherwise the debounced
+      // save would persist the bottom-anchored position as the
+      // new "preferred" one.
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) _suppressPositionSave = false;
+      });
+    }
   }
 
   void _applyInteractionAnimation() {
@@ -464,13 +544,25 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
   void _scheduleSpeechHide() {
     _speechHideTimer?.cancel();
     if (_speechText.trim().isEmpty) {
-      if (mounted) setState(() => _speechVisible = false);
+      // Empty text means the bubble was already hidden by the IPC
+      // handler's `setState`; nothing to schedule.
       return;
     }
     _speechHideTimer = Timer(_kBubbleAutoHide, () {
       if (!mounted) return;
       setState(() => _speechVisible = false);
+      _maybeResizeForBubble();
     });
+  }
+
+  /// Triggers a window resize when the bubble visibility flips. Used
+  /// by both the IPC handler (text-driven show / hide) and the
+  /// auto-hide timer (10-second fade) so the OS window shrinks back
+  /// down no matter *which* code path hid the bubble.
+  void _maybeResizeForBubble() {
+    if (_previousSpeechVisible == _speechVisible) return;
+    _previousSpeechVisible = _speechVisible;
+    unawaited(_applyWindowSizeForBubble());
   }
 
   Future<void> _openContextMenu(Offset position) async {

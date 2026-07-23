@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -44,6 +46,7 @@ import 'services/platform/voice_service.dart';
 import 'services/platform/voice_service_factory.dart';
 import 'services/timer_service.dart';
 import 'services/tool_service.dart';
+import 'services/tray_service.dart';
 import 'theme/app_theme.dart';
 import 'widgets/notification_host.dart';
 import 'widgets/phone_frame.dart';
@@ -135,6 +138,16 @@ Future<void> mainApp() async {
   // the built-in Anya here means the user gets the bundled pet
   // even if the pet window is launched later.
   final petService = PetService();
+  // Settings must be loaded before we build the tray menu (which
+  // localizes its labels and reads `showDesktopPet` to choose
+  // between "Show pet" / "Hide pet"). The `load()` above is
+  // synchronous from the awaiter's perspective — `showDesktopPet`
+  // is now populated.
+  final settings = SettingsProvider(storage, googleSheets, autostartService);
+  await settings.load();
+  settings.attachAutostartService(autostartService);
+  final trayService = TrayService(settings: settings);
+  await trayService.initialize();
   runApp(
     AgentBuddyApp(
       storage: storage,
@@ -148,6 +161,8 @@ Future<void> mainApp() async {
       builtinDownloadService: builtinDownloadService,
       autostartService: autostartService,
       petService: petService,
+      trayService: trayService,
+      settings: settings,
     ),
   );
 }
@@ -161,6 +176,12 @@ Future<void> _setupDesktopWindow() async {
     return;
   }
   await windowManager.ensureInitialized();
+  // Intercept the native close button: clicking ✕ only hides the
+  // main window, the app keeps running so the desktop pet (and any
+  // in-flight chat session) stays alive. The user re-opens via the
+  // tray icon and fully exits via the tray menu's "Exit" item.
+  await windowManager.setPreventClose(true);
+  windowManager.addListener(_MainWindowCloseListener());
   windowManager.waitUntilReadyToShow(
     const WindowOptions(
       size: Size(400, 800),
@@ -181,6 +202,22 @@ Future<void> _setupDesktopWindow() async {
   );
 }
 
+/// `WindowListener` that hides the main window on close instead of
+/// letting the OS terminate the app. `setPreventClose(true)` is the
+/// other half of the pair — together they implement the
+/// "close-to-tray" UX: the OS sends `onWindowClose`, we hide, and
+/// the tray icon is the only re-entry point.
+class _MainWindowCloseListener extends WindowListener {
+  @override
+  void onWindowClose() {
+    unawaited(() async {
+      try {
+        await windowManager.hide();
+      } catch (_) {}
+    }());
+  }
+}
+
 class AgentBuddyApp extends StatefulWidget {
   const AgentBuddyApp({
     super.key,
@@ -195,6 +232,8 @@ class AgentBuddyApp extends StatefulWidget {
     required this.builtinDownloadService,
     required this.autostartService,
     required this.petService,
+    required this.trayService,
+    required this.settings,
   });
 
   final StorageService storage;
@@ -208,6 +247,8 @@ class AgentBuddyApp extends StatefulWidget {
   final BuiltinModelDownloadService builtinDownloadService;
   final AutostartService autostartService;
   final PetService petService;
+  final TrayService trayService;
+  final SettingsProvider settings;
 
   @override
   State<AgentBuddyApp> createState() => _AgentBuddyAppState();
@@ -220,14 +261,7 @@ class _AgentBuddyAppState extends State<AgentBuddyApp> {
   @override
   void initState() {
     super.initState();
-    _settings =
-        SettingsProvider(
-            widget.storage,
-            widget.googleSheets,
-            widget.autostartService,
-          )
-          ..load()
-          ..attachAutostartService(widget.autostartService);
+    _settings = widget.settings;
     if (petWindowSupportedOnCurrentPlatform()) {
       _petController = PetWindowController(settings: _settings)..syncOnStart();
     }
@@ -240,6 +274,8 @@ class _AgentBuddyAppState extends State<AgentBuddyApp> {
     // future.
     // ignore: discarded_futures
     _petController?.dispose();
+    // ignore: discarded_futures
+    widget.trayService.dispose();
     super.dispose();
   }
 

@@ -63,6 +63,12 @@ dependencies:
   permission_handler: ^11.3.1
   desktop_multi_window: ^0.3.0
   archive: ^4.0.9
+  # Cross-platform system-tray icon for the desktop "minimize to
+  # tray" UX. Same publisher as `window_manager`, so the platform
+  # support matrix (Windows / macOS / Linux) is identical. The
+  # Linux impl needs `ayatana-appindicator3-0.1` (or
+  # `appindicator3-0.1`) installed at build time.
+  tray_manager: ^0.5.2
 
 
 dev_dependencies:

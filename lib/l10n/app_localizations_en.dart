@@ -1680,4 +1680,16 @@ class AppLocalizationsEn extends AppLocalizations {
   ) {
     return '[Task supervision] The current todo list $titleHint has $completed/$total items done; the following $pendingCount item(s) are still pending:\n$pendingSummary\n\nPlease continue working on the remaining items. Tick each one off with todo(action=\"complete\", id=\"<id>\") as you finish. If you cannot continue (blocked by an external system, missing info, etc.), call todo(action=\"clear\") and explain to the user why.';
   }
+
+  @override
+  String get trayShowMain => 'Show main window';
+
+  @override
+  String get trayShowPet => 'Show desktop pet';
+
+  @override
+  String get trayHidePet => 'Hide desktop pet';
+
+  @override
+  String get trayExit => 'Exit';
 }

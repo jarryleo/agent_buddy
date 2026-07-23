@@ -1606,4 +1606,16 @@ class AppLocalizationsZh extends AppLocalizations {
   ) {
     return '[任务监督] 当前任务清单 $titleHint已完成 $completed/$total 项,还有 $pendingCount 项待完成:\n$pendingSummary\n\n请继续完成剩下的任务,每完成一项就 todo(action=\"complete\", id=\"<id>\") 勾掉。如果无法继续(外部系统阻塞、缺信息等),调用 todo(action=\"clear\") 并向用户解释原因。';
   }
+
+  @override
+  String get trayShowMain => '打开主窗口';
+
+  @override
+  String get trayShowPet => '显示桌宠';
+
+  @override
+  String get trayHidePet => '关闭桌宠';
+
+  @override
+  String get trayExit => '退出程序';
 }

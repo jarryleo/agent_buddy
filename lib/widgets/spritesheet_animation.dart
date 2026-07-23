@@ -11,8 +11,8 @@ Size petDisplaySize(Pet pet) {
   var width = pet.frameWidth.toDouble();
   var height = pet.frameHeight.toDouble();
   final largest = width > height ? width : height;
-  if (largest > 160) {
-    final reduction = 160 / largest;
+  if (largest > 120) {
+    final reduction = 120 / largest;
     width *= reduction;
     height *= reduction;
   }

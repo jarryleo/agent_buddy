@@ -3005,6 +3005,30 @@ abstract class AppLocalizations {
     int pendingCount,
     String pendingSummary,
   );
+
+  /// No description provided for @trayShowMain.
+  ///
+  /// In en, this message translates to:
+  /// **'Show main window'**
+  String get trayShowMain;
+
+  /// No description provided for @trayShowPet.
+  ///
+  /// In en, this message translates to:
+  /// **'Show desktop pet'**
+  String get trayShowPet;
+
+  /// No description provided for @trayHidePet.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide desktop pet'**
+  String get trayHidePet;
+
+  /// No description provided for @trayExit.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit'**
+  String get trayExit;
 }
 
 class _AppLocalizationsDelegate

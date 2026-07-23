@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:agent_buddy/providers/settings_provider.dart';
 import 'package:agent_buddy/services/chat_session_repository.dart';
 import 'package:agent_buddy/services/google_sheets_service.dart';
+import 'package:agent_buddy/services/pet_window_controller.dart';
 import 'package:agent_buddy/services/storage_service.dart';
+import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -38,9 +41,19 @@ void main() {
   Future<SettingsProvider> buildProvider() async {
     final storage = StorageService();
     await storage.init();
-    final provider = SettingsProvider(storage, GoogleSheetsService(storage: storage));
+    final provider = SettingsProvider(
+      storage,
+      GoogleSheetsService(storage: storage),
+    );
     await provider.load();
     return provider;
+  }
+
+  Future<void> waitFor(bool Function() condition) async {
+    for (var i = 0; i < 100 && !condition(); i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+    expect(condition(), isTrue);
   }
 
   test('showDesktopPet defaults to false on a fresh install', () async {
@@ -79,5 +92,49 @@ void main() {
 
     final reload = await buildProvider();
     expect(reload.activePetId, isNull);
+  });
+
+  test('tray toggle hides and reuses the existing pet window', () async {
+    final provider = await buildProvider();
+    final windowsChanged = StreamController<void>.broadcast(sync: true);
+    var spawnCalls = 0;
+    var hideCalls = 0;
+    var showCalls = 0;
+    var closeCalls = 0;
+    final controller = PetWindowController(
+      settings: provider,
+      spawnWindow: (petId) async {
+        spawnCalls++;
+        return WindowController.fromWindowId('pet-window');
+      },
+      hideWindow: (_) async {
+        hideCalls++;
+      },
+      showWindow: (_) async {
+        showCalls++;
+      },
+      closeWindow: (_) async {
+        closeCalls++;
+        windowsChanged.add(null);
+      },
+      listWindows: () async => const [],
+      windowsChanged: windowsChanged.stream,
+    );
+    addTearDown(() async {
+      await controller.dispose();
+      await windowsChanged.close();
+    });
+
+    await provider.setShowDesktopPet(true);
+    await waitFor(() => spawnCalls == 1);
+
+    await provider.setShowDesktopPet(false);
+    await waitFor(() => hideCalls == 1);
+
+    await provider.setShowDesktopPet(true);
+    await waitFor(() => showCalls == 1);
+
+    expect(spawnCalls, 1);
+    expect(closeCalls, 0);
   });
 }

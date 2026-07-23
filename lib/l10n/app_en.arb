@@ -804,5 +804,10 @@
       "pendingCount": { "type": "int" },
       "pendingSummary": { "type": "String" }
     }
-  }
+  },
+
+  "trayShowMain": "Show main window",
+  "trayShowPet": "Show desktop pet",
+  "trayHidePet": "Hide desktop pet",
+  "trayExit": "Exit"
 }

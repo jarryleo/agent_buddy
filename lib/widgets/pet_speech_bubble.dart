@@ -56,14 +56,22 @@ class _PetSpeechBubbleState extends State<PetSpeechBubble> {
                 ),
               ],
             ),
-            child: SingleChildScrollView(
+            // `Scrollbar(thumbVisibility: false)` keeps the scroll-to-bottom
+            // affordance while permanently hiding the scrollbar thumb (on
+            // desktop / web Flutter would otherwise show it; on mobile the
+            // widget is a no-op so this is safe across all platforms).
+            child: Scrollbar(
               controller: _scrollController,
-              child: Text(
-                widget.text,
-                style: const TextStyle(
-                  color: Color(0xFF222222),
-                  fontSize: 12,
-                  height: 1.25,
+              thumbVisibility: false,
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                child: Text(
+                  widget.text,
+                  style: const TextStyle(
+                    color: Color(0xFF222222),
+                    fontSize: 12,
+                    height: 1.25,
+                  ),
                 ),
               ),
             ),

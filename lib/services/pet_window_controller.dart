@@ -15,6 +15,10 @@ import '../pages/pet_window_page.dart'
         spawnPetWindow;
 import '../providers/settings_provider.dart';
 
+typedef PetWindowSpawner = Future<WindowController> Function(String petId);
+typedef PetWindowAction = Future<void> Function(WindowController controller);
+typedef PetWindowLister = Future<List<WindowController>> Function();
+
 /// Owns the lifecycle of the desktop pet window.
 ///
 /// The settings provider tracks the user's two intents — the
@@ -31,17 +35,38 @@ import '../providers/settings_provider.dart';
 /// that the app owns for its lifetime is simpler and survives
 /// hot-reload by being wired up once in `mainApp`.
 class PetWindowController {
-  PetWindowController({required SettingsProvider settings})
-    : _settings = settings {
+  PetWindowController({
+    required SettingsProvider settings,
+    PetWindowSpawner? spawnWindow,
+    PetWindowAction? closeWindow,
+    PetWindowAction? showWindow,
+    PetWindowAction? hideWindow,
+    PetWindowLister? listWindows,
+    Stream<void>? windowsChanged,
+  }) : _settings = settings,
+       _spawnWindow = spawnWindow ?? ((petId) => spawnPetWindow(petId: petId)),
+       _closeWindowAction = closeWindow ?? closePetWindow,
+       _showWindowAction = showWindow ?? ((controller) => controller.show()),
+       _hideWindowAction = hideWindow ?? ((controller) => controller.hide()),
+       _listWindows = listWindows ?? WindowController.getAll {
     _settings.addListener(_onSettingsChanged);
-    _windowsChangedSub = onWindowsChanged.listen(_onWindowsChanged);
+    _windowsChangedSub = (windowsChanged ?? onWindowsChanged).listen(
+      _onWindowsChanged,
+    );
   }
 
   final SettingsProvider _settings;
+  final PetWindowSpawner _spawnWindow;
+  final PetWindowAction _closeWindowAction;
+  final PetWindowAction _showWindowAction;
+  final PetWindowAction _hideWindowAction;
+  final PetWindowLister _listWindows;
 
   WindowController? _controller;
   String? _controllerPetId;
+  bool _windowVisible = false;
   bool _syncing = false;
+  bool _reconcilePending = false;
   bool _disposed = false;
   StreamSubscription<void>? _windowsChangedSub;
   Completer<void>? _windowClosed;
@@ -56,9 +81,9 @@ class PetWindowController {
     _disposed = true;
     _settings.removeListener(_onSettingsChanged);
     _textDispatchTimer?.cancel();
+    await _closeWindow();
     await _windowsChangedSub?.cancel();
     _windowsChangedSub = null;
-    await _closeWindow();
   }
 
   /// Called after the widget tree is up. Performs the initial
@@ -119,47 +144,57 @@ class PetWindowController {
     if (_disposed) return;
     final controller = _controller;
     if (controller == null) return;
-    final windows = await WindowController.getAll();
+    final windows = await _listWindows();
     if (windows.any((window) => window.windowId == controller.windowId)) return;
     if (!identical(_controller, controller)) return;
     _controller = null;
     _controllerPetId = null;
+    _windowVisible = false;
     if (_settings.showDesktopPet) {
       await _settings.setShowDesktopPet(false);
     }
   }
 
   Future<void> _reconcile() async {
-    if (_syncing) return;
+    if (_syncing) {
+      _reconcilePending = true;
+      return;
+    }
     _syncing = true;
     try {
-      final wantOpen = _settings.showDesktopPet;
-      final petId = _resolvePetId(_settings.activePetId);
-      if (!wantOpen) {
-        await _closeWindow();
-        return;
-      }
-      if (petId == null) {
-        // Toggle on but no pet picked (e.g. fresh install). Close
-        // the window — the user has to pick one before anything
-        // shows. The settings tab surfaces the empty state.
-        await _closeWindow();
-        return;
-      }
-      if (_controllerPetId == petId && _controller != null) {
-        // Already showing the right pet. Nothing to do.
-        return;
-      }
-      final controller = _controller;
-      if (controller != null && await sendPetSwitch(controller, petId)) {
-        _controllerPetId = petId;
-        return;
-      }
-      await _closeWindow();
-      await _spawn(petId);
+      do {
+        _reconcilePending = false;
+        await _reconcileCurrentState();
+      } while (_reconcilePending && !_disposed);
     } finally {
       _syncing = false;
     }
+  }
+
+  Future<void> _reconcileCurrentState() async {
+    final wantOpen = _settings.showDesktopPet;
+    final petId = _resolvePetId(_settings.activePetId);
+    if (!wantOpen) {
+      await _hideWindow();
+      return;
+    }
+    if (petId == null) {
+      // Toggle on but no pet picked (e.g. fresh install). Close
+      // the window — the user has to pick one before anything
+      // shows. The settings tab surfaces the empty state.
+      await _closeWindow();
+      return;
+    }
+    if (_controllerPetId == petId && _controller != null) {
+      if (await _showWindow()) return;
+    }
+    final controller = _controller;
+    if (controller != null && await sendPetSwitch(controller, petId)) {
+      _controllerPetId = petId;
+      if (await _showWindow()) return;
+    }
+    await _closeWindow();
+    await _spawn(petId);
   }
 
   String? _resolvePetId(String? raw) {
@@ -171,11 +206,40 @@ class PetWindowController {
     return 'builtin:anya';
   }
 
+  Future<void> _hideWindow() async {
+    final controller = _controller;
+    if (controller == null || !_windowVisible) return;
+    try {
+      await _hideWindowAction(controller);
+      if (identical(_controller, controller)) {
+        _windowVisible = false;
+      }
+    } catch (_) {
+      await _closeWindow();
+    }
+  }
+
+  Future<bool> _showWindow() async {
+    final controller = _controller;
+    if (controller == null) return false;
+    if (_windowVisible) return true;
+    try {
+      await _showWindowAction(controller);
+      if (!identical(_controller, controller)) return false;
+      _windowVisible = true;
+      return true;
+    } catch (_) {
+      await _closeWindow();
+      return false;
+    }
+  }
+
   Future<void> _spawn(String petId) async {
     try {
-      final controller = await spawnPetWindow(petId: petId);
+      final controller = await _spawnWindow(petId);
       _controller = controller;
       _controllerPetId = petId;
+      _windowVisible = true;
     } catch (e, st) {
       // Spawning can fail on non-desktop targets (e.g. mobile /
       // web) or before the platform plugin is registered.
@@ -190,11 +254,12 @@ class PetWindowController {
     final controller = _controller;
     _controller = null;
     _controllerPetId = null;
+    _windowVisible = false;
     if (controller == null) return;
     final closed = Completer<void>();
     _windowClosed = closed;
     try {
-      await closePetWindow(controller);
+      await _closeWindowAction(controller);
       await closed.future.timeout(const Duration(seconds: 2));
     } catch (_) {
       if (identical(_windowClosed, closed)) {
