@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart';
@@ -6,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -41,6 +44,7 @@ import 'services/platform/autostart_service.dart';
 import 'services/platform/autostart_service_io.dart';
 import 'services/pet_window_controller.dart';
 import 'services/pet_ai_director.dart';
+import 'services/single_instance_service.dart';
 import 'services/storage_service.dart';
 import 'services/sub_agent_service.dart';
 import 'services/platform/voice_service.dart';
@@ -176,6 +180,43 @@ Future<void> _setupDesktopWindow() async {
       defaultTargetPlatform != TargetPlatform.linux) {
     return;
   }
+  // Single-instance gate. The close-to-tray listener below keeps the
+  // process alive after ✕, so a second shortcut / autostart launch
+  // would otherwise spawn a brand-new engine that races the hidden
+  // primary for SharedPreferences / Google Sheets tokens / Hive
+  // boxes and frequently renders a blank window. The lock makes the
+  // second process ask the primary to come forward and exit
+  // immediately instead of booting a duplicate app. See
+  // `SingleInstanceService` for the wire protocol.
+  final instanceService = SingleInstanceService.instance;
+  if (instanceService.lockFilePath == null) {
+    // Compute the per-user lock file path the first time we boot.
+    // Wrapped in `try` because `path_provider` can throw on exotic
+    // platforms; if it does, we silently fall back to a
+    // process-local no-lock and at worst get the old "duplicate
+    // window" UX on those hosts.
+    try {
+      final supportDir = await getApplicationSupportDirectory();
+      instanceService.lockFilePath = p.join(supportDir.path, 'instance.lock');
+    } catch (e) {
+      debugPrint('SingleInstanceService: could not resolve lock path: $e');
+    }
+  }
+  final acquired = await instanceService.acquire();
+  if (!acquired) {
+    // Best-effort ping to the primary so the user sees their
+    // existing window instead of a stranded second instance.
+    // Either way we exit — the only re-entry path for the failed
+    // process is the system-side launch the user just did, which
+    // we redirect to the hidden primary.
+    try {
+      await instanceService.sendShowToExisting();
+    } catch (_) {}
+    // `exit()` never returns; the `await` chain in `mainApp()` is
+    // abandoned mid-flight, which is what we want — we have not yet
+    // touched Hive or the settings provider.
+    exit(0);
+  }
   await windowManager.ensureInitialized();
   // Intercept the native close button: clicking ✕ only hides the
   // main window, the app keeps running so the desktop pet (and any
@@ -199,6 +240,17 @@ Future<void> _setupDesktopWindow() async {
       windowManager.setResizable(true);
       windowManager.show();
       windowManager.focus();
+      // Now that the plugin is initialised and the window is on
+      // screen, register the single-instance "SHOW" handler. The
+      // service buffers any command that arrived during boot (rare
+      // but possible if a second launch fired while this `main()`
+      // was still warming up) and replays it here in order.
+      instanceService.setOnShowRequested(() async {
+        try {
+          await windowManager.show();
+          await windowManager.focus();
+        } catch (_) {}
+      });
     },
   );
 }
