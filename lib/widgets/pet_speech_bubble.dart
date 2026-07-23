@@ -43,7 +43,7 @@ class _PetSpeechBubbleState extends State<PetSpeechBubble> {
         children: [
           Container(
             constraints: const BoxConstraints(minHeight: 44, maxHeight: 66),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(10),
