@@ -1186,7 +1186,17 @@ class _ChatInputState extends State<ChatInput> {
       final path = await FilePicker.platform.getDirectoryPath(
         dialogTitle: l10n.chatToolWorkingDirectory,
       );
-      if (path == null || !mounted) return;
+      if (path == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.workingDirectoryCancelled),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      if (!mounted) return;
       await widget.onWorkingDirectoryChanged?.call(path: path);
     } catch (e) {
       if (!mounted) return;

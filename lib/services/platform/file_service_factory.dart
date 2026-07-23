@@ -38,7 +38,10 @@ FileService createFileService({
       isAndroid: true,
     );
   }
-  if (Platform.isIOS) {
+  if (Platform.isIOS ||
+      Platform.isMacOS ||
+      Platform.isWindows ||
+      Platform.isLinux) {
     return FileServiceImpl(workingDirectoryLookup: workingDirectoryLookup);
   }
   return const FileServiceStub();
