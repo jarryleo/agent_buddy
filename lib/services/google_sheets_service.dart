@@ -205,7 +205,8 @@ class GoogleSheetsService extends ChangeNotifier {
     try {
       server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     } on SocketException catch (e) {
-      _fail('无法启动本地回调服务:${e.message}');
+      final message = e.message.isEmpty ? e.toString() : e.message;
+      _fail('无法启动本地回调服务:$message');
       rethrow;
     }
     final port = server.port;
