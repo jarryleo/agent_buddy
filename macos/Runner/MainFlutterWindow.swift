@@ -19,6 +19,14 @@ class MainFlutterWindow: NSWindow {
     // https://pub.dev/packages/desktop_multi_window#macos
     FlutterMultiWindowPlugin.setOnWindowCreatedCallback { controller in
       RegisterGeneratedPlugins(registry: controller)
+      controller.backgroundColor = NSColor.clear
+      controller.view.wantsLayer = true
+      controller.view.layer?.backgroundColor = NSColor.clear.cgColor
+      DispatchQueue.main.async {
+        controller.view.window?.isOpaque = false
+        controller.view.window?.backgroundColor = NSColor.clear
+        controller.view.window?.hasShadow = false
+      }
     }
 
     super.awakeFromNib()

@@ -9,6 +9,7 @@ class PetWindowStateStore {
   PetWindowStateStore({Directory? appDir}) : _appDir = appDir;
 
   final Directory? _appDir;
+  Future<void> _saveQueue = Future<void>.value();
 
   Future<File> _file() async {
     final base = _appDir ?? await getApplicationDocumentsDirectory();
@@ -31,7 +32,13 @@ class PetWindowStateStore {
     }
   }
 
-  Future<void> savePosition(Offset position) async {
+  Future<void> savePosition(Offset position) {
+    final save = _saveQueue.then((_) => _writePosition(position));
+    _saveQueue = save.catchError((_) {});
+    return save;
+  }
+
+  Future<void> _writePosition(Offset position) async {
     final file = await _file();
     final temporary = File('${file.path}.tmp');
     await temporary.writeAsString(

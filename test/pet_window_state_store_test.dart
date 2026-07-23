@@ -26,6 +26,13 @@ void main() {
     expect(await store.loadPosition(), position);
   });
 
+  test('serializes concurrent position saves', () async {
+    final store = PetWindowStateStore(appDir: tempDir);
+    const positions = [Offset(10, 20), Offset(30, 40), Offset(50, 60)];
+    await Future.wait(positions.map(store.savePosition));
+    expect(await store.loadPosition(), positions.last);
+  });
+
   test('ignores malformed state files', () async {
     final pets = Directory('${tempDir.path}${Platform.pathSeparator}pets');
     await pets.create(recursive: true);
