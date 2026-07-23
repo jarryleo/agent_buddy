@@ -852,7 +852,7 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
                     Positioned(
                       left: 6,
                       right: 6,
-                      top: 0,
+                      top: 6,
                       height: _kBubbleAreaHeight,
                       child: IgnorePointer(
                         child: _speechVisible
