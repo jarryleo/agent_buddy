@@ -8,9 +8,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/file_attachment.dart';
+import '../providers/chat_provider.dart';
 import '../services/file_attachment_service.dart';
 import '../services/image_service.dart';
 import '../services/platform/calendar_service.dart'
@@ -217,6 +219,22 @@ class _ChatInputState extends State<ChatInput> {
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// Forward a user-side interaction to the chat provider so
+  /// the desktop pet director can pause its AI-orchestrated
+  /// timeline (and stop any in-flight movement) before the
+  /// pet steals focus from the input field mid-typing. The
+  /// provider de-duplicates these calls inside a
+  /// `notifyUserInteracted` window so a flurry of keystrokes
+  /// only fires one rising-edge notification.
+  ///
+  /// Reads the provider as `ChatProvider?` so test harnesses
+  /// that pump the `ChatInput` widget without a `ChatProvider`
+  /// in scope don't blow up — the call is a no-op in those
+  /// environments.
+  void _notifyUserInteracted() {
+    context.read<ChatProvider?>()?.notifyUserInteracted();
   }
 
   void _send() {
@@ -1487,6 +1505,7 @@ class _ChatInputState extends State<ChatInput> {
                       sending: widget.sending,
                       onSubmit: _send,
                       onPaste: _handlePaste,
+                      onUserInteracted: _notifyUserInteracted,
                       onMoveMentionSelection:
                           _mentionActive && _mentionCandidates.isNotEmpty
                           ? _moveMentionSelection
@@ -2022,6 +2041,7 @@ class _InputField extends StatefulWidget {
     required this.sending,
     required this.onSubmit,
     this.onPaste,
+    this.onUserInteracted,
     this.onMoveMentionSelection,
     this.voiceLevelNotifier,
     this.voiceActive = false,
@@ -2034,6 +2054,11 @@ class _InputField extends StatefulWidget {
   final bool sending;
   final VoidCallback onSubmit;
   final VoidCallback? onPaste;
+
+  /// Called on every keystroke + tap so the parent can forward
+  /// a `notifyUserInteracted` signal to `ChatProvider`. Wired
+  /// up by `_ChatInputState._notifyUserInteracted`.
+  final VoidCallback? onUserInteracted;
   final ValueChanged<int>? onMoveMentionSelection;
 
   /// Live 0..1 amplitude sample (or a synthetic pulse) emitted by
@@ -2222,6 +2247,16 @@ class _InputFieldState extends State<_InputField> {
             textInputAction: TextInputAction.newline,
             keyboardType: TextInputType.multiline,
             style: const TextStyle(fontSize: 15, height: 1.4),
+            // Forward user-side interactions to the chat
+            // provider so the desktop pet director can pause
+            // its AI-orchestrated timeline (and stop any
+            // in-flight movement) before the pet steals focus
+            // from this field mid-typing. See
+            // ChatProvider.notifyUserInteracted.
+            onChanged: (text) => widget.onUserInteracted?.call(),
+            onTap: widget.onUserInteracted == null
+                ? null
+                : () => widget.onUserInteracted!(),
             decoration: InputDecoration(
               hintText: _hintText(context),
               hintStyle: TextStyle(color: context.textSecondary),

@@ -322,6 +322,29 @@ class ChatProvider extends ChangeNotifier {
   bool _sending = false;
   bool _disposed = false;
 
+  /// Wall-clock of the most recent user interaction with the
+  /// main window (typing in the input, focus changes, etc.).
+  /// Combined with the AI-in-flight flag to expose a single
+  /// `isUserInteracting` signal that the desktop pet director
+  /// listens for so it can pause / cancel any in-flight move
+  /// before the pet steals focus away from the input field.
+  DateTime? _lastUserInteractionAt;
+  Timer? _userInteractionExpiryTimer;
+
+  /// Window during which we treat the user as "still
+  /// interacting" after the last keystroke / focus event.
+  /// After this many seconds of silence we assume the user
+  /// has finished their current task and the pet can resume.
+  static Duration get userInteractionWindow =>
+      userInteractionWindowForTest ?? const Duration(seconds: 30);
+
+  /// Test seam — set this to a short duration so the
+  /// falling-edge timer fires within a unit test. The
+  /// production wiring never touches this; reset to `null`
+  /// in `tearDown`.
+  @visibleForTesting
+  static Duration? userInteractionWindowForTest;
+
   /// The id of the session the local-llm `ChatSession` instance is
   /// currently bound to. We re-seed the engine's KV cache only when
   /// the user switches to a different session; per-turn chat
@@ -675,6 +698,45 @@ class ChatProvider extends ChangeNotifier {
   String get activeSessionId => _activeSession?.id ?? '';
 
   bool get sending => _sending;
+
+  /// True while either (a) the AI is in the middle of
+  /// generating a response, or (b) the user has typed in
+  /// or focused the chat input within the last
+  /// [userInteractionWindow]. The pet director uses this
+  /// to pause the AI-orchestrated timeline (and cancel any
+  /// in-flight move) so the pet can't steal focus from the
+  /// input field mid-typing.
+  bool get isUserInteracting {
+    if (_sending) return true;
+    final last = _lastUserInteractionAt;
+    if (last == null) return false;
+    return DateTime.now().difference(last) < userInteractionWindow;
+  }
+
+  /// Mark a user-side interaction with the main window
+  /// (keystroke, focus change, send, etc.). Keeps
+  /// [isUserInteracting] true for [userInteractionWindow]
+  /// after the call so a quick flurry of typing doesn't
+  /// tear down the pet's pause/resume state between
+  /// keystrokes. Fires [notifyListeners] on both the rising
+  /// and falling edges so subscribers (the pet director)
+  /// see the state change.
+  void notifyUserInteracted() {
+    final wasInteracting = isUserInteracting;
+    _lastUserInteractionAt = DateTime.now();
+    _userInteractionExpiryTimer?.cancel();
+    _userInteractionExpiryTimer = Timer(userInteractionWindow, () {
+      // Re-check inside the timer callback in case the user
+      // re-engaged in the meantime (which would have
+      // re-armed the timer and overwritten `_lastUserInteractionAt`).
+      final last = _lastUserInteractionAt;
+      if (last == null) return;
+      if (DateTime.now().difference(last) < userInteractionWindow) return;
+      _lastUserInteractionAt = null;
+      notifyListeners();
+    });
+    if (!wasInteracting) notifyListeners();
+  }
 
   bool get hasActiveSession => _activeSession != null;
 
@@ -4206,6 +4268,11 @@ class ChatProvider extends ChangeNotifier {
     // provider can't fire a resume prompt against a torn-down
     // session.
     _cancelSupervision();
+    // Cancel the user-interaction expiry timer so a disposed
+    // provider can't fire a stray "no longer interacting"
+    // notification against the pet director.
+    _userInteractionExpiryTimer?.cancel();
+    _userInteractionExpiryTimer = null;
     _disposed = true;
     super.dispose();
   }

@@ -29,9 +29,11 @@ Agent Buddy
 - 向模型请求编排桌宠行为和主窗口会话隔离，不展示在会话内，不影响主窗口会话，用户无感知。
 - 在控制台加入日志，打印AI返回的桌宠行为编排json.
 
-  ✅ 已实现（`lib/services/pet_ai_director.dart` + `lib/pages/pet_window_page.dart` 的 `_kMoveToMethod` IPC handler + `pet_window_controller.dart` 的 `moveTo` 方法）。设置项 `_kPetAiBehaviorEnabled` + `SettingsProvider.petAiBehaviorEnabled`；l10n 键 `petAiBehaviorToggle` / `petAiBehaviorToggleDescription`；JSON 解析逻辑的单元测试在 `test/pet_ai_director_test.dart`。
+
 
 #### 未完成
+
+- 桌宠请求AI编排行为时截屏传递给AI，让AI知道用户在做什么以及让桌宠移动到哪个位置和用户互动。
 
 - 怎么处理 word,excel,pdf 文件,
 - 怎么解包zip文件,相关的类zip文件,jar,apk等

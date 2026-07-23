@@ -106,7 +106,7 @@ class PetAiDirector {
     if (_disposed) return;
     _enabled = _settings.petAiBehaviorEnabled;
     _petVisible = _settings.showDesktopPet;
-    _isMainWindowBusy = _chatProvider.sending;
+    _isMainWindowBusy = _chatProvider.isUserInteracting;
     _settingsSub = _onSettingsTick;
     _settings.addListener(_settingsSub!);
     _busySub = _onChatBusyTick;
@@ -164,9 +164,26 @@ class PetAiDirector {
 
   void _onChatBusyTick() {
     if (_disposed) return;
-    final busy = _chatProvider.sending;
+    // Listen to `isUserInteracting` rather than just
+    // `sending`. This combines two conditions:
+    //   * the AI is currently generating a response
+    //     (`_chatProvider._sending`), and
+    //   * the user has typed or focused the chat input
+    //     within the last `ChatProvider._kUserInteractionWindow`.
+    // Either one pauses the AI-orchestrated pet timeline so
+    // a moving pet can't steal focus from the input field.
+    final busy = _chatProvider.isUserInteracting;
     if (busy == _isMainWindowBusy) return;
     _isMainWindowBusy = busy;
+    if (busy && _isRunningPlan) {
+      // Show the user why the pet just stopped — without
+      // this the timeline silently freezes mid-move when
+      // they click back into the chat input.
+      _log(
+        'main window became busy — pausing orchestration '
+        'and cancelling any in-flight pet movement.',
+      );
+    }
     _evaluate();
   }
 
