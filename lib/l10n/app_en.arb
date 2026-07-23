@@ -306,6 +306,8 @@
       "name": { "type": "String" }
     }
   },
+  "petFreeze": "Stay still",
+  "petUnfreeze": "Free roam",
 
   "toolsListEmpty": "No built-in tools",
   "toolsMasterSwitchTitle": "Use Tools",

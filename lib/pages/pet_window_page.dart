@@ -238,6 +238,7 @@ class _PetWindow extends StatefulWidget {
 class _PetWindowState extends State<_PetWindow> with WindowListener {
   late final PetAnimationController _anim;
   bool _clickThrough = false;
+  bool _petFrozen = false;
   String _speechText = '';
   bool _speechVisible = false;
   Timer? _speechHideTimer;
@@ -542,6 +543,19 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
     required double speed,
   }) async {
     if (_dragging) return;
+    if (_petFrozen) {
+      // Play the run animation in the direction of the target without
+      // actually moving the window.
+      final current = await windowManager.getPosition();
+      final dir = (x - current.dx) < 0 ? 'run_left' : 'run_right';
+      _anim.forceLooping(dir);
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (!mounted || _dragging) return;
+        _forcedDragAnimation = null;
+        _anim.clearForce();
+      });
+      return;
+    }
     final cleanSpeed = speed.clamp(8.0, 480.0);
     _moveToTimer?.cancel();
     _moveToTarget = Offset(x, y);
@@ -739,7 +753,7 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
     );
     final top = position.dy.clamp(
       0.0,
-      (size.height - 76).clamp(0.0, size.height),
+      (size.height - 110).clamp(0.0, size.height),
     );
     final entry = OverlayEntry(
       builder: (ctx) => Stack(
@@ -772,6 +786,13 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
                       },
                     ),
                     _MenuItem(
+                      label: _petFrozen ? '自由活动' : '乖乖别动',
+                      onTap: () {
+                        _removeContextMenu();
+                        _togglePetFrozen();
+                      },
+                    ),
+                    _MenuItem(
                       label: '关闭桌宠',
                       color: Colors.redAccent,
                       onTap: () {
@@ -795,6 +816,13 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
     final next = !_clickThrough;
     setState(() => _clickThrough = next);
     await windowManager.setIgnoreMouseEvents(next);
+  }
+
+  void _togglePetFrozen() {
+    setState(() => _petFrozen = !_petFrozen);
+    if (_petFrozen && _moveToActive) {
+      unawaited(_cancelMoveTo());
+    }
   }
 
   Future<void> _hideWindow() async {

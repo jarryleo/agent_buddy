@@ -644,6 +644,12 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get petFreeze => '乖乖别动';
+
+  @override
+  String get petUnfreeze => '自由活动';
+
+  @override
   String get toolsListEmpty => '暂无内置工具';
 
   @override

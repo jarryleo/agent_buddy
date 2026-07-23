@@ -234,6 +234,8 @@
       "name": { "type": "String" }
     }
   },
+  "petFreeze": "乖乖别动",
+  "petUnfreeze": "自由活动",
 
   "toolsListEmpty": "暂无内置工具",
   "toolsMasterSwitchTitle": "使用工具",

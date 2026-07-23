@@ -665,6 +665,12 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get petFreeze => 'Stay still';
+
+  @override
+  String get petUnfreeze => 'Free roam';
+
+  @override
   String get toolsListEmpty => 'No built-in tools';
 
   @override

@@ -1266,6 +1266,18 @@ abstract class AppLocalizations {
   /// **'Delete \"{name}\"?'**
   String petDeleteConfirm(String name);
 
+  /// No description provided for @petFreeze.
+  ///
+  /// In en, this message translates to:
+  /// **'Stay still'**
+  String get petFreeze;
+
+  /// No description provided for @petUnfreeze.
+  ///
+  /// In en, this message translates to:
+  /// **'Free roam'**
+  String get petUnfreeze;
+
   /// No description provided for @toolsListEmpty.
   ///
   /// In en, this message translates to:
