@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import '../pages/pet_window_page.dart'
     show
         closePetWindow,
+        sendPetCancelMove,
+        sendPetMoveTo,
         sendPetPlayLooping,
         sendPetPlayOneShot,
         sendPetReset,
@@ -129,6 +131,31 @@ class PetWindowController {
       if (controller == null) return;
       await sendPetShowText(controller, _pendingText);
     });
+  }
+
+  /// Tween the pet's window to `(x, y)` at `speed` pixels per
+  /// second. The pet window swaps to `run_left` / `run_right`
+  /// based on the per-frame delta and falls back to `idle`
+  /// once it reaches the target. No-op when the window is
+  /// hidden. The director calls this for every "move" entry in
+  /// its AI-orchestrated timeline.
+  Future<void> moveTo({
+    required double x,
+    required double y,
+    required double speed,
+  }) async {
+    final controller = _controller;
+    if (controller == null) return;
+    await sendPetMoveTo(controller, x: x, y: y, speed: speed);
+  }
+
+  /// Interrupts an in-flight AI-driven move. The pet stops
+  /// where it is and drops back to its default animation. Safe
+  /// to call when no move is in flight (the pet window no-ops).
+  Future<void> cancelMove() async {
+    final controller = _controller;
+    if (controller == null) return;
+    await sendPetCancelMove(controller);
   }
 
   Future<void> _onSettingsChanged() async {

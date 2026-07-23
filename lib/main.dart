@@ -40,6 +40,7 @@ import 'services/platform/tasks_service.dart';
 import 'services/platform/autostart_service.dart';
 import 'services/platform/autostart_service_io.dart';
 import 'services/pet_window_controller.dart';
+import 'services/pet_ai_director.dart';
 import 'services/storage_service.dart';
 import 'services/sub_agent_service.dart';
 import 'services/platform/voice_service.dart';
@@ -267,6 +268,35 @@ class _AgentBuddyAppState extends State<AgentBuddyApp> {
     }
   }
 
+  PetAiDirector _buildDirector(
+    BuildContext ctx,
+    AgentBuddyApp widget,
+    PetWindowController? petWindow,
+  ) {
+    final director = PetAiDirector(
+      settings: ctx.read<SettingsProvider>(),
+      chatProvider: ctx.read<ChatProvider>(),
+      transport: DefaultPetAiTransport(
+        api: ctx.read<ApiService>(),
+        localLlm: ctx.read<LocalLlmService>(),
+        settings: ctx.read<SettingsProvider>(),
+      ),
+      petService: widget.petService,
+      petWindow: petWindow,
+      systemLocaleCode: () => (PlatformDispatcher.instance.locale.languageCode),
+      logger: StdoutPetAiLogger(),
+    );
+    // Start the listener loop. The provider is `lazy: false`
+    // so this fires at app startup. `start()` is cheap — it
+    // only attaches two listeners, reads the current toggle
+    // state, and arms a 1-minute Timer. The actual AI request
+    // only fires when the timer expires AND the chat stays
+    // idle for the entire window, so the local LLM's heavy
+    // native-assets download still doesn't fire on cold start.
+    director.start();
+    return director;
+  }
+
   @override
   void dispose() {
     // Fire-and-forget: the controller closes the sub-window on
@@ -379,6 +409,19 @@ class _AgentBuddyAppState extends State<AgentBuddyApp> {
                 files,
                 petHooks: petAnimationHooksFromController(_petController),
               ),
+        ),
+        // Pet AI director: arms + runs the AI-orchestrated
+        // pet behavior timeline. MUST be declared after
+        // ChatProvider because the create callback reads it
+        // (the director listens for `ChatProvider.sending` to
+        // pause / resume the timeline). A previous version of
+        // this code put it earlier in the list and registered
+        // it as `lazy: true` — the provider was never created
+        // because no UI ever reads it, and the director's
+        // idle timer never armed. Keep this one non-lazy.
+        Provider<PetAiDirector>(
+          create: (ctx) => _buildDirector(ctx, widget, _petController),
+          lazy: false,
         ),
       ],
       child: Consumer<SettingsProvider>(

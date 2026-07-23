@@ -42,6 +42,11 @@ class _PetTabState extends State<PetTab> {
     await settings.setShowDesktopPet(next);
   }
 
+  Future<void> _toggleAiBehavior(BuildContext context, bool next) async {
+    final settings = context.read<SettingsProvider>();
+    await settings.setPetAiBehaviorEnabled(next);
+  }
+
   Future<void> _selectPet(BuildContext context, Pet pet) async {
     final settings = context.read<SettingsProvider>();
     await settings.setActivePetId(pet.id);
@@ -161,7 +166,9 @@ class _PetTabState extends State<PetTab> {
           _Header(
             canHavePet: canHavePet,
             showPet: settings.showDesktopPet,
+            aiBehaviorEnabled: settings.petAiBehaviorEnabled,
             onToggle: (v) => _togglePet(context, v),
+            onToggleAiBehavior: (v) => _toggleAiBehavior(context, v),
             onOpenPetdex: () => _openPetdex(context),
             l10n: l10n,
           ),
@@ -201,14 +208,18 @@ class _Header extends StatelessWidget {
   const _Header({
     required this.canHavePet,
     required this.showPet,
+    required this.aiBehaviorEnabled,
     required this.onToggle,
+    required this.onToggleAiBehavior,
     required this.onOpenPetdex,
     required this.l10n,
   });
 
   final bool canHavePet;
   final bool showPet;
+  final bool aiBehaviorEnabled;
   final ValueChanged<bool> onToggle;
+  final ValueChanged<bool> onToggleAiBehavior;
   final VoidCallback onOpenPetdex;
   final AppLocalizations l10n;
 
@@ -259,6 +270,45 @@ class _Header extends StatelessWidget {
               ),
             ],
           ),
+          if (canHavePet) ...[
+            const SizedBox(height: 6),
+            const Divider(height: 1, thickness: 0.4),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(Icons.auto_awesome, size: 18, color: context.textPrimary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.petAiBehaviorToggle,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        l10n.petAiBehaviorToggleDescription,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: context.textSecondary,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Switch.adaptive(
+                  value: aiBehaviorEnabled && showPet,
+                  onChanged: showPet ? onToggleAiBehavior : null,
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 8),
           InkWell(
             onTap: onOpenPetdex,

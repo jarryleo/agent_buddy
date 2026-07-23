@@ -625,6 +625,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Open a transparent window above the chat so your pet can roam.';
 
   @override
+  String get petAiBehaviorToggle => 'Pet AI behavior';
+
+  @override
+  String get petAiBehaviorToggleDescription =>
+      'After 1 min of idle, let the active model direct the pet (move, speak, react).';
+
+  @override
   String get petBrowseGallery => 'Browse more pets';
 
   @override

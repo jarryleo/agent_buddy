@@ -54,6 +54,7 @@ class SettingsProvider extends ChangeNotifier {
   bool _thinkingModeEnabled = false;
   bool _autoStartEnabled = false;
   bool _showDesktopPet = false;
+  bool _petAiBehaviorEnabled = false;
   String? _activePetId;
   GoogleSheetConfig _googleSheetConfig = GoogleSheetConfig.empty;
 
@@ -85,6 +86,7 @@ class SettingsProvider extends ChangeNotifier {
   bool get thinkingModeEnabled => _thinkingModeEnabled;
   bool get autoStartEnabled => _autoStartEnabled;
   bool get showDesktopPet => _showDesktopPet;
+  bool get petAiBehaviorEnabled => _petAiBehaviorEnabled;
   String? get activePetId => _activePetId;
   GoogleSheetConfig get googleSheetConfig => _googleSheetConfig;
 
@@ -172,6 +174,7 @@ class SettingsProvider extends ChangeNotifier {
     _thinkingModeEnabled = _storage.thinkingModeEnabled;
     _autoStartEnabled = _storage.autoStartEnabled;
     _showDesktopPet = _storage.showDesktopPet;
+    _petAiBehaviorEnabled = _storage.petAiBehaviorEnabled;
     _activePetId = _storage.activePetId;
     _googleSheetConfig = _storage.loadGoogleSheetConfig();
 
@@ -840,6 +843,17 @@ class SettingsProvider extends ChangeNotifier {
       _activePetId = activePetId;
       await _storage.setActivePetId(activePetId);
     }
+    notifyListeners();
+  }
+
+  /// Secondary switch that lets the active pet auto-orchestrate
+  /// idle-time behavior by asking the active model to plan a
+  /// sequence of actions. The director listens for this flag and
+  /// arms/disarms the 1-minute idle timer. No effect without the
+  /// master [showDesktopPet] toggle on.
+  Future<void> setPetAiBehaviorEnabled(bool enabled) async {
+    _petAiBehaviorEnabled = enabled;
+    await _storage.setPetAiBehaviorEnabled(enabled);
     notifyListeners();
   }
 

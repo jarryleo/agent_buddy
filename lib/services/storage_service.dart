@@ -56,6 +56,12 @@ class StorageService {
   // tab. Persisted so a cold start re-launches the pet window when
   // the user expects it.
   static const _kShowDesktopPet = 'show_desktop_pet';
+  // Desktop-only: secondary switch that lets the pet auto-orchestrate
+  // its own idle-time behavior by periodically asking the active
+  // model to plan a sequence of actions (move / speak / react).
+  // Master off + AI behavior on is a no-op; both must be on for the
+  // director to fire.
+  static const _kPetAiBehaviorEnabled = 'pet_ai_behavior_enabled';
   // Id of the currently selected pet (`builtin:anya` for the
   // bundled one, or a user-imported id). Persisted so the same
   // pet re-appears after a restart.
@@ -344,6 +350,18 @@ class StorageService {
 
   Future<void> setShowDesktopPet(bool enabled) async {
     await _prefs.setBool(_kShowDesktopPet, enabled);
+  }
+
+  /// Secondary switch that lets the active pet self-orchestrate
+  /// idle-time behavior (auto-move, speech bubbles, random
+  /// reactions) by periodically asking the active model for a
+  /// plan. Defaults to `false` so the user has to opt in. No
+  /// effect without the master [showDesktopPet] toggle on.
+  bool get petAiBehaviorEnabled =>
+      _prefs.getBool(_kPetAiBehaviorEnabled) ?? false;
+
+  Future<void> setPetAiBehaviorEnabled(bool enabled) async {
+    await _prefs.setBool(_kPetAiBehaviorEnabled, enabled);
   }
 
   /// Id of the pet the user has selected on the pet tab. `null`

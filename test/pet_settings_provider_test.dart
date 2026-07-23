@@ -137,4 +137,31 @@ void main() {
     expect(spawnCalls, 1);
     expect(closeCalls, 0);
   });
+
+  test('petAiBehaviorEnabled defaults to false on a fresh install', () async {
+    final provider = await buildProvider();
+    expect(provider.petAiBehaviorEnabled, isFalse);
+  });
+
+  test('setPetAiBehaviorEnabled persists across reloads', () async {
+    final provider = await buildProvider();
+    await provider.setPetAiBehaviorEnabled(true);
+    expect(provider.petAiBehaviorEnabled, isTrue);
+
+    final reload = await buildProvider();
+    expect(reload.petAiBehaviorEnabled, isTrue);
+  });
+
+  test(
+    'setPetAiBehaviorEnabled(false) clears the persisted preference',
+    () async {
+      final provider = await buildProvider();
+      await provider.setPetAiBehaviorEnabled(true);
+      await provider.setPetAiBehaviorEnabled(false);
+      expect(provider.petAiBehaviorEnabled, isFalse);
+
+      final reload = await buildProvider();
+      expect(reload.petAiBehaviorEnabled, isFalse);
+    },
+  );
 }

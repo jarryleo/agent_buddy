@@ -276,6 +276,8 @@
   "petDesktopOnly": "Desktop pets are only available on desktop (Windows / macOS / Linux).",
   "petMasterToggle": "Show desktop pet",
   "petMasterToggleDescription": "Open a transparent window above the chat so your pet can roam.",
+  "petAiBehaviorToggle": "Pet AI behavior",
+  "petAiBehaviorToggleDescription": "After 1 min of idle, let the active model direct the pet (move, speak, react).",
   "petBrowseGallery": "Browse more pets",
   "petLinkFailed": "Could not open the link",
   "petImportSuccess": "Imported \"{name}\"",

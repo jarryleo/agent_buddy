@@ -29,6 +29,8 @@ const String _kResetMethod = 'reset';
 const String _kSwitchPetMethod = 'switchPet';
 const String _kShowTextMethod = 'showText';
 const String _kShowMainMethod = 'showMain';
+const String _kMoveToMethod = 'moveTo';
+const String _kCancelMoveMethod = 'cancelMove';
 const double _kBubbleAreaHeight = 80;
 const double _kBubbleMinWidth = 100;
 const Duration _kBubbleAutoHide = Duration(seconds: 10);
@@ -122,7 +124,9 @@ Size _resolveWindowSizeWithBubble(Pet pet, {required bool withBubble}) {
   final width = sprite.width < _kBubbleMinWidth
       ? _kBubbleMinWidth
       : sprite.width;
-  final height = withBubble ? sprite.height + _kBubbleAreaHeight : sprite.height;
+  final height = withBubble
+      ? sprite.height + _kBubbleAreaHeight
+      : sprite.height;
   return Size(width, height + 20);
 }
 
@@ -264,6 +268,15 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
   // bottom-anchored layout during bubble resize. Suppress the
   // save while the programmatic resize is in flight.
   bool _suppressPositionSave = false;
+  // AI-driven movement: the pet director issues a `moveTo` over
+  // IPC and we tween the window position over `_moveToDuration`,
+  // flipping `run_left` / `run_right` based on the per-frame
+  // delta. `_cancelMove()` is the pause path used by the
+  // director when the main window goes busy.
+  Timer? _moveToTimer;
+  Offset? _moveToTarget;
+  double _moveToPixelsPerFrame = 0;
+  bool _moveToActive = false;
   static const double _kClickThreshold = 6;
 
   @override
@@ -320,6 +333,16 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
           // handler. We expose it symmetrically so the test
           // harness can poke either side.
           break;
+        case _kMoveToMethod:
+          final args = (call.arguments as Map?);
+          final x = (args?['x'] as num?)?.toDouble();
+          final y = (args?['y'] as num?)?.toDouble();
+          final speed = (args?['speed'] as num?)?.toDouble();
+          if (x != null && y != null && speed != null) {
+            await _startMoveTo(x: x, y: y, speed: speed);
+          }
+        case _kCancelMoveMethod:
+          await _cancelMoveTo();
       }
       return null;
     });
@@ -334,6 +357,7 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
     _speechHideTimer?.cancel();
     _positionSaveTimer?.cancel();
     _dragPollTimer?.cancel();
+    _moveToTimer?.cancel();
     windowManager.removeListener(this);
     _anim.dispose();
     super.dispose();
@@ -502,6 +526,146 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
     } finally {
       _applyingWindowPosition = false;
     }
+  }
+
+  /// Starts an AI-driven tween from the pet's current window
+  /// position to `(x, y)` at `speed` pixels per second. The pet
+  /// plays `run_left` / `run_right` based on the per-frame delta
+  /// (same convention as the drag handler) and falls back to
+  /// `idle` on completion. Ignored when the user is dragging
+  /// (drag takes priority over the AI's plan). The director can
+  /// cancel mid-flight via [_kCancelMoveMethod]; the pet stops
+  /// where it is and reverts to its default animation.
+  Future<void> _startMoveTo({
+    required double x,
+    required double y,
+    required double speed,
+  }) async {
+    if (_dragging) return;
+    final cleanSpeed = speed.clamp(8.0, 480.0);
+    _moveToTimer?.cancel();
+    _moveToTarget = Offset(x, y);
+    _moveToPixelsPerFrame = cleanSpeed * 0.033;
+    _moveToActive = true;
+    _moveToTimer = Timer.periodic(
+      const Duration(milliseconds: 33),
+      (_) => unawaited(_stepMoveTo()),
+    );
+    await _stepMoveTo();
+  }
+
+  Future<void> _stepMoveTo() async {
+    if (!_moveToActive || _moveToTarget == null) return;
+    if (_dragging) {
+      await _cancelMoveTo();
+      return;
+    }
+    Offset current;
+    try {
+      current = await windowManager.getPosition();
+    } catch (_) {
+      await _cancelMoveTo();
+      return;
+    }
+    final size = _currentWindowSize();
+    final clamped = await _clampTargetToVisibleArea(_moveToTarget!, size);
+    final delta = clamped - current;
+    final distance = delta.distance;
+    if (distance <= _moveToPixelsPerFrame) {
+      _suppressPositionSave = true;
+      try {
+        await windowManager.setPosition(clamped);
+      } catch (_) {
+        // The window-manager plugin can race during a fast
+        // IPC burst (e.g. the director chaining moves); the
+        // next step will pull the live position again.
+      } finally {
+        Future.delayed(const Duration(milliseconds: 600), () {
+          if (mounted) _suppressPositionSave = false;
+        });
+      }
+      await _finishMoveTo();
+      return;
+    }
+    final step = delta / distance * _moveToPixelsPerFrame;
+    final next = current + step;
+    final direction = step.dx < 0 ? 'run_left' : 'run_right';
+    if (_forcedDragAnimation != direction) {
+      _forcedDragAnimation = direction;
+      _anim.forceLooping(direction);
+    }
+    try {
+      await windowManager.setPosition(next);
+    } catch (_) {
+      // Skip this frame; the next tick will retry against the
+      // live position.
+    }
+  }
+
+  Future<void> _finishMoveTo() async {
+    _moveToTimer?.cancel();
+    _moveToTimer = null;
+    _moveToActive = false;
+    _moveToTarget = null;
+    _moveToPixelsPerFrame = 0;
+    // Only clear the run animation if the user isn't currently
+    // dragging. Drag ownership is enforced in `_endDrag` already.
+    if (!_dragging) {
+      _forcedDragAnimation = null;
+      _anim.clearForce();
+    }
+    await _savePosition();
+  }
+
+  Future<void> _cancelMoveTo() async {
+    _moveToTimer?.cancel();
+    _moveToTimer = null;
+    if (!_moveToActive) return;
+    _moveToActive = false;
+    _moveToTarget = null;
+    _moveToPixelsPerFrame = 0;
+    if (!_dragging) {
+      _forcedDragAnimation = null;
+      _anim.clearForce();
+    }
+  }
+
+  Size _currentWindowSize() {
+    final pet = _anim.pet;
+    final bubbleArea = _speechVisible ? _kBubbleAreaHeight : 0.0;
+    final sprite = petDisplaySize(pet);
+    final width = sprite.width < _kBubbleMinWidth
+        ? _kBubbleMinWidth
+        : sprite.width;
+    return Size(width, sprite.height + bubbleArea + 20);
+  }
+
+  /// Clamp a target OS-level position so the pet's window stays
+  /// fully inside the visible work area of the display that
+  /// currently contains the pet. Prevents the AI from placing
+  /// the pet on cursor-invisible coordinates or off-screen.
+  Future<Offset> _clampTargetToVisibleArea(Offset target, Size size) async {
+    final displays = await screenRetriever.getAllDisplays();
+    final primary = await screenRetriever.getPrimaryDisplay();
+    final current = await windowManager.getPosition();
+    var display = primary;
+    for (final candidate in displays) {
+      final origin = candidate.visiblePosition ?? Offset.zero;
+      final work = candidate.visibleSize ?? candidate.size;
+      final rect = origin & work;
+      if (rect.contains(current)) {
+        display = candidate;
+        break;
+      }
+    }
+    final origin = display.visiblePosition ?? Offset.zero;
+    final work = display.visibleSize ?? display.size;
+    final maxX = origin.dx + work.width - size.width;
+    final maxY = origin.dy + work.height - size.height;
+    return Offset(
+      target.dx.clamp(origin.dx, maxX < origin.dx ? origin.dx : maxX),
+      target.dy.clamp(origin.dy, maxY < origin.dy ? origin.dy : maxY),
+    );
   }
 
   Future<void> _endDrag(PointerUpEvent event) async {
@@ -850,6 +1014,39 @@ Future<bool> sendPetSwitch(WindowController controller, String id) async {
 Future<void> sendPetReset(WindowController controller) async {
   try {
     await controller.invokeMethod<bool>(_kResetMethod);
+  } catch (_) {}
+}
+
+/// Asks the pet window to start an AI-driven tween from its
+/// current position to `(x, y)` at `speed` pixels per second.
+/// The pet swaps to `run_left` / `run_right` based on the
+/// per-frame delta and falls back to `idle` once it reaches the
+/// target. The director can interrupt mid-flight via
+/// [sendPetCancelMove].
+Future<void> sendPetMoveTo(
+  WindowController controller, {
+  required double x,
+  required double y,
+  required double speed,
+}) async {
+  try {
+    await controller.invokeMethod<bool>(_kMoveToMethod, {
+      'x': x,
+      'y': y,
+      'speed': speed,
+    });
+  } catch (_) {
+    // The pet window may have been closed between the
+    // initial check and the move IPC; ignore.
+  }
+}
+
+/// Interrupts an in-flight AI-driven move. The pet stops where
+/// it is and drops back to its default animation. Safe to call
+/// when no move is in flight (the pet window no-ops).
+Future<void> sendPetCancelMove(WindowController controller) async {
+  try {
+    await controller.invokeMethod<bool>(_kCancelMoveMethod);
   } catch (_) {}
 }
 

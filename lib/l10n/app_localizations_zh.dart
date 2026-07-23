@@ -605,6 +605,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get petMasterToggleDescription => '在桌面开一个透明窗体,让宠物可以在屏幕上闲逛。';
 
   @override
+  String get petAiBehaviorToggle => '桌宠AI行为';
+
+  @override
+  String get petAiBehaviorToggleDescription =>
+      '待机超过 1 分钟后,让当前模型自动编排桌宠行为(移动/说话/反应)。';
+
+  @override
   String get petBrowseGallery => '浏览更多宠物';
 
   @override

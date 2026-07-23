@@ -1206,6 +1206,18 @@ abstract class AppLocalizations {
   /// **'Open a transparent window above the chat so your pet can roam.'**
   String get petMasterToggleDescription;
 
+  /// No description provided for @petAiBehaviorToggle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pet AI behavior'**
+  String get petAiBehaviorToggle;
+
+  /// No description provided for @petAiBehaviorToggleDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'After 1 min of idle, let the active model direct the pet (move, speak, react).'**
+  String get petAiBehaviorToggleDescription;
+
   /// No description provided for @petBrowseGallery.
   ///
   /// In en, this message translates to:
