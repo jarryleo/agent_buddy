@@ -321,12 +321,22 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
           final text = (call.arguments as Map?)?['text'] as String?;
           if (text != null && mounted) {
             final wantBubble = text.trim().isNotEmpty;
-            setState(() {
-              _speechText = text;
-              _speechVisible = wantBubble;
-            });
+            if (wantBubble && !_speechVisible) {
+              await _applyWindowSizeForBubble(withBubble: true);
+              if (!mounted) return null;
+              _previousSpeechVisible = true;
+              setState(() {
+                _speechText = text;
+                _speechVisible = true;
+              });
+            } else {
+              setState(() {
+                _speechText = text;
+                _speechVisible = wantBubble;
+              });
+              _maybeResizeForBubble();
+            }
             _scheduleSpeechHide();
-            _maybeResizeForBubble();
           }
         case _kShowMainMethod:
           // No-op inside the pet window itself; the main engine
@@ -414,26 +424,35 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
   /// the pet. When the bubble is shown the window grows upward
   /// by `_kBubbleAreaHeight` and the bottom is held steady so the
   /// pet doesn't jump.
-  Future<void> _applyWindowSizeForBubble() async {
+  Future<void> _applyWindowSizeForBubble({bool? withBubble}) async {
     final pet = _anim.pet;
     final newSize = _resolveWindowSizeWithBubble(
       pet,
-      withBubble: _speechVisible,
+      withBubble: withBubble ?? _speechVisible,
     );
 
     final currentPosition = await windowManager.getPosition();
     final currentSize = await windowManager.getSize();
-    // Anchor to the bottom of the *current* window: the sprite
-    // stays at the same screen Y regardless of bubble visibility.
-    final newY = currentPosition.dy + currentSize.height - newSize.height;
-    final newPosition = Offset(currentPosition.dx, newY);
+
+    final targetBounds = Rect.fromLTWH(
+      currentPosition.dx,
+      currentPosition.dy + currentSize.height - newSize.height,
+      newSize.width,
+      newSize.height,
+    );
 
     _suppressPositionSave = true;
     try {
-      await windowManager.setMinimumSize(newSize);
-      await windowManager.setMaximumSize(newSize);
-      await windowManager.setSize(newSize, animate: true);
-      await windowManager.setPosition(newPosition, animate: true);
+      if (newSize.width > currentSize.width ||
+          newSize.height > currentSize.height) {
+        await windowManager.setMaximumSize(newSize);
+        await windowManager.setBounds(targetBounds);
+        await windowManager.setMinimumSize(newSize);
+      } else {
+        await windowManager.setMinimumSize(newSize);
+        await windowManager.setBounds(targetBounds);
+        await windowManager.setMaximumSize(newSize);
+      }
     } catch (_) {
       // The window manager plugin can race during fast IPC bursts
       // (e.g. tool-driven speech loops). The next flip will
