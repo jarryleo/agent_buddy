@@ -63,16 +63,27 @@ class TrayService with TrayListener {
   /// tray_manager's Windows side calls `LoadImage(..., IMAGE_ICON,
   /// ..., LR_LOADFROMFILE)`, which only accepts ICO files. The
   /// bundled asset is a 1024×1024 PNG, so we resize it to 32 px
-  /// and write an ICO next to the executable. The path handed back
-  /// is a relative `../../agent_buddy_tray.ico` so the OS resolves
-  /// it to the same directory as the executable at runtime.
+  /// and write an ICO next to the executable.
+  ///
+  /// The path we hand back MUST be absolute. `LoadImage` resolves
+  /// relative paths against the *process's current working
+  /// directory*, not the executable's directory — and Windows sets
+  /// CWD to whatever the launcher gave it (the install dir for a
+  /// fresh launch, the Start-Menu shortcut's "Start in" for a
+  /// Start-Menu launch, and the **captured CWD at pin time** for a
+  /// pinned-taskbar launch — none of which is reliably
+  /// `<exeDir>/data/flutter_assets/`). The previous relative
+  /// `../../agent_buddy_tray.ico` only worked when CWD happened
+  /// to be that folder; after a reinstall that produced a blank
+  /// shell-notify call and the tray icon vanished.
   Future<String> _prepareTrayIcon() async {
     final pngBytes = await rootBundle.load('assets/icon/ic_app.png');
     final decoded = img.decodePng(pngBytes.buffer.asUint8List());
     if (decoded == null) {
-      // If decoding fails, fall back to the PNG. Windows will skip
-      // the icon but the rest of the tray affordance still works.
-      return 'assets/icon/ic_app.png';
+      // If decoding fails, fall back to the asset path. Windows
+      // will skip the icon but the rest of the tray affordance
+      // still works (left-click menu etc. survive a missing icon).
+      return p.join('assets', 'icon', 'ic_app.png');
     }
 
     final resized = img.copyResize(decoded, width: 32, height: 32);
@@ -85,15 +96,15 @@ class TrayService with TrayListener {
         await iconFile.writeAsBytes(icoBytes);
       } catch (e) {
         debugPrint('Failed to write tray icon to $iconFile: $e');
-        return 'assets/icon/ic_app.png';
+        return p.join('assets', 'icon', 'ic_app.png');
       }
     }
 
-    // The tray_manager joins `iconPath` onto
-    // `<exeDir>/data/flutter_assets/`. Two `..` walks back out of
-    // `data/flutter_assets` to land on `<exeDir>`, where the file
-    // actually lives.
-    return p.join('..', '..', 'agent_buddy_tray.ico');
+    // Absolute path — survives every Windows launcher (fresh
+    // exe, Start-Menu shortcut, pinned taskbar shortcut, autostart
+    // registry entry, `cmd.exe` launch …) because it doesn't
+    // depend on whoever set CWD.
+    return iconFile.path;
   }
 
   Future<void> dispose() async {

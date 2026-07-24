@@ -81,6 +81,12 @@ class SingleInstanceService {
   bool _windowReady = false;
   final List<String> _pendingCommands = [];
 
+  /// The port we most recently probed via [_tryConnect]. Captured
+  /// by [acquire] for the diagnostic log lines so the operator can
+  /// see "port X no longer responds" without having to re-derive
+  /// it from the lock file.
+  int? _lastProbedPort;
+
   /// The wire command sent by a second instance to ask the primary
   /// to raise its window. Line-oriented — the handler splits on
   /// newlines so future commands can ride the same socket without
@@ -119,9 +125,20 @@ class SingleInstanceService {
     if (lockFilePath != null) {
       final lockFile = File(lockFilePath!);
       final primaryAlive = await _isPrimaryAlive(lockFile);
-      if (primaryAlive == true) return false;
+      if (primaryAlive == true) {
+        debugPrint('SingleInstanceService: primary is alive at '
+            'port $_lastProbedPort — becoming secondary.');
+        return false;
+      }
       // `false` (stale lock deleted best-effort) and `null` (no
       // file at all) both fall through to "become the new primary".
+      // We log the outcome so a future "two windows opened after
+      // pinned-taskbar click" bug has something to bisect with.
+      if (primaryAlive == false) {
+        debugPrint('SingleInstanceService: stale lock file at '
+            '$lockFilePath (port $_lastProbedPort no longer '
+            'responds) — reclaiming.');
+      }
     }
 
     // Step 2: become the primary. `port: 0` lets the OS pick an
@@ -263,7 +280,20 @@ class SingleInstanceService {
       } catch (_) {}
       return false;
     }
-    final probe = await _tryConnect(port);
+    _lastProbedPort = port;
+    // Two probes back-to-back. The first TCP `connect()` to a
+    // 127.0.0.1 port that the OS just brought up can occasionally
+    // race the listening side's accept queue and time out (we hit
+    // this on a Windows-11 box where the pinned-taskbar launch
+    // fires `_setupDesktopWindow` *very* shortly after the user
+    // clicked the icon — milliseconds after the primary's lock
+    // file landed). A second probe covers that without making the
+    // "primary is dead" path noticeably slower.
+    var probe = await _tryConnect(port);
+    if (probe == null) {
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      probe = await _tryConnect(port);
+    }
     if (probe != null) {
       try {
         await probe.close();
