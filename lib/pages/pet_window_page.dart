@@ -35,6 +35,13 @@ const double _kBubbleAreaHeight = 80;
 const double _kBubbleMinWidth = 100;
 const Duration _kBubbleAutoHide = Duration(seconds: 10);
 
+/// How long the speech bubble takes to fade in / out. Kept in
+/// sync with `PetSpeechBubble.fadeDuration`'s default so the
+/// post-fade OS-level resize (which would otherwise make the
+/// bubble appear to "flash downward" while it disappears)
+/// fires only after the bubble is fully invisible.
+const Duration _kBubbleFadeDuration = Duration(milliseconds: 220);
+
 final PetWindowStateStore _windowStateStore = PetWindowStateStore();
 
 /// Entry-point invoked by `desktop_multi_window` when a sub-window
@@ -321,7 +328,13 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
           final text = (call.arguments as Map?)?['text'] as String?;
           if (text != null && mounted) {
             final wantBubble = text.trim().isNotEmpty;
-            if (wantBubble && !_speechVisible) {
+            final wasVisible = _speechVisible;
+            if (wantBubble && !wasVisible) {
+              // Bubble appearing from hidden state: cancel any
+              // in-flight fade-out resize that would otherwise
+              // shrink the window mid-fade, then grow it so the
+              // bubble area is reserved when the fade-in starts.
+              _cancelPendingHideResize();
               await _applyWindowSizeForBubble(withBubble: true);
               if (!mounted) return null;
               _previousSpeechVisible = true;
@@ -329,7 +342,23 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
                 _speechText = text;
                 _speechVisible = true;
               });
+            } else if (!wantBubble && wasVisible) {
+              // Bubble hiding via empty text: fade out in place,
+              // then shrink the window only after the fade has
+              // completed — otherwise the OS-level window's top
+              // edge re-anchors upward mid-fade and the bubble
+              // visibly "flashes downward".
+              setState(() {
+                _speechText = text;
+                _speechVisible = false;
+              });
+              _scheduleHideResize();
             } else {
+              // Same visibility state as before — either a text
+              // update while the bubble is shown, or empty text
+              // while already hidden. The window size doesn't
+              // change either way; `_maybeResizeForBubble`
+              // self-bails when nothing flipped.
               setState(() {
                 _speechText = text;
                 _speechVisible = wantBubble;
@@ -366,6 +395,7 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
     unawaited(widget.controller.setWindowMethodHandler(null));
     _removeContextMenu();
     _speechHideTimer?.cancel();
+    _pendingHideResize?.cancel();
     _positionSaveTimer?.cancel();
     _dragPollTimer?.cancel();
     _moveToTimer?.cancel();
@@ -748,8 +778,37 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
     _speechHideTimer = Timer(_kBubbleAutoHide, () {
       if (!mounted) return;
       setState(() => _speechVisible = false);
-      _maybeResizeForBubble();
+      // Defer the window resize until the fade-out animation
+      // completes so the bubble doesn't appear to flash downward
+      // (the OS-level window re-anchors its top edge upward by
+      // exactly `_kBubbleAreaHeight` when it shrinks; doing that
+      // mid-fade gives the bubble a downward "kick").
+      _scheduleHideResize();
     });
+  }
+
+  /// Single-flight timer that runs `_maybeResizeForBubble` once
+  /// the speech bubble's fade-out has completed. Used by the
+  /// IPC `showText` handler (empty text replacing visible text)
+  /// and by the auto-hide timer so both code paths share the
+  /// same "wait for fade, then shrink" semantics.
+  Timer? _pendingHideResize;
+
+  void _scheduleHideResize() {
+    _pendingHideResize?.cancel();
+    _pendingHideResize = Timer(
+      _kBubbleFadeDuration + const Duration(milliseconds: 30),
+      () {
+        _pendingHideResize = null;
+        if (!mounted) return;
+        _maybeResizeForBubble();
+      },
+    );
+  }
+
+  void _cancelPendingHideResize() {
+    _pendingHideResize?.cancel();
+    _pendingHideResize = null;
   }
 
   /// Triggers a window resize when the bubble visibility flips. Used
@@ -902,9 +961,10 @@ class _PetWindowState extends State<_PetWindow> with WindowListener {
                       top: 6,
                       height: _kBubbleAreaHeight,
                       child: IgnorePointer(
-                        child: _speechVisible
-                            ? PetSpeechBubble(text: _speechText)
-                            : const SizedBox.shrink(),
+                        child: PetSpeechBubble(
+                          text: _speechText,
+                          visible: _speechVisible,
+                        ),
                       ),
                     ),
                   ],

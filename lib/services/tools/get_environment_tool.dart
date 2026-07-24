@@ -82,8 +82,8 @@ class GetEnvironmentTool extends ToolBase {
     final Map<String, dynamic> activeShell;
     String? bashInstall;
     if (isWin) {
-      final WindowsShell shell =
-          _cachedWindowsShell ??= await _resolveWindowsShell();
+      final WindowsShell shell = _cachedWindowsShell ??=
+          await _resolveWindowsShell();
       activeShell = <String, dynamic>{
         'kind': _kindLabel(shell.kind),
         'executable': shell.executable,
@@ -92,7 +92,9 @@ class GetEnvironmentTool extends ToolBase {
       };
       if (shell.kind == WindowsShellKind.gitBash) {
         bashInstall = _stripTrailingSeparator(
-          gitBashInstallPathFor(shell.executable), // ignore: invalid_use_of_visible_for_testing_member
+          gitBashInstallPathFor(
+            shell.executable,
+          ), // ignore: invalid_use_of_visible_for_testing_member
         );
       }
     } else {
@@ -140,10 +142,10 @@ class GetEnvironmentTool extends ToolBase {
   }
 
   String _kindLabel(WindowsShellKind kind) => switch (kind) {
-        WindowsShellKind.gitBash => 'git_bash',
-        WindowsShellKind.powershell => 'powershell',
-        WindowsShellKind.cmd => 'cmd',
-      };
+    WindowsShellKind.gitBash => 'git_bash',
+    WindowsShellKind.powershell => 'powershell',
+    WindowsShellKind.cmd => 'cmd',
+  };
 
   static String? _stripTrailingSeparator(String? path) {
     if (path == null) return null;

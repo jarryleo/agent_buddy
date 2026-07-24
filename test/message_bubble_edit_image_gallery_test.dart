@@ -96,8 +96,7 @@ void main() {
   }
 
   group('edited image gallery in grouped tool-call bubbles', () {
-    testWidgets(
-        'renders the EditImageCard when a tool-only assistant bubble '
+    testWidgets('renders the EditImageCard when a tool-only assistant bubble '
         'has an edit_image result', (tester) async {
       final m = _toolOnlyAssistantWithEditedImage();
       await pumpGrouped(
@@ -121,8 +120,7 @@ void main() {
       expect(find.textContaining('800×600'), findsOneWidget);
     });
 
-    testWidgets(
-        'renders one EditImageCard per editedImage across multiple '
+    testWidgets('renders one EditImageCard per editedImage across multiple '
         'grouped bubbles', (tester) async {
       final first = _toolOnlyAssistantWithEditedImage(
         toolId: 'tc_edit_1',
@@ -162,8 +160,7 @@ void main() {
       expect(find.textContaining('Resize'), findsOneWidget);
     });
 
-    testWidgets(
-        'does NOT render any EditImageCard when the group has '
+    testWidgets('does NOT render any EditImageCard when the group has '
         'no edited images', (tester) async {
       final tc = ToolCall(
         id: 'tc_fetch',
@@ -190,8 +187,7 @@ void main() {
       expect(find.text('1 tool calls'), findsOneWidget);
     });
 
-    testWidgets(
-        'EditImageCard is visible WITHOUT expanding the '
+    testWidgets('EditImageCard is visible WITHOUT expanding the '
         'collapsed card', (tester) async {
       // Regression guard: a future refactor that accidentally
       // moves the gallery behind the `_expanded` flag would

@@ -19,8 +19,8 @@ void main() {
     test('schema declares the canonical 9-action enum', () {
       final schema = TodoTool().buildSchema();
       final actions =
-          (schema['function']['parameters']['properties']['action']
-                  ['enum'] as List)
+          (schema['function']['parameters']['properties']['action']['enum']
+                  as List)
               .cast<String>();
       expect(actions, [
         'create',
@@ -37,13 +37,12 @@ void main() {
 
     test('schema marks action as the only required parameter', () {
       final schema = TodoTool().buildSchema();
-      final required =
-          (schema['function']['parameters']['required'] as List).cast<String>();
+      final required = (schema['function']['parameters']['required'] as List)
+          .cast<String>();
       expect(required, ['action']);
     });
 
-    test('compactSchemaForModel mentions the supervision prompt behavior',
-        () {
+    test('compactSchemaForModel mentions the supervision prompt behavior', () {
       final cheat = TodoTool().compactSchemaForModel;
       expect(cheat, contains('create'));
       expect(cheat, contains('add'));

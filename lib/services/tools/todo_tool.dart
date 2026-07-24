@@ -105,10 +105,7 @@ class TodoTool extends ToolBase {
                   '操作: create/add/complete/update/remove/list/get/clear/abandon',
             },
             // create
-            'title': {
-              'type': 'string',
-              'description': 'create 时使用:清单的名字',
-            },
+            'title': {'type': 'string', 'description': 'create 时使用:清单的名字'},
             // add
             'content': {
               'type': 'string',
@@ -116,8 +113,7 @@ class TodoTool extends ToolBase {
             },
             'detail': {
               'type': 'string',
-              'description':
-                  'add / update 时使用:次级说明(显示在 content 下方的灰色小字)',
+              'description': 'add / update 时使用:次级说明(显示在 content 下方的灰色小字)',
             },
             // complete / update / remove / get
             'id': {
@@ -172,4 +168,5 @@ class TodoTool extends ToolBase {
 /// the tool result back to the model. Kept here so the wire
 /// shape lives next to the schema (rather than scattered across
 /// the provider).
-String encodeTodoEnvelope(Map<String, dynamic> envelope) => jsonEncode(envelope);
+String encodeTodoEnvelope(Map<String, dynamic> envelope) =>
+    jsonEncode(envelope);

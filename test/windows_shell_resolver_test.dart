@@ -36,17 +36,19 @@ void main() {
   });
 
   group('gitBashPathAdditionsFor', () {
-    test('C:\\Program Files\\Git\\bin\\bash.exe → install root + usr/mingw/bin',
-        () {
-      expect(
-        gitBashPathAdditionsFor(r'C:\Program Files\Git\bin\bash.exe'),
-        <String>[
-          r'C:\Program Files\Git\usr\bin',
-          r'C:\Program Files\Git\mingw64\bin',
-          r'C:\Program Files\Git\bin',
-        ],
-      );
-    });
+    test(
+      'C:\\Program Files\\Git\\bin\\bash.exe → install root + usr/mingw/bin',
+      () {
+        expect(
+          gitBashPathAdditionsFor(r'C:\Program Files\Git\bin\bash.exe'),
+          <String>[
+            r'C:\Program Files\Git\usr\bin',
+            r'C:\Program Files\Git\mingw64\bin',
+            r'C:\Program Files\Git\bin',
+          ],
+        );
+      },
+    );
 
     test('sh.exe in <root>\\bin\\ yields the same set', () {
       expect(
@@ -71,14 +73,11 @@ void main() {
     });
 
     test('a different drive letter is preserved', () {
-      expect(
-        gitBashPathAdditionsFor(r'D:\tools\Git\bin\bash.exe'),
-        <String>[
-          r'D:\tools\Git\usr\bin',
-          r'D:\tools\Git\mingw64\bin',
-          r'D:\tools\Git\bin',
-        ],
-      );
+      expect(gitBashPathAdditionsFor(r'D:\tools\Git\bin\bash.exe'), <String>[
+        r'D:\tools\Git\usr\bin',
+        r'D:\tools\Git\mingw64\bin',
+        r'D:\tools\Git\bin',
+      ]);
     });
 
     test('forward slashes are normalised before walking', () {
@@ -100,10 +99,7 @@ void main() {
 
   group('gitInstallPathFromGit', () {
     test('<root>\\cmd\\git.exe → <root>', () {
-      expect(
-        gitInstallPathFromGit(r'D:\Git\cmd\git.exe'),
-        r'D:\Git',
-      );
+      expect(gitInstallPathFromGit(r'D:\Git\cmd\git.exe'), r'D:\Git');
     });
 
     test('<root>\\mingw64\\bin\\git.exe → <root>', () {
@@ -121,10 +117,7 @@ void main() {
     });
 
     test('forward slashes are normalised', () {
-      expect(
-        gitInstallPathFromGit(r'D:/Git/cmd/git.exe'),
-        r'D:\Git',
-      );
+      expect(gitInstallPathFromGit(r'D:/Git/cmd/git.exe'), r'D:\Git');
     });
 
     test('unrecognised layouts return null', () {
@@ -198,7 +191,8 @@ void main() {
     test('powershell sets Console.OutputEncoding + chcp 65001', () {
       final shell = WindowsShell(
         kind: WindowsShellKind.powershell,
-        executable: r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe',
+        executable:
+            r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe',
         flagArg: '-Command',
         flagLabel: 'powershell',
         commandPrefix:
@@ -251,7 +245,10 @@ void main() {
       expect(shell.flagLabel, 'bash');
       // PathAdditions must point at <install>\usr\bin etc.
       expect(shell.pathAdditions, contains(r'C:\Program Files\Git\usr\bin'));
-      expect(shell.pathAdditions, contains(r'C:\Program Files\Git\mingw64\bin'));
+      expect(
+        shell.pathAdditions,
+        contains(r'C:\Program Files\Git\mingw64\bin'),
+      );
     });
 
     test('falls back to sh.exe when bash.exe is missing', () async {
@@ -280,32 +277,33 @@ void main() {
       expect(shell.executable, r'C:\Program Files\Git\bin\bash.exe');
     });
 
-    test('canonical Git install wins over the WSL bash stub on `where.exe`',
-        () async {
-      // Pre-install a phantom Git for Windows AND a phantom WSL
-      // stub on the where.exe side. The resolver should pick the
-      // Git install (canonical paths win) over the stub.
-      final shell = await resolve(
-        probeMap: <String, String>{
-          'where.exe bash.exe':
-              r'C:\Users\foo\AppData\Local\Microsoft\WindowsApps\bash.exe',
-          'where.exe sh.exe': '',
-        },
-        existingPaths: <String>{
-          r'C:\Program Files\Git\bin\bash.exe',
-          r'C:\Program Files\Git\usr\bin',
-        },
-      );
-      expect(shell.kind, WindowsShellKind.gitBash);
-      expect(
-        shell.executable,
-        r'C:\Program Files\Git\bin\bash.exe',
-        reason: 'Git for Windows must win over the WSL bash stub',
-      );
-    });
-
     test(
-        'derives bash from git.exe when Git is installed off-canonical '
+      'canonical Git install wins over the WSL bash stub on `where.exe`',
+      () async {
+        // Pre-install a phantom Git for Windows AND a phantom WSL
+        // stub on the where.exe side. The resolver should pick the
+        // Git install (canonical paths win) over the stub.
+        final shell = await resolve(
+          probeMap: <String, String>{
+            'where.exe bash.exe':
+                r'C:\Users\foo\AppData\Local\Microsoft\WindowsApps\bash.exe',
+            'where.exe sh.exe': '',
+          },
+          existingPaths: <String>{
+            r'C:\Program Files\Git\bin\bash.exe',
+            r'C:\Program Files\Git\usr\bin',
+          },
+        );
+        expect(shell.kind, WindowsShellKind.gitBash);
+        expect(
+          shell.executable,
+          r'C:\Program Files\Git\bin\bash.exe',
+          reason: 'Git for Windows must win over the WSL bash stub',
+        );
+      },
+    );
+
+    test('derives bash from git.exe when Git is installed off-canonical '
         '(e.g. D:\\Git\\)', () async {
       // Simulates a host where Git lives under D:\Git\ — the
       // canonical-path fallback misses it AND `where.exe bash.exe`
@@ -317,10 +315,7 @@ void main() {
           'where.exe bash.exe': r'C:\Windows\System32\bash.exe',
           'where.exe sh.exe': '',
         },
-        existingPaths: <String>{
-          r'D:\Git\bin\bash.exe',
-          r'D:\Git\usr\bin',
-        },
+        existingPaths: <String>{r'D:\Git\bin\bash.exe', r'D:\Git\usr\bin'},
       );
       expect(shell.kind, WindowsShellKind.gitBash);
       expect(
@@ -337,33 +332,34 @@ void main() {
       ]);
     });
 
-    test('falls through to where.exe bash.exe when git.exe is not on PATH',
-        () async {
-      // WSL bash stub on PATH, no Git install anywhere. Resolver
-      // should still find a POSIX shell via the bash.exe
-      // backstop.
-      final shell = await resolve(
-        probeMap: <String, String>{
-          'where.exe git.exe': '',
-          'where.exe bash.exe':
-              r'C:\Users\foo\AppData\Local\Microsoft\WindowsApps\bash.exe',
-          'where.exe sh.exe': '',
-        },
-      );
-      expect(shell.kind, WindowsShellKind.gitBash);
-      expect(
-        shell.executable,
-        r'C:\Users\foo\AppData\Local\Microsoft\WindowsApps\bash.exe',
-      );
-    });
+    test(
+      'falls through to where.exe bash.exe when git.exe is not on PATH',
+      () async {
+        // WSL bash stub on PATH, no Git install anywhere. Resolver
+        // should still find a POSIX shell via the bash.exe
+        // backstop.
+        final shell = await resolve(
+          probeMap: <String, String>{
+            'where.exe git.exe': '',
+            'where.exe bash.exe':
+                r'C:\Users\foo\AppData\Local\Microsoft\WindowsApps\bash.exe',
+            'where.exe sh.exe': '',
+          },
+        );
+        expect(shell.kind, WindowsShellKind.gitBash);
+        expect(
+          shell.executable,
+          r'C:\Users\foo\AppData\Local\Microsoft\WindowsApps\bash.exe',
+        );
+      },
+    );
 
     test('prefers pwsh.exe over powershell.exe when both resolve', () async {
       final shell = await resolve(
         probeMap: <String, String>{
           'where.exe bash.exe': '',
           'where.exe sh.exe': '',
-          'where.exe pwsh.exe':
-              r'C:\Program Files\PowerShell\7\pwsh.exe',
+          'where.exe pwsh.exe': r'C:\Program Files\PowerShell\7\pwsh.exe',
           'where.exe powershell.exe':
               r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe',
         },
@@ -376,8 +372,7 @@ void main() {
       expect(shell.pathAdditions, isEmpty);
     });
 
-    test('falls back to Windows PowerShell 5 when Core is missing',
-        () async {
+    test('falls back to Windows PowerShell 5 when Core is missing', () async {
       final shell = await resolve(
         probeMap: <String, String>{
           'where.exe bash.exe': '',

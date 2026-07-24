@@ -57,20 +57,12 @@ class TodoListPanel extends StatelessWidget {
       return _DoneSummary(context: context, list: list, l10n: l10n);
     }
 
-    return _TodoBody(
-      chat: chat,
-      list: list,
-      l10n: l10n,
-    );
+    return _TodoBody(chat: chat, list: list, l10n: l10n);
   }
 }
 
 class _TodoBody extends StatelessWidget {
-  const _TodoBody({
-    required this.chat,
-    required this.list,
-    required this.l10n,
-  });
+  const _TodoBody({required this.chat, required this.list, required this.l10n});
 
   final ChatProvider chat;
   final TodoList list;
@@ -122,7 +114,10 @@ class _TodoBody extends StatelessWidget {
               const SizedBox(width: 6),
               _ProgressBadge(list: list),
               const SizedBox(width: 4),
-              _AbandonButton(l10n: l10n, onPressed: () => _confirmAbandon(context)),
+              _AbandonButton(
+                l10n: l10n,
+                onPressed: () => _confirmAbandon(context),
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -135,10 +130,7 @@ class _TodoBody extends StatelessWidget {
               valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primary),
             ),
           ),
-          if (stateHint != null) ...[
-            const SizedBox(height: 6),
-            stateHint,
-          ],
+          if (stateHint != null) ...[const SizedBox(height: 6), stateHint],
           const SizedBox(height: 6),
           for (final item in list.items)
             Padding(
@@ -165,8 +157,7 @@ class _TodoBody extends StatelessWidget {
         color: Colors.orange,
       );
     }
-    if (list.pendingItems.isEmpty == false &&
-        chat.todoList.allDone == false) {
+    if (list.pendingItems.isEmpty == false && chat.todoList.allDone == false) {
       // The cap-hit state is signalled when the chat provider
       // has bumped the supervisor-attempts counter to its
       // ceiling. We don't expose the counter publicly, but
@@ -282,8 +273,9 @@ class _ProgressBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
-        AppLocalizations.of(context)
-            .todoProgress(list.completedCount, list.totalCount),
+        AppLocalizations.of(
+          context,
+        ).todoProgress(list.completedCount, list.totalCount),
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
@@ -309,11 +301,7 @@ class _AbandonButton extends StatelessWidget {
         padding: EdgeInsets.zero,
         tooltip: l10n.todoAbandonTooltip,
         onPressed: onPressed,
-        icon: Icon(
-          Icons.close_rounded,
-          size: 16,
-          color: context.textSecondary,
-        ),
+        icon: Icon(Icons.close_rounded, size: 16, color: context.textSecondary),
       ),
     );
   }
@@ -350,9 +338,7 @@ class _TodoRow extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12,
                   height: 1.35,
-                  color: done
-                      ? context.textSecondary
-                      : context.textPrimary,
+                  color: done ? context.textSecondary : context.textPrimary,
                   decoration: done ? TextDecoration.lineThrough : null,
                 ),
               ),
@@ -395,11 +381,7 @@ class _Hint extends StatelessWidget {
             text,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 10.5,
-              color: color,
-              height: 1.3,
-            ),
+            style: TextStyle(fontSize: 10.5, color: color, height: 1.3),
           ),
         ),
       ],

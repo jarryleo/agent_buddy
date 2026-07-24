@@ -422,123 +422,108 @@ void main() {
       },
     );
 
-    test(
-      'rounded_corners: on a JPEG source auto-promotes to PNG so the '
-      'transparent corners survive the round trip',
-      () async {
-        final svc = ImageEditService(tempDir: tempDir);
-        final result = await svc.edit(
-          sourcePath: sourceJpeg.path,
-          action: EditImageAction.roundedCorners,
-          params: {'radius_percent': 5},
-        );
-        // JPEG can't carry alpha, so we promote to PNG
-        // automatically — the whole point of this fix. The
-        // bubble's preview would otherwise show opaque corners
-        // (typically black, because JPEG composites onto a black
-        // background by default) instead of a transparent mask.
-        expect(result.format, 'png');
-        expect(result.filename, endsWith('.png'));
-        final outBytes = await File(result.path).readAsBytes();
-        final decoded = img.decodePng(outBytes)!;
-        expect(decoded.numChannels, 4);
-        expect(decoded.width, 800);
-        expect(decoded.height, 600);
-        // The top-left corner is well outside the corner arc
-        // (radius = 5% of 600 = 30px) so its alpha must be 0.
-        final corner = decoded.getPixel(0, 0);
-        expect(corner.a.toInt(), 0);
-      },
-    );
+    test('rounded_corners: on a JPEG source auto-promotes to PNG so the '
+        'transparent corners survive the round trip', () async {
+      final svc = ImageEditService(tempDir: tempDir);
+      final result = await svc.edit(
+        sourcePath: sourceJpeg.path,
+        action: EditImageAction.roundedCorners,
+        params: {'radius_percent': 5},
+      );
+      // JPEG can't carry alpha, so we promote to PNG
+      // automatically — the whole point of this fix. The
+      // bubble's preview would otherwise show opaque corners
+      // (typically black, because JPEG composites onto a black
+      // background by default) instead of a transparent mask.
+      expect(result.format, 'png');
+      expect(result.filename, endsWith('.png'));
+      final outBytes = await File(result.path).readAsBytes();
+      final decoded = img.decodePng(outBytes)!;
+      expect(decoded.numChannels, 4);
+      expect(decoded.width, 800);
+      expect(decoded.height, 600);
+      // The top-left corner is well outside the corner arc
+      // (radius = 5% of 600 = 30px) so its alpha must be 0.
+      final corner = decoded.getPixel(0, 0);
+      expect(corner.a.toInt(), 0);
+    });
 
-    test(
-      'circle: on a JPEG source auto-promotes to PNG so the '
-      'transparent corners survive the round trip',
-      () async {
-        final svc = ImageEditService(tempDir: tempDir);
-        final result = await svc.edit(
-          sourcePath: sourceJpeg.path,
-          action: EditImageAction.circle,
-          params: const {},
-        );
-        // JPEG can't carry alpha, so the output must be PNG.
-        expect(result.format, 'png');
-        expect(result.filename, endsWith('.png'));
-        final outBytes = await File(result.path).readAsBytes();
-        final decoded = img.decodePng(outBytes)!;
-        expect(decoded.numChannels, 4);
-        // The corner is well outside the inscribed circle, so
-        // its alpha must be 0 — the user's "round my JPEG into
-        // a circle" request now actually produces a circular
-        // preview.
-        final corner = decoded.getPixel(0, 0);
-        expect(corner.a.toInt(), 0);
-      },
-    );
+    test('circle: on a JPEG source auto-promotes to PNG so the '
+        'transparent corners survive the round trip', () async {
+      final svc = ImageEditService(tempDir: tempDir);
+      final result = await svc.edit(
+        sourcePath: sourceJpeg.path,
+        action: EditImageAction.circle,
+        params: const {},
+      );
+      // JPEG can't carry alpha, so the output must be PNG.
+      expect(result.format, 'png');
+      expect(result.filename, endsWith('.png'));
+      final outBytes = await File(result.path).readAsBytes();
+      final decoded = img.decodePng(outBytes)!;
+      expect(decoded.numChannels, 4);
+      // The corner is well outside the inscribed circle, so
+      // its alpha must be 0 — the user's "round my JPEG into
+      // a circle" request now actually produces a circular
+      // preview.
+      final corner = decoded.getPixel(0, 0);
+      expect(corner.a.toInt(), 0);
+    });
 
-    test(
-      'rounded_corners: honors an explicit target_format override '
-      '(even when that format can\'t hold alpha)',
-      () async {
-        final svc = ImageEditService(tempDir: tempDir);
-        // Even though JPEG can't hold alpha, the caller asked
-        // for a JPEG explicitly. We honor that — losing the
-        // transparency is their trade-off to make, and downstream
-        // tooling may depend on the format. This is the explicit
-        // escape hatch next to the auto-promote.
-        final result = await svc.edit(
-          sourcePath: sourceJpeg.path,
-          action: EditImageAction.roundedCorners,
-          params: {'radius_percent': 5, 'target_format': 'jpg'},
-        );
-        expect(result.format, 'jpeg');
-        expect(result.filename, endsWith('.jpg'));
-        final outBytes = await File(result.path).readAsBytes();
-        final decoded = img.decodeJpg(outBytes)!;
-        expect(decoded.width, 800);
-        expect(decoded.height, 600);
-      },
-    );
+    test('rounded_corners: honors an explicit target_format override '
+        '(even when that format can\'t hold alpha)', () async {
+      final svc = ImageEditService(tempDir: tempDir);
+      // Even though JPEG can't hold alpha, the caller asked
+      // for a JPEG explicitly. We honor that — losing the
+      // transparency is their trade-off to make, and downstream
+      // tooling may depend on the format. This is the explicit
+      // escape hatch next to the auto-promote.
+      final result = await svc.edit(
+        sourcePath: sourceJpeg.path,
+        action: EditImageAction.roundedCorners,
+        params: {'radius_percent': 5, 'target_format': 'jpg'},
+      );
+      expect(result.format, 'jpeg');
+      expect(result.filename, endsWith('.jpg'));
+      final outBytes = await File(result.path).readAsBytes();
+      final decoded = img.decodeJpg(outBytes)!;
+      expect(decoded.width, 800);
+      expect(decoded.height, 600);
+    });
 
-    test(
-      'rounded_corners: keeps PNG format when source is PNG '
-      '(no auto-promote needed — alpha already fits)',
-      () async {
-        final svc = ImageEditService(tempDir: tempDir);
-        final result = await svc.edit(
-          sourcePath: sourcePng.path,
-          action: EditImageAction.roundedCorners,
-          params: {'radius_percent': 10},
-        );
-        expect(result.format, 'png');
-        expect(result.filename, endsWith('.png'));
-      },
-    );
+    test('rounded_corners: keeps PNG format when source is PNG '
+        '(no auto-promote needed — alpha already fits)', () async {
+      final svc = ImageEditService(tempDir: tempDir);
+      final result = await svc.edit(
+        sourcePath: sourcePng.path,
+        action: EditImageAction.roundedCorners,
+        params: {'radius_percent': 10},
+      );
+      expect(result.format, 'png');
+      expect(result.filename, endsWith('.png'));
+    });
 
-    test(
-      'circle: keeps WebP format when source is WebP '
-      '(WebP supports alpha; no auto-promote needed)',
-      () async {
-        final svc = ImageEditService(tempDir: tempDir);
-        // Build a small WebP source. `image` package's lossless
-        // WebP encoder supports RGBA, so the source already
-        // carries alpha and the output format doesn't have to
-        // change.
-        final src = img.Image(width: 100, height: 100, numChannels: 4);
-        img.fill(src, color: img.ColorRgba8(200, 100, 50, 255));
-        final webpBytes = img.WebPEncoder().encode(src);
-        final webpPath = p.join(tempDir.path, 'source.webp');
-        await File(webpPath).writeAsBytes(webpBytes);
+    test('circle: keeps WebP format when source is WebP '
+        '(WebP supports alpha; no auto-promote needed)', () async {
+      final svc = ImageEditService(tempDir: tempDir);
+      // Build a small WebP source. `image` package's lossless
+      // WebP encoder supports RGBA, so the source already
+      // carries alpha and the output format doesn't have to
+      // change.
+      final src = img.Image(width: 100, height: 100, numChannels: 4);
+      img.fill(src, color: img.ColorRgba8(200, 100, 50, 255));
+      final webpBytes = img.WebPEncoder().encode(src);
+      final webpPath = p.join(tempDir.path, 'source.webp');
+      await File(webpPath).writeAsBytes(webpBytes);
 
-        final result = await svc.edit(
-          sourcePath: webpPath,
-          action: EditImageAction.circle,
-          params: const {},
-        );
-        expect(result.format, 'webp');
-        expect(result.filename, endsWith('.webp'));
-      },
-    );
+      final result = await svc.edit(
+        sourcePath: webpPath,
+        action: EditImageAction.circle,
+        params: const {},
+      );
+      expect(result.format, 'webp');
+      expect(result.filename, endsWith('.webp'));
+    });
 
     test(
       'rounded_corners: radius_percent=0 keeps the image untouched',

@@ -98,7 +98,8 @@ class TodoItem {
     'status': status.wireName,
     'order': order,
     'createdAtMs': createdAt.millisecondsSinceEpoch,
-    if (completedAt != null) 'completedAtMs': completedAt!.millisecondsSinceEpoch,
+    if (completedAt != null)
+      'completedAtMs': completedAt!.millisecondsSinceEpoch,
   };
 
   factory TodoItem.fromJson(Map<String, dynamic> json) {

@@ -16,8 +16,9 @@ void main() {
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
-    final tempDir =
-        await Directory.systemTemp.createTemp('get_environment_tool_');
+    final tempDir = await Directory.systemTemp.createTemp(
+      'get_environment_tool_',
+    );
     Hive.init(tempDir.path);
     addTearDown(() async {
       // Windows sometimes holds a lingering handle on the temp
@@ -61,10 +62,7 @@ void main() {
         // installed.
         expect(active['label'], isIn(<String>['bash', 'powershell', 'cmd']));
         // The kind matches the label one of one.
-        expect(
-          active['kind'],
-          isIn(<String>['git_bash', 'powershell', 'cmd']),
-        );
+        expect(active['kind'], isIn(<String>['git_bash', 'powershell', 'cmd']));
       } else {
         // POSIX is always `/bin/sh`.
         expect(active['label'], 'sh');
@@ -74,22 +72,30 @@ void main() {
       }
     });
 
-    test('Windows: git_bash install path is surfaced when Git Bash is active',
-        () async {
-      if (!Platform.isWindows) return;
-      final tool = GetEnvironmentTool();
-      final out = await tool.execute(const <String, dynamic>{}, toolService);
-      final payload = jsonDecode(out) as Map<String, dynamic>;
-      final active = payload['active_shell'] as Map<String, dynamic>;
-      if (active['kind'] != 'git_bash') return; // skip on non-Git-Bash hosts
-      // When Git Bash is active, the install path is included
-      // without trailing slash and points at <install>\Git.
-      final installPath = payload['git_bash_install_path'];
-      expect(installPath, isA<String>(),
-          reason: 'expected an install path on this Windows host');
-      final path = installPath as String;
-      expect(path.endsWith(r'\Git'), isTrue,
-          reason: 'install path must end at the Git folder, got "$path"');
-    });
+    test(
+      'Windows: git_bash install path is surfaced when Git Bash is active',
+      () async {
+        if (!Platform.isWindows) return;
+        final tool = GetEnvironmentTool();
+        final out = await tool.execute(const <String, dynamic>{}, toolService);
+        final payload = jsonDecode(out) as Map<String, dynamic>;
+        final active = payload['active_shell'] as Map<String, dynamic>;
+        if (active['kind'] != 'git_bash') return; // skip on non-Git-Bash hosts
+        // When Git Bash is active, the install path is included
+        // without trailing slash and points at <install>\Git.
+        final installPath = payload['git_bash_install_path'];
+        expect(
+          installPath,
+          isA<String>(),
+          reason: 'expected an install path on this Windows host',
+        );
+        final path = installPath as String;
+        expect(
+          path.endsWith(r'\Git'),
+          isTrue,
+          reason: 'install path must end at the Git folder, got "$path"',
+        );
+      },
+    );
   });
 }

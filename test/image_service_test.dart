@@ -37,7 +37,10 @@ void main() {
 
   test('passes JPEG through unchanged (bytes preserved)', () async {
     final fp = pathIn('in.jpg');
-    writeBytes('in.jpg', Uint8List.fromList(img.encodeJpg(fixture, quality: 90)));
+    writeBytes(
+      'in.jpg',
+      Uint8List.fromList(img.encodeJpg(fixture, quality: 90)),
+    );
     final expected = File(fp).readAsBytesSync();
 
     final dataUrl = await svc.toBase64DataUrl(fp);
@@ -78,8 +81,11 @@ void main() {
       dataUrl.substring('data:image/jpeg;base64,'.length),
     );
     expect(actual, isNot(equals(originalBytes)));
-    expect(img.decodeJpg(actual), isNotNull,
-        reason: 'transcoded payload must decode as a real JPEG');
+    expect(
+      img.decodeJpg(actual),
+      isNotNull,
+      reason: 'transcoded payload must decode as a real JPEG',
+    );
   });
 
   test('transcodes BMP to JPEG', () async {
@@ -89,9 +95,12 @@ void main() {
     final dataUrl = await svc.toBase64DataUrl(fp);
 
     expect(dataUrl.startsWith('data:image/jpeg;base64,'), isTrue);
-    expect(img.decodeJpg(base64Decode(
-      dataUrl.substring('data:image/jpeg;base64,'.length),
-    )), isNotNull);
+    expect(
+      img.decodeJpg(
+        base64Decode(dataUrl.substring('data:image/jpeg;base64,'.length)),
+      ),
+      isNotNull,
+    );
   });
 
   test('transcodes GIF (animated → first frame) to JPEG', () async {

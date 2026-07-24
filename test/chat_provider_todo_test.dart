@@ -32,9 +32,7 @@ void main() {
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
-    tempDir = await Directory.systemTemp.createTemp(
-      'agent_buddy_todo_it_',
-    );
+    tempDir = await Directory.systemTemp.createTemp('agent_buddy_todo_it_');
     Hive.init(tempDir.path);
   });
 
@@ -85,10 +83,7 @@ void main() {
   /// todo-tool call shape the model would emit, so the test
   /// can assert on the resulting [ChatProvider.todoList]
   /// without going through the streaming pipeline.
-  Future<String> invokeTodo(
-    ChatProvider chat,
-    Map<String, dynamic> args,
-  ) {
+  Future<String> invokeTodo(ChatProvider chat, Map<String, dynamic> args) {
     final fakeToolCall = {
       'id': 'tc_${DateTime.now().microsecondsSinceEpoch}',
       'name': 'todo',
@@ -139,10 +134,7 @@ void main() {
       await invokeTodo(chat, {'action': 'add', 'content': 'b'});
       final idA = chat.todoList.items[0].id;
 
-      await invokeTodo(chat, {
-        'action': 'complete',
-        'id': idA,
-      });
+      await invokeTodo(chat, {'action': 'complete', 'id': idA});
       expect(chat.todoList.completedCount, 1);
       expect(chat.todoList.pendingItems.length, 1);
       expect(chat.todoList.allDone, isFalse);
@@ -164,16 +156,18 @@ void main() {
       expect(chat.userStoppedLastTurn, isFalse);
     });
 
-    test('add on empty list auto-creates a list (model forgot create)',
-        () async {
-      final storage = StorageService();
-      await storage.init();
-      final chat = await buildProvider(storage);
+    test(
+      'add on empty list auto-creates a list (model forgot create)',
+      () async {
+        final storage = StorageService();
+        await storage.init();
+        final chat = await buildProvider(storage);
 
-      await invokeTodo(chat, {'action': 'add', 'content': 'orphan step'});
-      expect(chat.todoList.items.length, 1);
-      expect(chat.todoList.items.first.content, 'orphan step');
-    });
+        await invokeTodo(chat, {'action': 'add', 'content': 'orphan step'});
+        expect(chat.todoList.items.length, 1);
+        expect(chat.todoList.items.first.content, 'orphan step');
+      },
+    );
 
     test('unknown id on complete returns a soft error envelope', () async {
       final storage = StorageService();
@@ -255,8 +249,7 @@ void main() {
   });
 
   group('supervision state machine', () {
-    test('abandonTodoList drops the list and clears the stop flag',
-        () async {
+    test('abandonTodoList drops the list and clears the stop flag', () async {
       final storage = StorageService();
       await storage.init();
       final chat = await buildProvider(storage);
@@ -282,8 +275,7 @@ void main() {
       expect(chat.userStoppedLastTurn, isFalse);
     });
 
-    test('selecting a different session drops supervision state',
-        () async {
+    test('selecting a different session drops supervision state', () async {
       final storage = StorageService();
       await storage.init();
       final chat = await buildProvider(storage);

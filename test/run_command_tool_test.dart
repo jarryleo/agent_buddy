@@ -108,13 +108,15 @@ void main() {
         extraPaths: <String>[r'D:\custom\bin'],
       );
       final parts = (result['Path'] ?? '').split(';');
-      expect(parts.first, r'D:\custom\bin',
-          reason: 'extraPaths must precede the built-in standards');
+      expect(
+        parts.first,
+        r'D:\custom\bin',
+        reason: 'extraPaths must precede the built-in standards',
+      );
       expect(parts, contains(r'C:\Windows\System32'));
     });
 
-    test('extraPaths win when they collide with the built-in standards',
-        () {
+    test('extraPaths win when they collide with the built-in standards', () {
       if (!Platform.isWindows) return;
       final result = buildShellEnvironment(
         baseEnv: <String, String>{},
@@ -133,8 +135,11 @@ void main() {
           'LC_ALL': 'C.UTF-8',
         },
       );
-      expect(result['LANG'], 'C.UTF-8',
-          reason: 'extraEnv must win over the inherited env');
+      expect(
+        result['LANG'],
+        'C.UTF-8',
+        reason: 'extraEnv must win over the inherited env',
+      );
       expect(result['LC_ALL'], 'C.UTF-8');
       // Untouched keys pass through.
       expect(result['OTHER'], 'keep');
@@ -214,8 +219,7 @@ void main() {
       expect(payload['duration_ms'], isA<int>());
     });
 
-    test('uses the resolved shell when overridden via the test seam',
-        () async {
+    test('uses the resolved shell when overridden via the test seam', () async {
       // Inject a fake resolver that always reports Git Bash at
       // a path we know is real on Windows. This sidesteps the
       // `where.exe` probe so the test stays deterministic on any
@@ -233,9 +237,7 @@ void main() {
         },
         fileSystem: (_) async => false,
       );
-      final shell = await tool.debugResolveWindowsShell(
-        resolver: fakeResolver,
-      );
+      final shell = await tool.debugResolveWindowsShell(resolver: fakeResolver);
       expect(shell.kind, WindowsShellKind.gitBash);
       expect(shell.executable, r'C:\Program Files\Git\bin\bash.exe');
       expect(shell.flagArg, '-c');
@@ -257,8 +259,7 @@ void main() {
       );
     });
 
-    test(
-        'Windows Git Bash: echo with Chinese returns Chinese (no mojibake) '
+    test('Windows Git Bash: echo with Chinese returns Chinese (no mojibake) '
         'when LANG=C.UTF-8 is set', () async {
       // On Chinese Windows, the active code page is CP936 / GBK
       // but MSYS2 (Git Bash) defaults to emitting UTF-8. Without
@@ -283,12 +284,19 @@ void main() {
       final payload = jsonDecode(out) as Map<String, dynamic>;
       expect(payload['exit_code'], 0);
       final stdout = '${payload['stdout']}';
-      expect(stdout, contains('你好世界'),
-          reason: 'stdout must contain the original Chinese, '
-              'not mojibake. Got: $stdout');
+      expect(
+        stdout,
+        contains('你好世界'),
+        reason:
+            'stdout must contain the original Chinese, '
+            'not mojibake. Got: $stdout',
+      );
       // Must NOT contain the GBK-decoded replacement chars.
-      expect(stdout, isNot(contains('?好')),
-          reason: 'looks like GBK-decoded UTF-8 mojibake: $stdout');
+      expect(
+        stdout,
+        isNot(contains('?好')),
+        reason: 'looks like GBK-decoded UTF-8 mojibake: $stdout',
+      );
       expect(payload['shell'], 'bash');
     });
   });

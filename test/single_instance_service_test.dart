@@ -21,7 +21,8 @@ void main() {
     }
   });
 
-  String lockFilePath() => '${tempDir.path}${Platform.pathSeparator}instance.lock';
+  String lockFilePath() =>
+      '${tempDir.path}${Platform.pathSeparator}instance.lock';
 
   group('SingleInstanceService.acquire', () {
     test('first acquire on a fresh lock file succeeds', () async {
@@ -31,7 +32,10 @@ void main() {
       expect(ok, isTrue);
       expect(svc.isHolding, isTrue);
       expect(svc.listeningPort, isNotNull);
-      expect(await File(lockFilePath()).readAsString(), contains('${svc.listeningPort}'));
+      expect(
+        await File(lockFilePath()).readAsString(),
+        contains('${svc.listeningPort}'),
+      );
     });
 
     test('second acquire against a still-alive primary fails', () async {
@@ -56,8 +60,7 @@ void main() {
       // the pet-window sub-engine inside the same OS process shares
       // the primary's lock without re-acquiring it.
       final originalPort = svc.listeningPort;
-      final lockContentsBefore =
-          await File(lockFilePath()).readAsString();
+      final lockContentsBefore = await File(lockFilePath()).readAsString();
       expect(await svc.acquire(), isTrue);
       expect(svc.listeningPort, originalPort);
       expect(await File(lockFilePath()).readAsString(), lockContentsBefore);
@@ -99,7 +102,9 @@ void main() {
 
   group('SingleInstanceService.sendShowToExisting', () {
     test('returns false when no lock file exists', () async {
-      final secondary = SingleInstanceService.forTest(lockFilePath: lockFilePath());
+      final secondary = SingleInstanceService.forTest(
+        lockFilePath: lockFilePath(),
+      );
       addTearDown(secondary.dispose);
       final sent = await secondary.sendShowToExisting();
       expect(sent, isFalse);
@@ -164,40 +169,39 @@ void main() {
   });
 
   group('SingleInstanceService.setOnShowRequested', () {
-    test(
-      'SHOW commands arriving before the handler is wired are buffered '
-      'and replayed on registration',
-      () async {
-        final lock = lockFilePath();
-        final primary = SingleInstanceService.forTest(lockFilePath: lock);
-        final secondary = SingleInstanceService.forTest(lockFilePath: lock);
-        addTearDown(() async {
-          await primary.dispose();
-          await secondary.dispose();
-        });
-        expect(await primary.acquire(), isTrue);
-        expect(primary.isWindowReady, isFalse);
+    test('SHOW commands arriving before the handler is wired are buffered '
+        'and replayed on registration', () async {
+      final lock = lockFilePath();
+      final primary = SingleInstanceService.forTest(lockFilePath: lock);
+      final secondary = SingleInstanceService.forTest(lockFilePath: lock);
+      addTearDown(() async {
+        await primary.dispose();
+        await secondary.dispose();
+      });
+      expect(await primary.acquire(), isTrue);
+      expect(primary.isWindowReady, isFalse);
 
-        final sent = await secondary.sendShowToExisting();
-        expect(sent, isTrue);
-        await _pump();
+      final sent = await secondary.sendShowToExisting();
+      expect(sent, isTrue);
+      await _pump();
 
-        // The primary has not wired its handler yet — the SHOW must
-        // be queued instead of lost.
-        var calls = 0;
-        primary.setOnShowRequested(() async {
-          calls++;
-        });
-        // `setOnShowRequested` should replay the pending command in
-        // arrival order, so we observe exactly one call.
-        await _pump();
-        expect(calls, 1);
-        expect(primary.isWindowReady, isTrue);
-      },
-    );
+      // The primary has not wired its handler yet — the SHOW must
+      // be queued instead of lost.
+      var calls = 0;
+      primary.setOnShowRequested(() async {
+        calls++;
+      });
+      // `setOnShowRequested` should replay the pending command in
+      // arrival order, so we observe exactly one call.
+      await _pump();
+      expect(calls, 1);
+      expect(primary.isWindowReady, isTrue);
+    });
 
     test('post-ready SHOW commands fire the handler immediately', () async {
-      final primary = SingleInstanceService.forTest(lockFilePath: lockFilePath());
+      final primary = SingleInstanceService.forTest(
+        lockFilePath: lockFilePath(),
+      );
       addTearDown(primary.dispose);
       expect(await primary.acquire(), isTrue);
       var calls = 0;
@@ -223,7 +227,9 @@ void main() {
     });
 
     test('handler exceptions do not break the dispatch loop', () async {
-      final primary = SingleInstanceService.forTest(lockFilePath: lockFilePath());
+      final primary = SingleInstanceService.forTest(
+        lockFilePath: lockFilePath(),
+      );
       addTearDown(primary.dispose);
       expect(await primary.acquire(), isTrue);
       var boomCalls = 0;

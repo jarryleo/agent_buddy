@@ -43,11 +43,7 @@ void main() {
       createdAt: DateTime.fromMillisecondsSinceEpoch(1_700_000_000_000),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(1_700_000_500_000),
       messages: [
-        ChatMessage(
-          id: 'm1',
-          role: MessageRole.user,
-          content: '帮我研究下 X',
-        ),
+        ChatMessage(id: 'm1', role: MessageRole.user, content: '帮我研究下 X'),
       ],
       todoList: TodoList(
         title: '研究 X',
@@ -58,21 +54,15 @@ void main() {
             id: 'td_1',
             content: '看官方文档',
             order: 0,
-            createdAt: DateTime.fromMillisecondsSinceEpoch(
-              1_700_000_100_000,
-            ),
+            createdAt: DateTime.fromMillisecondsSinceEpoch(1_700_000_100_000),
           ),
           TodoItem(
             id: 'td_2',
             content: '对比第三方评测',
             order: 1,
-            createdAt: DateTime.fromMillisecondsSinceEpoch(
-              1_700_000_150_000,
-            ),
+            createdAt: DateTime.fromMillisecondsSinceEpoch(1_700_000_150_000),
             status: TodoItemStatus.done,
-            completedAt: DateTime.fromMillisecondsSinceEpoch(
-              1_700_000_200_000,
-            ),
+            completedAt: DateTime.fromMillisecondsSinceEpoch(1_700_000_200_000),
           ),
         ],
       ),
@@ -113,19 +103,21 @@ void main() {
     expect(restored.todoList.allDone, isTrue);
   });
 
-  test('auto-init list on first add keeps the rest of the session intact',
-      () async {
-    final original = ChatSession(
-      id: 'sess-3',
-      title: 'follow-up',
-      createdAt: DateTime.fromMillisecondsSinceEpoch(1_700_000_000_000),
-      updatedAt: DateTime.fromMillisecondsSinceEpoch(1_700_000_500_000),
-      messages: const [],
-    );
-    await box.put('k3', original);
-    final restored = box.get('k3')!;
-    // Default ChatSession has TodoList.empty — defensive check
-    // so the rest of the chat provider can rely on it.
-    expect(restored.todoList.isEmpty, isTrue);
-  });
+  test(
+    'auto-init list on first add keeps the rest of the session intact',
+    () async {
+      final original = ChatSession(
+        id: 'sess-3',
+        title: 'follow-up',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1_700_000_000_000),
+        updatedAt: DateTime.fromMillisecondsSinceEpoch(1_700_000_500_000),
+        messages: const [],
+      );
+      await box.put('k3', original);
+      final restored = box.get('k3')!;
+      // Default ChatSession has TodoList.empty — defensive check
+      // so the rest of the chat provider can rely on it.
+      expect(restored.todoList.isEmpty, isTrue);
+    },
+  );
 }

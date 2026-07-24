@@ -70,8 +70,7 @@ Map<String, String> buildShellEnvironment({
   // standard paths (e.g. an enterprise install at a non-default
   // location). Built-in standards come next, then whatever was
   // already in the environment.
-  for (final entry
-      in <String>[...extraPaths, ...stdPaths, ...existing]) {
+  for (final entry in <String>[...extraPaths, ...stdPaths, ...existing]) {
     if (seen.add(entry)) unique.add(entry);
   }
   env[pathKey] = unique.join(separator);
@@ -87,8 +86,7 @@ class RunCommandTool extends ToolBase {
   @override
   String get name => '命令行执行';
   @override
-  String get description =>
-      '在电脑上执行命令,返回输出结果和退出码。仅 Windows / macOS / Linux 可用。';
+  String get description => '在电脑上执行命令,返回输出结果和退出码。仅 Windows / macOS / Linux 可用。';
   @override
   String get shortDescription => '执行 shell 命令(仅桌面端)';
   @override
@@ -126,10 +124,7 @@ class RunCommandTool extends ToolBase {
               'type': 'string',
               'description': '要执行的命令(通过系统 shell 运行)',
             },
-            'cwd': {
-              'type': 'string',
-              'description': '工作目录,可选,默认使用用户选择的模型工作目录',
-            },
+            'cwd': {'type': 'string', 'description': '工作目录,可选,默认使用用户选择的模型工作目录'},
             'timeout_seconds': {
               'type': 'integer',
               'description': '超时秒数,默认 30,超时自动杀掉',
@@ -220,8 +215,8 @@ class RunCommandTool extends ToolBase {
     final cwd = requestedCwd == null || requestedCwd.isEmpty
         ? defaultCwd
         : p.isAbsolute(requestedCwd) || defaultCwd == null
-            ? requestedCwd
-            : p.normalize(p.join(defaultCwd, requestedCwd));
+        ? requestedCwd
+        : p.normalize(p.join(defaultCwd, requestedCwd));
     final timeoutSeconds = (args['timeout_seconds'] as num?)?.toInt() ?? 30;
 
     // Pick the shell + env adjustments. On Windows we delegate to

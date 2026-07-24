@@ -33,6 +33,35 @@ class TrayService with TrayListener {
   AppLocalizations? _lastL10n;
   bool? _lastShowDesktopPet;
 
+  /// Optional hook fired at the *start* of `_exitApp()`. Wired by
+  /// the agent app (in `main.dart`) once the `PetWindowController`
+  /// is constructed so the tray menu's "Exit" entry can ask any
+  /// live pet sub-window to close itself before terminating the
+  /// OS process.
+  ///
+  /// **Why this matters:** the pet window is implemented as a
+  /// separate `flutter::FlutterViewController` inside the same
+  /// Windows OS process (see `desktop_multi_window` 0.3
+  /// `multi_window_manager.cc`). When the main isolate calls
+  /// `dart:io`'s `exit(0)`, the C runtime is expected to invoke
+  /// `TerminateProcess`, but the embedding layer's plugin
+  /// teardown (Flutter engine + `window_manager` channels
+  /// flushing) can race the termination and leave the pet's
+  /// HWND alive in the OS process. Across repeated
+  /// exit-then-launch cycles this compounds — each launch saw
+  /// a stranded sub-engine from the previous run. Asking the
+  /// pet window to close itself via the same IPC channel it
+  /// already exposes (`closePetWindow`) drains those channels
+  /// synchronously before we terminate.
+  Future<void> Function()? _onExitRequested;
+
+  /// Wired by the agent app once a `PetWindowController` has
+  /// been built. Idempotent — passing multiple handlers
+  /// replaces (does not stack) the previous one.
+  void setOnExitRequested(Future<void> Function() handler) {
+    _onExitRequested = handler;
+  }
+
   /// Set up the tray icon, context menu, and listener. Idempotent.
   Future<void> initialize() async {
     if (_initialized) return;
@@ -226,10 +255,62 @@ class TrayService with TrayListener {
     _exiting = true;
     _menuRebuildTimer?.cancel();
     _menuRebuildTimer = null;
+
     unawaited(() async {
+      // Step 1 — best-effort pet window teardown. The pet sub-window
+      // is a separate Flutter engine in the same OS process (see
+      // `_onExitRequested`'s doc-comment). Closing it before we
+      // terminate drains its plugin channels so the embedding
+      // layer isn't trying to flush IPC traffic into a half-dead
+      // engine when `exit(0)` finally runs. Without this, a
+      // hard-killed pet HWND can survive past the main window
+      // and remain visible in Task Manager long after the tray
+      // icon disappears — which is exactly the bug we're fixing.
+      final onExit = _onExitRequested;
+      if (onExit != null) {
+        try {
+          await onExit().timeout(const Duration(milliseconds: 800));
+        } catch (_) {
+          // Pet may already be torn down, or its IPC channel may
+          // be unresponsive. Fall through to the destructive
+          // step below either way.
+        }
+      }
+
+      // Step 2 — drop the tray icon. Best-effort with a tight
+      // timeout so a hung shell-notify call can't extend the
+      // shutdown. The tray icon being a hair slower to disappear
+      // than the window is acceptable; the OS process must go.
       try {
-        await trayManager.destroy().timeout(const Duration(milliseconds: 150));
+        await trayManager.destroy().timeout(const Duration(milliseconds: 300));
       } catch (_) {}
+
+      // Step 3 — terminate the Win32 message loop cleanly. Under
+      // the hood this is a single `PostQuitMessage(0)` call
+      // (see `window_manager-*/windows/window_manager.cpp`,
+      // `WindowManager::Destroy`). Once WM_QUIT is in the main
+      // thread's message queue, the embedder's `GetMessage`
+      // returns 0, `wWinMain` returns `EXIT_SUCCESS`, and the
+      // OS process is gone — including every Flutter sub-engine
+      // and the pet HWND that still belongs to this process.
+      //
+      // This is the correct Windows-side way to terminate a
+      // Flutter desktop app. `dart:io`'s `exit(0)` alone is
+      // unreliable when the engine has sub-windows with their
+      // own `FlutterViewController`s: the embedder's plugin
+      // teardown can keep the OS thread alive long enough that
+      // the process lingers in Task Manager and across the next
+      // launch, leaving the user staring at a stranded window.
+      try {
+        await windowManager.destroy();
+      } catch (_) {}
+
+      // Step 4 — belt-and-suspenders fallback for the rare case
+      // where `PostQuitMessage` was swallowed by a runaway
+      // native message hook. Tiny delay so the Win32 message
+      // loop has a chance to drain `WM_QUIT` first; if it
+      // doesn't, the C-runtime `exit(0)` does the job.
+      await Future<void>.delayed(const Duration(milliseconds: 250));
       exit(0);
     }());
   }

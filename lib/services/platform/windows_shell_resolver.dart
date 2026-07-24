@@ -103,10 +103,8 @@ class WindowsShell {
 /// probes. Production wires this up to `Process.run` for
 /// `where.exe`. Tests inject a fake that returns synthetic
 /// `which`-style output without spawning a child process.
-typedef ShellProbe = Future<String?> Function(
-  String executable,
-  List<String> args,
-);
+typedef ShellProbe =
+    Future<String?> Function(String executable, List<String> args);
 
 /// Async-friendly `File.exists()` shim for tests.
 typedef FileSystemChecker = Future<bool> Function(String path);
@@ -136,11 +134,9 @@ typedef FileSystemChecker = Future<bool> Function(String path);
 /// cost once. Tests can call [resetCache] (or instantiate a
 /// fresh resolver) to re-probe.
 class WindowsShellResolver {
-  WindowsShellResolver({
-    ShellProbe? shellProbe,
-    FileSystemChecker? fileSystem,
-  })  : _probe = shellProbe ?? _defaultProbe,
-        _exists = fileSystem ?? _defaultFileExists;
+  WindowsShellResolver({ShellProbe? shellProbe, FileSystemChecker? fileSystem})
+    : _probe = shellProbe ?? _defaultProbe,
+      _exists = fileSystem ?? _defaultFileExists;
 
   final ShellProbe _probe;
   final FileSystemChecker _exists;
@@ -265,24 +261,24 @@ class WindowsShellResolver {
   }
 
   WindowsShell _gitBashShell(String executable) => WindowsShell(
-        kind: WindowsShellKind.gitBash,
-        executable: executable,
-        flagArg: '-c',
-        flagLabel: 'bash',
-        pathAdditions: gitBashPathAdditionsFor(executable),
-        // MSYS2 programs (`ls`, `cat`, `git`, `npm`, …) emit UTF-8
-        // to stdout/stderr when `LANG` / `LC_ALL` is a UTF-8
-        // locale. Pin it explicitly because the inherited
-        // Windows-side LANG is often empty (or worse, a
-        // system-codepage variant on hosts with the
-        // "Beta: Use Unicode UTF-8" toggle off) — in those
-        // cases MSYS2 falls back to CP936 and UTF-8 decoding in
-        // Dart turns every Chinese character into `?`.
-        envAdditions: const <String, String>{
-          'LANG': 'C.UTF-8',
-          'LC_ALL': 'C.UTF-8',
-        },
-      );
+    kind: WindowsShellKind.gitBash,
+    executable: executable,
+    flagArg: '-c',
+    flagLabel: 'bash',
+    pathAdditions: gitBashPathAdditionsFor(executable),
+    // MSYS2 programs (`ls`, `cat`, `git`, `npm`, …) emit UTF-8
+    // to stdout/stderr when `LANG` / `LC_ALL` is a UTF-8
+    // locale. Pin it explicitly because the inherited
+    // Windows-side LANG is often empty (or worse, a
+    // system-codepage variant on hosts with the
+    // "Beta: Use Unicode UTF-8" toggle off) — in those
+    // cases MSYS2 falls back to CP936 and UTF-8 decoding in
+    // Dart turns every Chinese character into `?`.
+    envAdditions: const <String, String>{
+      'LANG': 'C.UTF-8',
+      'LC_ALL': 'C.UTF-8',
+    },
+  );
 
   Future<WindowsShell?> _probePwsh() async {
     // PowerShell 7 defaults to UTF-8 for `[Console]::OutputEncoding`
@@ -330,20 +326,20 @@ class WindowsShellResolver {
   }
 
   WindowsShell _cmdFallback() => WindowsShell(
-        kind: WindowsShellKind.cmd,
-        executable: r'C:\Windows\System32\cmd.exe',
-        flagArg: '/c',
-        flagLabel: 'cmd',
-        // `chcp 65001` switches the active code page to UTF-8
-        // for the current `cmd.exe` session, so `dir`, `type`,
-        // `ipconfig`, etc. — which all write to the console via
-        // Win32 — emit UTF-8 bytes to the pipe that Dart reads.
-        // `>nul` suppresses `chcp`'s "Active code page: 65001."
-        // line; `&` is cmd's unconditional sequence so the
-        // user's command still runs even on the (vanishingly
-        // rare) host where `chcp 65001` errors out.
-        commandPrefix: 'chcp 65001 >nul & ',
-      );
+    kind: WindowsShellKind.cmd,
+    executable: r'C:\Windows\System32\cmd.exe',
+    flagArg: '/c',
+    flagLabel: 'cmd',
+    // `chcp 65001` switches the active code page to UTF-8
+    // for the current `cmd.exe` session, so `dir`, `type`,
+    // `ipconfig`, etc. — which all write to the console via
+    // Win32 — emit UTF-8 bytes to the pipe that Dart reads.
+    // `>nul` suppresses `chcp`'s "Active code page: 65001."
+    // line; `&` is cmd's unconditional sequence so the
+    // user's command still runs even on the (vanishingly
+    // rare) host where `chcp 65001` errors out.
+    commandPrefix: 'chcp 65001 >nul & ',
+  );
 }
 
 /// Strip `where.exe`-style trailing CRLF / spaces and grab the
@@ -383,8 +379,7 @@ List<String> gitBashPathAdditionsFor(String bashPath) =>
     _gitBashPathAdditions(bashPath);
 
 @visibleForTesting
-String? gitBashInstallPathFor(String bashPath) =>
-    _gitBashInstallPath(bashPath);
+String? gitBashInstallPathFor(String bashPath) => _gitBashInstallPath(bashPath);
 
 List<String> _gitBashPathAdditions(String bashPath) {
   // Normalise to back-slashes so we don't have to think about
@@ -439,8 +434,11 @@ String? _gitBashInstallPath(String bashPath) {
   // keeps the install-root answer and the path-additions list
   // in sync.
   final lower = bashPath.toLowerCase();
-  final parts =
-      bashPath.replaceAll('/', r'\').split(r'\').where((p) => p.isNotEmpty).toList();
+  final parts = bashPath
+      .replaceAll('/', r'\')
+      .split(r'\')
+      .where((p) => p.isNotEmpty)
+      .toList();
   if (lower.endsWith(r'\usr\bin\bash.exe') ||
       lower.endsWith(r'\usr\bin\sh.exe')) {
     return parts.take(parts.length - 3).join(r'\');
@@ -462,8 +460,7 @@ String? gitInstallPathFromGit(String gitPath) =>
 String? _gitInstallPathFromGit(String gitPath) {
   final normalised = gitPath.replaceAll('/', r'\');
   final lower = normalised.toLowerCase();
-  final parts =
-      normalised.split(r'\').where((p) => p.isNotEmpty).toList();
+  final parts = normalised.split(r'\').where((p) => p.isNotEmpty).toList();
   // <root>\cmd\git.exe — the most common layout, where Git for
   // Windows drops the `git.exe` shim on PATH. Drop two segments.
   if (lower.endsWith(r'\cmd\git.exe')) {

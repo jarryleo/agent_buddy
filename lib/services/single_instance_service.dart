@@ -57,12 +57,11 @@ class SingleInstanceService {
     String? lockFilePath,
     Duration probeTimeout = const Duration(milliseconds: 800),
     Future<void> Function()? onShowRequested,
-  }) =>
-      SingleInstanceService(
-        lockFilePath: lockFilePath,
-        probeTimeout: probeTimeout,
-        onShowRequested: onShowRequested,
-      );
+  }) => SingleInstanceService(
+    lockFilePath: lockFilePath,
+    probeTimeout: probeTimeout,
+    onShowRequested: onShowRequested,
+  );
 
   /// Where the lock file lives. Production code resolves this once
   /// at startup via `getApplicationSupportDirectory()` and assigns
@@ -126,8 +125,10 @@ class SingleInstanceService {
       final lockFile = File(lockFilePath!);
       final primaryAlive = await _isPrimaryAlive(lockFile);
       if (primaryAlive == true) {
-        debugPrint('SingleInstanceService: primary is alive at '
-            'port $_lastProbedPort — becoming secondary.');
+        debugPrint(
+          'SingleInstanceService: primary is alive at '
+          'port $_lastProbedPort — becoming secondary.',
+        );
         return false;
       }
       // `false` (stale lock deleted best-effort) and `null` (no
@@ -135,9 +136,11 @@ class SingleInstanceService {
       // We log the outcome so a future "two windows opened after
       // pinned-taskbar click" bug has something to bisect with.
       if (primaryAlive == false) {
-        debugPrint('SingleInstanceService: stale lock file at '
-            '$lockFilePath (port $_lastProbedPort no longer '
-            'responds) — reclaiming.');
+        debugPrint(
+          'SingleInstanceService: stale lock file at '
+          '$lockFilePath (port $_lastProbedPort no longer '
+          'responds) — reclaiming.',
+        );
       }
     }
 
@@ -250,7 +253,8 @@ class SingleInstanceService {
         await server.close();
       } catch (_) {}
     }
-    final file = _lockFile ?? (lockFilePath != null ? File(lockFilePath!) : null);
+    final file =
+        _lockFile ?? (lockFilePath != null ? File(lockFilePath!) : null);
     _lockFile = null;
     if (file != null) {
       try {

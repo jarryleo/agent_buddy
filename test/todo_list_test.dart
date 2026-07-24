@@ -105,18 +105,8 @@ void main() {
       list = list.copyWith(
         createdAt: t0,
         items: [
-          TodoItem(
-            id: 'td_1',
-            content: 'a',
-            order: 0,
-            createdAt: t0,
-          ),
-          TodoItem(
-            id: 'td_2',
-            content: 'b',
-            order: 1,
-            createdAt: t1,
-          ),
+          TodoItem(id: 'td_1', content: 'a', order: 0, createdAt: t0),
+          TodoItem(id: 'td_2', content: 'b', order: 1, createdAt: t1),
         ],
       );
       expect(list.totalCount, 2);
@@ -127,9 +117,7 @@ void main() {
         status: TodoItemStatus.done,
         completedAt: t1,
       );
-      list = list.copyWith(
-        items: [updated, list.items.last],
-      );
+      list = list.copyWith(items: [updated, list.items.last]);
       expect(list.completedCount, 1);
       expect(list.allDone, isFalse);
       expect(list.pendingItems.length, 1);

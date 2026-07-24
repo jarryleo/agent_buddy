@@ -317,6 +317,26 @@ class _AgentBuddyAppState extends State<AgentBuddyApp> {
     _settings = widget.settings;
     if (petWindowSupportedOnCurrentPlatform()) {
       _petController = PetWindowController(settings: _settings)..syncOnStart();
+      // The tray menu's "Exit" entry is the only user-visible way
+      // to terminate the app (the main window's ✕ just hides), so
+      // we wire its exit hook from here once the pet sub-window
+      // controller exists. Without this, `dart:io`'s `exit(0)`
+      // would race the pet's `FlutterViewController` teardown and
+      // leave its HWND alive in the OS process — manifesting as
+      // a stranded entry in Task Manager that compounds across
+      // re-launches. `PetWindowController.dispose` sends a
+      // close IPC to the pet window and cancels its internal
+      // timers, draining those channels synchronously.
+      widget.trayService.setOnExitRequested(() async {
+        final controller = _petController;
+        if (controller == null) return;
+        try {
+          await controller.dispose();
+        } catch (_) {
+          // Already torn down or unreachable — the destructive
+          // step in [TrayService._exitApp] will catch up.
+        }
+      });
     }
   }
 

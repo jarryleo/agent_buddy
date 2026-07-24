@@ -3,9 +3,26 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 class PetSpeechBubble extends StatefulWidget {
-  const PetSpeechBubble({super.key, required this.text});
+  const PetSpeechBubble({
+    super.key,
+    required this.text,
+    required this.visible,
+    this.fadeDuration = const Duration(milliseconds: 220),
+  });
 
   final String text;
+
+  /// Whether the bubble should currently be shown. Decoupled from
+  /// [text] so the parent can fade the bubble out in place before
+  /// changing [text] to empty, and so an empty initial state still
+  /// has a defined opacity (0) instead of being rendered as a hidden
+  /// placeholder that has to be swapped in the layout tree.
+  final bool visible;
+
+  /// How long the opacity 0↔1 transition takes. Picked so that the
+  /// pet window's post-fade resize can run after the transition
+  /// completes without making the auto-hide feel laggy.
+  final Duration fadeDuration;
 
   @override
   State<PetSpeechBubble> createState() => _PetSpeechBubbleState();
@@ -35,7 +52,27 @@ class _PetSpeechBubbleState extends State<PetSpeechBubble> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.text.trim().isEmpty) return const SizedBox.shrink();
+    final hasText = widget.text.trim().isNotEmpty;
+    final shouldShow = widget.visible && hasText;
+    // The bubble never "flashes downward" — the same layout is held
+    // in the tree at the bubble's slot regardless of `visible`, and
+    // the visibility transition is a pure opacity animation. The
+    // pet window separately defers its bottom-anchored resize until
+    // *after* this transition completes so the OS-level window
+    // doesn't re-anchor its top edge downward while the bubble is
+    // mid-fade.
+    return IgnorePointer(
+      ignoring: !shouldShow,
+      child: AnimatedOpacity(
+        opacity: shouldShow ? 1.0 : 0.0,
+        duration: widget.fadeDuration,
+        curve: Curves.easeOutCubic,
+        child: hasText ? _buildBubble() : const SizedBox.shrink(),
+      ),
+    );
+  }
+
+  Widget _buildBubble() {
     return Align(
       alignment: Alignment.topCenter,
       child: Column(
